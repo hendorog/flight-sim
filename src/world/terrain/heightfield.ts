@@ -11,7 +11,7 @@
 //
 // Every function here is unbounded: any (north, east) gives a valid answer.
 
-import { onWorldSeed, worldSeed } from '../worldSeed';
+import { onWorldSeed, setWorldSeed, worldSeed } from '../worldSeed';
 import { macroCacheBegin, macroCachedAt, macroCachedGradAt, macroCacheEnd, macroCacheRecord, setLayoutGround, type Macro, type MacroGrad } from './seededLayout';
 import { clamp, type Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
@@ -19,13 +19,14 @@ import { AIRPORT, onHomeAirport } from '../../core/world';
 import { breachWall } from './streams';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth, type Drainage } from './drainage';
-import { buildErosion, erosionCutAt, erosionCutGrad, erosionGullies, sampleErosion, sampleErosionGrad, type ErosionField, type ErosionGrad, type ErosionSample } from './erosion';
+import { buildErosion, erosionGullies, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample } from './erosion';
 import { buildNetworkHydrology } from './riverNetwork';
 import { fbm, gnoise, gullies, gulliesFast, type Deriv } from './noise';
 import { era, isPresent } from '../era/eraState';
 import { volcanoBound, volcanoHeight, volcanoMerge } from './volcano';
 import { setGeneratedAirfields, type Airfield } from '../airfields';
 import { siteAirfields } from './airfieldSiting';
+import { siteRunway, type RunwayFit } from './homeSiting';
 
 // The home field (core/world.ts AIRPORT): its elevation and runway heading change with the world seed.
 let ELEV = AIRPORT.elevation;
@@ -420,17 +421,17 @@ let shoreSeed = 0;
 /** A seeded world's lakes (drainage.ts LakeMask), whose domains smooth out the small-scale relief, for that seed only. */
 let lakeSmooth: LakeMask | null = null;
 let lakeSeed = 0;
-// The home field's site search (seededLayout.ts, homeSiting.ts) looks at the ground as it will be, eroded ridges and
-// all (in the mountains the erosion adds hundreds of metres the approach trimming would otherwise cut into walls).
-// It sees the ground before the load-time corrections (the erosion pass, erosion.ts, and the shore smoothing round
-// the lakes, drainage.ts), which are worked out for the layout it chooses and faded
-// out around the field, so the site stays valid (the pass only lowers the ground).
+// The home field's site search (seededLayout.ts, homeSiting.ts) looks at the noise ground, gullies and all (in the
+// mountains they add hundreds of metres the approach trimming would otherwise cut into walls). It sees the ground
+// before the load-time corrections (the macro model, erosion.ts, and the shore smoothing round the lakes,
+// drainage.ts), which are worked out for the layout it chooses and held at none over the field. The model may raise
+// the ground about it as well as lower it, so the site is checked once more on the finished ground (homeRecheck).
 setLayoutGround((n, e) => seededNaturalHeight(n, e, true, false));
 
-/** The erosion pass (erosion.ts), null in seed 0's world. */
+/** The macro model (erosion.ts), null in seed 0's world. */
 let erosion: ErosionField | null = null;
-const erosionAt: ErosionSample = { d: 0, w: 0, t: 0, keep: 1, north: 0, east: 0 };
-const erosionGrad: ErosionGrad = { dN: 0, dE: 0, tN: 0, tE: 0 };
+const erosionAt: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, north: 0, east: 0 };
+const erosionGrad: ErosionGrad = { dN: 0, dE: 0, cN: 0, cE: 0, fN: 0, fE: 0, wN: 0, wE: 0, rN: 0, rE: 0 };
 const cutGrad: Deriv = { dx: 0, dy: 0 };
 const EROSION_N = Math.round((2 * DOMAIN_HALF) / DRAIN_CELL) + 1;
 
@@ -446,16 +447,50 @@ export const naturalHeightCoarse = (north: number, east: number): number => seed
 export const naturalHeightRaw = (north: number, east: number, detail = true): number => seededNaturalHeight(north, east, detail, false);
 
 /**
- * The ground `h` with the erosion pass's interpolated cut applied, C1 in both. The cut never raises the ground: its
- * fine grid holds no point above 0 (erosion.ts), and what the interpolation overshoots between them (centimetres) is
- * dropped. Land stays land: a cut is cushioned (a smooth maximum) a metre or two above the sea, blended in over its
- * first 5 m, so the lowest reaches of a river cut down to sea level do not drown.
+ * The ground `h` with the macro model's signed offset applied (erosion.ts macroOffset), C1 in both. Raised ground takes
+ * the offset as it is. Land stays land: a lowering is cushioned (a smooth maximum) a metre or two above the sea,
+ * blended in over its first 5 m, so the lowest reaches of a river graded down to sea level do not drown. (The one
+ * place a lowering is treated apart from a rise.)
  */
-function applyCut(h: number, cut: number): number {
-  if (cut >= 0) return h;
-  const lowered = h + cut;
+function applyMacro(h: number, offset: number): number {
+  if (offset >= 0) return h + offset;
+  const lowered = h + offset;
   const cushioned = -smin(-lowered, -smin(h, 2, 2), 3);
-  return lowered + smooth(0, -5, cut) * (cushioned - lowered);
+  return lowered + smooth(0, -5, offset) * (cushioned - lowered);
+}
+
+/**
+ * The uplift rate of the macro model at the macro fields `m` (erosion.ts steadyLattice: 1 gives the steady drop of
+ * STEADY.ridge m over 1 km on a one-cell catchment): the ranges' (the alpine uplift, about 0-1.15) and a share for the
+ * hill country by its relief amplitude (HILL_UPLIFT per m), faded out toward the coast.
+ */
+function upliftRate(m: Macro): number {
+  const hillAmp = (90 + 260 * smooth(-1000, 7000, m.inland) + 480 * m.foothill) * m.hilly;
+  return (m.uplift / 1.15 + HILL_UPLIFT * hillAmp) * smooth(0, 15000, m.inland);
+}
+/**
+ * How much of the model's gentlest graded gradient holds at the macro fields `m` (erosion.ts SteadyParams.grade):
+ * GRADE_COAST of it at the coast, all of it from 15 km inland (the coastal plains are the rivers' own gravel, not
+ * hillslopes: graded fully, they would rise some 40 m in their first kilometre).
+ */
+function gradeShare(m: Macro): number {
+  return GRADE_COAST + (1 - GRADE_COAST) * smooth(0, 15000, m.inland);
+}
+const GRADE_COAST = 0.5;
+/** Uplift rate per metre of the hill country's relief amplitude (0.5 at the hills' highest, 830 m; calibrated with
+ * erosion.ts STEADY). */
+const HILL_UPLIFT = 0.5 / 830;
+
+/** Probes: the macro model's parts at a point of the current seeded world (null at seed 0): the change, carve, valley
+ * floor weight and noise lattice B-spline (erosion.ts ErosionSample), and the grounds with and without the offset. */
+export function debugMacro(north: number, east: number): { s: ErosionSample; coarseRaw: number; coarse: number; ground: number } | null {
+  if (!erosion) return null;
+  const coarseRaw = seededNaturalHeight(north, east, false, false);
+  const coarse = seededNaturalHeight(north, east, false, true);
+  const ground = seededNaturalHeight(north, east, true, true);
+  const s: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, north: 0, east: 0 };
+  sampleErosion(erosion, north, east, s);
+  return { s, coarseRaw, coarse, ground };
 }
 
 /** A seeded world's natural terrain without its small-scale relief (the ledges and knobs under 200 m, and the finest
@@ -491,7 +526,7 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
     gN += a * massif.dy;
     amplitude += a;
   }
-  // The ground without the gullies, which the erosion's eroded surface replaces where its cut is deep.
+  // The ground without the gullies (the noise ground the macro model's offset applies to).
   const coarse = base + relief;
   // Its full gradient (with the macro fields' rise: the coast's, the ranges' and the hill country's), for the gullies.
   let cE = gE;
@@ -526,20 +561,20 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
     // Over a lake's bed and shore (drainage.ts LakeMask) none of the small-scale relief either, where it could reach
     // down to the water (the lake is flooded on the ground without it): only on ground standing within the relief's
     // reach of the lake's level, so a slope rising from the water keeps its rock and hummocks.
-    const gullyKeep = (1 - shore) * (cut ? erosionGullies(cut, erosionAt) : 1);
+    const gullyKeep = (1 - shore) * (cut ? erosionGullies(erosionAt) : 1);
     let lakeW = eroded && lakeSeed === worldSeed() && lakeSmooth ? lakeSmooth.smooth(north, east) : 0;
     if (lakeW > 0) {
-      const hc = cut ? applyCut(coarse, erosionCutAt(erosionAt, coarse)) : coarse;
+      const hc = cut ? applyMacro(coarse, macroOffset(erosionAt, coarse)) : coarse;
       const reach = 0.13 * amplitude * gullyKeep + 2.2 * (1.2 + 0.004 * clamp(hc, 0, 3000)) + 3.2 + 1;
       lakeW *= 1 - smooth(reach, 1.5 * reach, hc - (lakeSmooth as LakeMask).smoothLevel);
     }
     calm = 1 - lakeW;
     const keep = gullyKeep * calm;
-    // The eroded ground's gradient: the coarse terrain's with the cut's (erosion.ts).
+    // The macro ground's gradient: the coarse terrain's with the model's offset's (erosion.ts).
     let bE = cE;
     let bN = cN;
     if (cut) {
-      erosionCutGrad(erosionAt, erosionGrad, coarse, cE, cN, cutGrad);
+      macroOffsetGrad(erosionAt, erosionGrad, coarse, cE, cN, cutGrad);
       bE += cutGrad.dx;
       bN += cutGrad.dy;
     }
@@ -578,8 +613,8 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
     }
   }
   let h = base + relief;
-  // The rivers' valleys, cut by the erosion pass (erosion.ts), C1-smooth: the gullies stay on the eroded surface.
-  if (cut) h = applyCut(h, erosionCutAt(erosionAt, coarse));
+  // The macro model's ground (erosion.ts), C1-smooth: the gullies ride on it.
+  if (cut) h = applyMacro(h, macroOffset(erosionAt, coarse));
 
   // The era's volcano over the eroded ground (the erosion pass works on the ground without it, `volcano` false).
   const V = volcano ? era().terrain.volcano : undefined;
@@ -621,32 +656,79 @@ let presentHydro: Hydrology;
 let legacyHydro: Hydrology;
 // The generated airfields (airfields.ts, present day only), sited against the same natural terrain and water.
 let fields: readonly Airfield[] = [];
+/** The home runway checked on the finished ground of the last seeded world (homeSiting.ts siteRunway); null at seed 0. */
+export let homeRecheck: RunwayFit | null = null;
+/** A seeded world's macro model cells (erosion.ts steadyLattice) for one seed and input key. */
+export interface SeededModel {
+  seed: number;
+  key: string;
+  lattice: Float32Array;
+}
+/** The model cells handed over for the next build (macroCache.ts, a terrain worker's setup), if any. */
+let providedModel: SeededModel | null = null;
+/** The model cells the last seeded build used (to hand on to the terrain workers and the cache); null at seed 0. */
+let lastModel: SeededModel | null = null;
+/** How long the last seeded build spent in the model, ms (0 when it was handed over). */
+export let modelMs = 0;
+/** While set, a seeded build stops once the model cells are worked out (computeSeededModel: the model worker). */
+let modelOnly = false;
+/**
+ * Work out a seed's model cells and nothing else of its world (macroWorker.ts: one worker does this for the main
+ * thread and the terrain workers). Leaves this thread's world half built: for a thread of its own.
+ */
+export function computeSeededModel(seed: number): SeededModel | null {
+  modelOnly = true;
+  try {
+    setWorldSeed(seed);
+  } finally {
+    modelOnly = false;
+  }
+  return lastModel;
+}
+/** Hand over a seed's model cells before its world is built (setWorldSeed): used when its input key matches. */
+export function provideSeededModel(m: SeededModel | null): void {
+  providedModel = m;
+}
+/** The model cells the current world was built with (null at seed 0). */
+export const seededModel = (): SeededModel | null => lastModel;
 /** How long the last seeded world's airfield siting took, ms (probes). */
 export let siteMs = 0;
 function buildWater(): void {
   if (SEEDED) {
-    // The erosion pass first (erosion.ts): the rivers cut the macro terrain's valleys and drain most of its closed
-    // hollows. Then the drainage, routed over the eroded terrain without its gullies and small-scale relief (finer
-    // than the 1 km lattice, and the costly part): the hollows the erosion left are breached or ponded (Lindsay 2016).
+    // The macro model first (erosion.ts): the steady state of uplift and river incision over the noise ground's
+    // drainage, which the terrain takes as its macro ground. Then the drainage, routed over the model's cells (they
+    // drain by construction; the hollows left by the held home field and the era's volcano are breached or ponded,
+    // Lindsay 2016).
     erosion = null;
     shoreSmooth = null;
     lakeSmooth = null;
     const home = AIRPORT.runway.center;
-    // Worked out on the ground without the era's volcano, as the cut is applied (the cone merges over it after).
+    // Worked out on the ground without the era's volcano, as the offset is applied (the cone merges over it after).
     // (Its lattice's nodes record the slow macro fields as they are sampled: the terrain takes them from there after.)
     macroCacheBegin(EROSION_N, -DOMAIN_HALF, DRAIN_CELL);
-    const eroded = buildErosion((n, e) => {
-      const h = seededNaturalHeight(n, e, false, false, false);
+    const inputs = modelInputs((n, e, out) => {
+      out.h = seededNaturalHeight(n, e, false, false, false);
+      out.u = upliftRate(macro);
+      out.g = gradeShare(macro);
       macroCacheRecord(n, e);
-      return h;
-    }, home);
+    }, { north: home.north, east: home.east, heading: AIRPORT.runway.heading });
     macroCacheEnd();
+    // The model's cells: handed over for this seed (macroCache.ts: another thread or the cache worked them out), or
+    // worked out here.
+    const key = modelKey(inputs);
+    const given = providedModel && providedModel.seed === worldSeed() && providedModel.key === key ? providedModel.lattice : null;
+    const t0 = performance.now();
+    const T = given ?? steadyLattice(inputs);
+    modelMs = given ? 0 : performance.now() - t0;
+    lastModel = { seed: worldSeed(), key, lattice: T };
+    if (modelOnly) return;
+    const eroded = buildErosion(inputs, T);
     erosion = eroded;
-    // The eroded cells the drainage routes over (erosion.ts), with the cushion above the sea and the era's volcano.
+    // The macro cells the drainage routes over (erosion.ts), with the cushion above the sea and the era's volcano.
     const lat = eroded.lattice;
     const V = era().terrain.volcano;
     for (let c = 0; c < lat.length; c++) {
-      lat[c] = applyCut(lat[c] - eroded.delta[c], eroded.delta[c]);
+      lat[c] = applyMacro(eroded.base[c], lat[c] - eroded.base[c]);
       if (!V) continue;
       const north = -DOMAIN_HALF + Math.floor(c / EROSION_N) * DRAIN_CELL;
       const east = -DOMAIN_HALF + (c % EROSION_N) * DRAIN_CELL;
@@ -664,8 +746,12 @@ function buildWater(): void {
     lakeSmooth = mask;
     lakeSeed = worldSeed();
     lakes = [];
-    presentHydro = buildNetworkHydrology(naturalHeight, drainage, mask, eroded.delta, naturalHeightSmooth);
+    presentHydro = buildNetworkHydrology(naturalHeight, drainage, mask, eroded.valley, naturalHeightSmooth);
     legacyHydro = presentHydro;
+    // The home field was sited on the noise ground and held during the model (erosion.ts HOME_KEEP): checked once more
+    // on the finished ground (the model may have raised the approach or the circuit).
+    homeRecheck = siteRunway(naturalHeight, AIRPORT.runway.heading);
+    if (!homeRecheck.ok) console.warn(`[terrain] seed ${worldSeed()}: the home runway fails its check on the macro ground`, homeRecheck);
     const tf = performance.now();
     fields = siteAirfields(naturalHeight, presentHydro, presentHydro.lakes);
     siteMs = performance.now() - tf;
@@ -673,6 +759,8 @@ function buildWater(): void {
     return;
   } else {
     erosion = null;
+    lastModel = null;
+    homeRecheck = null;
     seededDrainage = null;
     lakes = buildLakes(naturalHeight);
     presentHydro = buildHydrology(naturalHeight, lakes);

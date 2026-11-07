@@ -380,6 +380,31 @@ class Flood {
         heap.push(nb, filled[nb]);
       }
     }
+    // Steepest descent on the filled surface for the cells standing on it (a cell inside a filled hollow keeps the
+    // flood's receiver, toward the spill): the routing the macro model's ground was built with (erosion.ts
+    // SteadyRouter), so the rivers run down its valleys. A receiver stands strictly lower on the filled surface, so
+    // the flood order stays downstream first.
+    for (let c = 0; c < N; c++) {
+      if (receiver[c] < 0 || filled[c] > height[c]) continue;
+      const i = Math.floor(c / n);
+      const j = c % n;
+      let best = -1;
+      let bs = 0;
+      for (let k = 0; k < 8; k++) {
+        const ii = i + DI[k];
+        const jj = j + DJ[k];
+        if (ii < 0 || jj < 0 || ii >= n || jj >= n) continue;
+        const nb = ii * n + jj;
+        const d = filled[c] - filled[nb];
+        if (d <= 0) continue;
+        const s = DI[k] !== 0 && DJ[k] !== 0 ? d / Math.SQRT2 : d;
+        if (s > bs) {
+          bs = s;
+          best = nb;
+        }
+      }
+      if (best >= 0) receiver[c] = best;
+    }
     // Flow accumulation: upstream cells come later in flood order.
     area.fill((DRAIN_CELL * DRAIN_CELL) / 1e6);
     for (let k = N - 1; k >= 0; k--) {

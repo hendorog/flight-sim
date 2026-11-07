@@ -1,105 +1,126 @@
-// Fluvial erosion of a seeded world's macro terrain (any seed but 0), worked out at load on the drainage lattice
-// (drainage.ts: DRAIN_CELL over +-DOMAIN_HALF). Pure (no three.js): every thread runs it and gets the same answer.
+// The macro ground of a seeded world (any seed but 0): its rivers' valleys and the ridges between them as a landscape
+// in balance between uplift and river incision, worked out at load on the drainage lattice (drainage.ts: DRAIN_CELL
+// over +-DOMAIN_HALF). Pure (no three.js): every thread can run it and gets the same answer.
 //
-// The noise terrain has no history: its broad hollows are closed basins that no river would have left behind, and a
-// river routed across one has to run at the basin's spill level and trench through the ground beyond it. Real
-// fluvial country has very few closed hollows: the rivers that drain it have cut their valleys down through it.
-// This pass gives the noise terrain that history, with the stream-power law of bedrock incision
+// The noise terrain has no history: its broad hollows are closed basins that no river would have left behind, and its
+// slopes are the noise's. This pass replaces its relief on the lattice's scale with a steady state of the stream-power
+// law of bedrock incision under an uplift field,
 //
-//     dh/dt = -K A^m S        (A catchment area, S slope toward the receiver, n = 1)
+//     dh/dt = U - K A^m S        (A catchment area, S slope toward the receiver, n = 1),
 //
-// solved with the implicit O(n) scheme of Braun & Willett (2013, "FastScape"; Cordonnier et al. 2016): cells are
-// visited downstream first, so each one is lowered toward its receiver's NEW height,
+// solved by the steady-state iteration of Cordonnier et al. (2016): route the water (priority flood from the sea and
+// the domain's edge, then steepest descent on the filled surface, so a cell in a hollow drains toward its spill), set
+// every cell downstream first to its receiver's height plus the steady drop U L / (K A^m), and route again, ITERATIONS
+// times. Rivers capture their neighbours between iterations as the heights change. Started from the noise ground, so
+// the first routing (where the rivers run) is today's and the tree changes only by local captures (out/tree/PLAN.md:
+// over today's ranges the drainage-tree measures do not move). The drop is held between a gentlest graded gradient
+// (`grade`, falling as A^-0.45: Flint's law, a gravel river on the plains where the uplift is about nil) and a
+// threshold slope (`sc`, which touches only ridge cells at 1 km). The uplift rate comes from the generator's ranges
+// and hill country (heightfield.ts upliftRate). The surface drains to base level by construction: no closed hollows
+// are left on the lattice except where the home field is held (`hard`) or the era's volcano stands.
 //
-//     h_i <- (h_i + F h_r) / (1 + F),   F = K dt A^m / L,
-//
-// which is unconditionally stable. Water is routed over the filled surface (priority flood, as drainage.ts): inside
-// a closed hollow a cell lies below its receiver and is left alone (a sediment trap), while the hollow's spill point
-// carries the whole catchment of the hollow and cuts down fast - a big river keeps an antecedent gorge through
-// rising ground and drains the basin behind it; a small one leaves its hollow as a lake. Ridges and peaks have the
-// smallest catchments and keep their height. The pass only ever lowers the ground.
-//
-// The result (buildErosion) is drawn on a fine grid a quarter of the lattice's spacing: where the cut is deep the
-// ground becomes the eroded surface, with each channel's valley carved along its smoothed course, and where it is
-// shallow the natural ground is lowered by the cut; heightfield.ts applies it (erosionCut), C1 everywhere, so the
-// terrain has no facets or creases at the lattice lines and no beads along a channel that steps diagonally.
+// The result T is the macro ground. The terrain applies it as a signed change of the noise ground (heightfield.ts
+// applyMacro): the noise ground plus the B-spline of (T - noise lattice), which is T's B-spline plus the noise relief
+// finer than the lattice (the B-spline is linear), plus each channel's valley carved along its smoothed course on a
+// fine grid a quarter of the lattice's spacing. On a valley floor the finer relief and the gullies give way, so the
+// floor keeps falling. C1 everywhere, so the terrain has no facets or creases at the lattice lines and no beads along
+// a channel that steps diagonally. The change may raise the ground as well as lower it; nothing clamps it at 0.
 
 import { DOMAIN_HALF, DRAIN_CELL, HOME_MOUND, HOME_RADIUS, LAKE_HOME_CLEAR, RIVER_AREA } from './drainage';
 
-/** Settings of the erosion pass. */
-export interface ErosionParams {
-  /** Implicit steps, and routing refreshed every `reroute` steps. */
-  steps: number;
-  reroute: number;
-  /** K dt / L for a one-cell catchment (1 km^2) and an orthogonal step: the per-step erosion factor on a ridge. */
-  k: number;
+/** Settings of the steady-state model. */
+export interface SteadyParams {
+  /** Route-and-solve iterations (the receivers settle within 20-30). */
+  iterations: number;
+  /** Steady drop over 1 km of a one-cell (1 km²) catchment where the uplift rate is 1, m: U / K. */
+  ridge: number;
   /** Area exponent m of the stream-power law (n = 1). */
   m: number;
-  /**
-   * [1 2 1] blurs of the cut, applied once, `settle` steps before the end: the walls of the notches the streams cut
-   * fall back to valley slopes, and a channel that zigzags on the lattice leaves one smooth valley; the last steps
-   * re-cut the floors so they drain again.
-   */
-  blur: number;
-  settle: number;
-  /**
-   * Gentlest gradient a channel is cut to, m/m, at a one-cell catchment; it falls as A^-0.45 (Flint's law: the graded
-   * profile under steady uplift), so a big river keeps a few metres per kilometre instead of being cut to sea level
-   * far inland.
-   */
+  /** Steepest a lattice step may stand over its receiver, m/m (threshold hillslope at 1 km). */
+  sc: number;
+  /** Gentlest gradient of a one-cell catchment, m/m, falling as A^-0.45 (a graded river). */
   grade: number;
 }
 
-/** How far a river leaving the lattice's edge runs on to the sea, m, and the deepest it cuts the edge cell, m. */
-const EDGE_RUN = 40000;
-const EDGE_CUT = 250;
+/**
+ * Calibrated against today's eroded lattice (cea3349) on seeds 1, 42 and 777777 (scripts/probes/ssCalib.test.ts,
+ * out/f1/REPORT.md): mountain ground p50/p90 within -12/+6 %, hill country and plains within a few percent, 5 km relief
+ * within -15/+15 %, the relief classes' shares within 2 points; the highest peaks stand 0-600 m higher.
+ */
+export const STEADY: SteadyParams = { iterations: 30, ridge: 450, m: 0.45, sc: 0.45, grade: 0.06 };
+/** Bump when the model or its inputs change meaning: part of the cache key (macroCache.ts). */
+export const MODEL_VERSION = 'ss1';
+
 /** Catchment, cells, from which a diagonal step of a channel lowers the cells beside it. */
 const CORNER_AREA = 10;
-/** Lowest the pass takes the land, m. */
+/** Lowest the model takes the land, m (the sea's surface is the base level, not the shelf under it). */
 const LAND_MIN = 0.5;
 
 /**
- * Strong area dependence (m > 1/2) so the trunk rivers cut their valleys and drain the hollows they cross while the
- * ridges and peaks (one-cell catchments) lose only metres. On seeds 1, 42 and 777777 the land in hollows filled over
- * 30 m deep falls from 12-22 % to about 3 % (lattice), the top 1 % of the ground is lowered by about 10 m, the median
- * cell by 8 m; trunk valleys are cut a few hundred metres, the deepest gorges about 1 km. Four routings (the costly
- * part, about 120 ms in node; a fifth when a hollow by the home field is breached, drainByHome).
- */
-export const EROSION: ErosionParams = { steps: 20, reroute: 5, k: 0.0009, m: 1.2, blur: 2, settle: 5, grade: 0.03 };
-
-/**
- * The rock does not erode within this distance of the home field, m, and erodes fully beyond the second: its site is
- * chosen on the uneroded ground, and only its pad could suffer from a lowering (approach and circuit only gain
- * clearance).
+ * The model follows the noise ground within this distance of the home field, m, and runs fully beyond the second:
+ * its site is chosen on the noise ground (homeSiting.ts) and held during the run.
  */
 const HOME_KEEP = 1800;
 const HOME_FULL = 3000;
-/** No cut at all within the first of these distances of the home field, m, faded in by the second. */
+/** No change at all within the first of these distances of the home field, m, faded in by the second. */
 const PAD_KEEP = [1500, 2500];
-/** Beyond the lattice the correction carries on from its edge and fades out over this distance, m. */
+/**
+ * The home runway's protected surfaces (homeSiting.ts): the corridor along its axis out to CAP_ALONG either way,
+ * CAP_ACROSS either side, and the circuit's box, m; the model may lower the ground there but not raise it over the
+ * noise ground, fully within the first of CAP_FADE of them and not at all beyond the second.
+ */
+const CAP_ALONG = 10900;
+const CAP_ACROSS = 400;
+const CAP_BOX = [3500, 1800];
+const CAP_FADE = [1000, 2500];
+/** Beyond the lattice the change carries on from its edge and fades out over this distance, m. */
 const OUTSIDE_FADE = 15000;
 
-/** The erosion of a seeded world, as the terrain applies it (sampleErosion, erosionCutAt, erosionGullies). */
-export interface ErosionField {
+/** What the model runs on: the lattice samples of the noise ground and the uplift field (modelInputs). */
+export interface ModelInputs {
+  n: number;
+  /** The noise ground at the cells with the routing mound over the home field, m. */
+  h0: Float32Array;
+  mound: Float32Array;
+  /** Uplift rate per cell (1: the steady drop of `ridge` m per km on a one-cell catchment). */
+  u: Float32Array;
+  /** How much of the gentlest graded gradient (SteadyParams.grade) holds per cell, [0, 1]: less toward the coast,
+   * where the plains are built by the rivers' gravel (heightfield.ts gradeShare). */
+  g: Float32Array;
+  /** Base-level cells (1): the sea and the domain's edge. */
+  fixed: Uint8Array;
+  /** How far each cell follows the model, [0, 1]: 0 within HOME_KEEP of the home field. */
+  hard: Float32Array;
   /**
-   * The eroded surface T, m, on the fine grid (CUT_N x CUT_N points from (-DOMAIN_HALF, -DOMAIN_HALF), CUT_CELL
-   * apart): the eroded cells interpolated, with the channels carved along their smoothed courses.
+   * How far each cell is kept from rising over the noise ground, [0, 1]: 1 under the home runway's approach and
+   * climb-out corridors and its circuit (homeSiting.ts checked them on the noise ground), faded out over CAP_FADE.
    */
-  surface: Float32Array;
+  cap: Float32Array;
+  home: { north: number; east: number; heading: number };
+}
+
+/** The macro ground of a seeded world, as the terrain applies it (sampleErosion, macroOffset, erosionGullies). */
+export interface ErosionField {
+  /** The model's signed change of the noise ground per lattice cell, m (T - noise lattice), B-spline interpolated. */
+  delta: Float32Array;
+  /** The noise ground at the cells (no mound), m: the residual finer than the lattice is the ground less its B-spline. */
+  base: Float32Array;
+  /** The channels' valleys carved along their smoothed courses on the fine grid (CUT_N x CUT_N from (-DOMAIN_HALF,
+   * -DOMAIN_HALF), CUT_CELL apart), m (<= 0). */
+  carve: Float32Array;
+  /** Per lattice cell: whether any carve reaches the samples interpolated in it (a skip for the rest). */
+  carveAny: Uint8Array;
   /**
    * How far each point of the fine grid lies on a channel's valley floor, 0-255 (FLOOR_HALF either side of its
-   * course): the gullies give way there, where the eroded surface replaced the ground (erosionGullies).
+   * course): the finer relief and the gullies give way there (erosionGullies), so the floor keeps falling.
    */
   floor: Uint8Array;
-  /** The home field, where the cut is held at none over its pad (PAD_KEEP). */
+  /** The home field, where the change is held at none over its pad (PAD_KEEP). */
   home: { north: number; east: number };
-  /** The lattice's cut D per cell, m (<= 0): the ground's lowering where the cut is shallow, and by its depth how
-   * far the ground is replaced by T (erosionWeight). */
-  lowered: Float32Array;
-  /** The erosion's change per drainage lattice cell, m (<= 0; drainage.ts lattice: n x n from (origin, origin), DRAIN_CELL apart). */
-  delta: Float32Array;
-  /** The eroded cells (the natural coarse terrain plus the change): what the drainage routes over. */
+  /** The macro cells T (the noise lattice plus the change): what the drainage routes over. */
   lattice: Float32Array;
+  /** How far each cell lies below the ground about it on T, m (>= 0): a river's own valley (riverNetwork.ts). */
+  valley: Float32Array;
 }
 
 /** Spacing of the fine grid the valleys are drawn on, m: a quarter of the lattice's. */
@@ -109,13 +130,6 @@ const LATTICE_N = Math.round((2 * DOMAIN_HALF) / DRAIN_CELL) + 1;
 /** Points per side of the fine grid. */
 export const CUT_N = (LATTICE_N - 1) * FINE + 1;
 
-/**
- * Depth of the lattice's cut, m, over which the ground goes from lowered by it (the natural relief kept) to replaced
- * by the eroded surface (the relief finer than the lattice gone with the rock the river took away).
- */
-const REPLACE = [15, 60];
-/** Distance inside the lattice's edge, m, over which the replacement comes in. */
-const EDGE_KEEP = [1000, 4000];
 /**
  * Channels drawn along their smoothed course: the catchment (cells) from which a channel is drawn, reaching full
  * strength at twice it, the samples per channel piece, the smoothing passes of the course, and the half-width of the
@@ -127,66 +141,153 @@ const COURSE_PASSES = 3;
 const CARVE_HALF = 650;
 const CARVE_HALF_MAX = 1600;
 const VALLEY_SLOPE = 0.12;
-/** Half-width of a channel's valley floor, m, where the gullies give way (erosionGullies). */
+/** Distance inside the fine grid's edge, m, over which the carve and the floor come in. */
+const EDGE_KEEP = [1000, 3000];
+/** Half-width of a channel's valley floor, m, where the finer relief and the gullies give way (erosionGullies). */
 const FLOOR_HALF = 450;
+/** Half-width of the window, cells, whose mean ground a cell's valley depth is measured from (valley): on river cells
+ * its distribution matches the old erosion's cut there (p50 45-55 m), which riverNetwork.ts PIN_CUT was tuned on. */
+const VALLEY_R = 1;
 
 /**
- * Sample the coarse natural terrain `natural` on the drainage lattice, erode it, and draw the result on the fine grid,
- * faded out near the home field (`home`, its site chosen on the uneroded ground).
- *
- * The lattice holds one height per square kilometre, and the coarse terrain has relief on shorter wavelengths (down
- * to about 600 m in the mountains). Lowering the natural ground by the cells' cut, interpolated between them, carries
- * that relief down to the floor of a valley cut hundreds of metres deep, as a chain of pits and saddles tens of metres
- * high; and where a channel steps diagonally from cell to cell, the ground between two of them is the less cut ground
- * beside the channel, so the valley is beaded 1.4 km apart. So where the cut is deep (REPLACE) the ground is replaced
- * by the eroded surface itself (T: the eroded cells interpolated by the cubic B-spline, which unlike Catmull-Rom does
- * not ring into pits beside a steep valley wall), and each channel is followed as a smooth curve (its cells smoothed
- * along it as the rivers' courses are, then a quadratic B-spline) with its floor falling along it as the eroded cells
- * do: wherever T stands above that floor, it is carved down to it with a smooth valley cross-profile, and on the floor
- * the gullies give way (floor). Where the cut is shallow the natural ground is lowered by it (D), keeping its relief.
+ * Sample the model's inputs on the drainage lattice: `sample` writes the noise ground (`h`, m) and the uplift rate
+ * (`u`) at a point. The home field (`home`, its site chosen on the noise ground) gets the routing mound (drainage.ts)
+ * and is held (`hard`).
  */
-export function buildErosion(natural: (north: number, east: number) => number, home: { north: number; east: number }, p: ErosionParams = EROSION): ErosionField {
+export function modelInputs(sample: (north: number, east: number, out: { h: number; u: number; g: number }) => void, home: { north: number; east: number; heading: number }): ModelInputs {
   const n = LATTICE_N;
   const origin = -DOMAIN_HALF;
-  // Routed as the drainage routes (drainage.ts): a low mound over the home field keeps the rivers off it.
-  const h0 = new Float32Array(n * n);
-  const mound = new Float32Array(n * n);
+  const N = n * n;
+  const h0 = new Float32Array(N);
+  const mound = new Float32Array(N);
+  const u = new Float32Array(N);
+  const g = new Float32Array(N);
+  const fixed = new Uint8Array(N);
+  const hard = new Float32Array(N);
+  const cap = new Float32Array(N);
+  const ch = Math.cos(home.heading);
+  const sh = Math.sin(home.heading);
+  const s = { h: 0, u: 0, g: 1 };
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
       const north = origin + i * DRAIN_CELL;
       const east = origin + j * DRAIN_CELL;
+      const c = i * n + j;
+      sample(north, east, s);
       const r = Math.hypot(north - home.north, east - home.east);
-      if (r < HOME_RADIUS) mound[i * n + j] = HOME_MOUND * (1 - r / HOME_RADIUS);
-      h0[i * n + j] = natural(north, east) + mound[i * n + j];
+      if (r < HOME_RADIUS) mound[c] = HOME_MOUND * (1 - r / HOME_RADIUS);
+      h0[c] = s.h + mound[c];
+      u[c] = Math.max(0, s.u);
+      g[c] = Math.min(1, Math.max(0, s.g));
+      fixed[c] = s.h <= 0 || i === 0 || j === 0 || i === n - 1 || j === n - 1 ? 1 : 0;
+      hard[c] = smoothstep(HOME_KEEP, HOME_FULL, r);
+      // (homeSiting.ts: north = c along - s across, east = s along + c across.)
+      const dn = north - home.north;
+      const de = east - home.east;
+      const along = Math.abs(ch * dn + sh * de);
+      const across = Math.abs(-sh * dn + ch * de);
+      const corridor = Math.hypot(Math.max(0, along - CAP_ALONG), Math.max(0, across - CAP_ACROSS));
+      const box = Math.hypot(Math.max(0, along - CAP_BOX[0]), Math.max(0, across - CAP_BOX[1]));
+      cap[c] = 1 - smoothstep(CAP_FADE[0], CAP_FADE[1], Math.min(corridor, box));
     }
   }
-  // The rock gets harder near the home field (none of it erodes within HOME_KEEP): a river that cannot cut through
-  // there finds its way round or leaves a lake, and the drainage routes over just what the erosion left (fading the
-  // cut after the erosion would raise ridges back across the valleys it cut).
-  const fadeAt = (north: number, east: number): number => smoothstep(HOME_KEEP, HOME_FULL, Math.hypot(north - home.north, east - home.east));
-  const hard = new Float32Array(n * n);
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      hard[i * n + j] = fadeAt(origin + i * DRAIN_CELL, origin + j * DRAIN_CELL);
-    }
-  }
+  return { n, h0, mound, u, g, fixed, hard, cap, home: { north: home.north, east: home.east, heading: home.heading } };
+}
+
+/** A key for the model's result: the inputs and the settings, hashed (FNV-1a over their bytes), with MODEL_VERSION. */
+export function modelKey(inp: ModelInputs, p: SteadyParams = STEADY): string {
+  let h = 0x811c9dc5;
+  const mixIn = (a: ArrayBufferView): void => {
+    const b = new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
+    for (let k = 0; k < b.length; k++) h = Math.imul(h ^ b[k], 0x01000193);
+  };
+  mixIn(inp.h0);
+  mixIn(inp.u);
+  mixIn(inp.g);
+  mixIn(inp.fixed);
+  mixIn(inp.hard);
+  mixIn(inp.cap);
+  mixIn(new Float64Array([p.iterations, p.ridge, p.m, p.sc, p.grade, inp.home.north, inp.home.east, inp.home.heading]));
+  return `${MODEL_VERSION}-${(h >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+/**
+ * The steady-state macro cells T (with the routing mound, as `h0`), m: the costly part, the same in every thread (a
+ * cache can hand it over: macroCache.ts). Fixed cells keep their height; a held cell (`hard` < 1) keeps that share
+ * of its noise height; under the home runway's corridors (`cap`) a cell rises no higher than its noise height.
+ */
+export function steadyLattice(inp: ModelInputs, p: SteadyParams = STEADY): Float32Array {
+  const { n, h0, u, g, fixed, hard, cap } = inp;
   const h = h0.slice();
-  const { receiver, area, route } = erodeLattice(h, n, p, hard);
-  // No lake may lie by the home field (drainage.ts LAKE_HOME_CLEAR): a river's hollow there would be breached by the
-  // drainage, its river cut down through ground the erosion left standing. Its valley is cut here instead, and the
-  // channels routed again down it.
-  if (drainByHome(h, n, home, hard, area)) route();
-  // The lattice's cut; the edge cells take their inner neighbours' change, so the interpolation leaves the lattice
-  // level (C1).
+  const R = new SteadyRouter(n);
+  const L = DRAIN_CELL;
+  const per = L / 1000;
+  for (let s = 0; s < p.iterations; s++) {
+    R.route(h, fixed);
+    const { receiver, order, area, diag } = R;
+    for (let k = 0; k < order.length; k++) {
+      const c = order[k];
+      const r = receiver[c];
+      if (r < 0 || fixed[c]) continue;
+      const a = area[c];
+      const dist = diag[c] ? Math.SQRT2 : 1;
+      const rise = Math.max(p.ridge * per * u[c] * Math.pow(a, -p.m), p.grade * g[c] * L * Math.pow(a, -0.45)) * dist;
+      let hs = Math.max(h[r], LAND_MIN) + Math.min(rise, p.sc * L * dist);
+      // Under the home runway's protected surfaces the ground may fall but not rise.
+      if (cap[c] > 0 && hs > h0[c]) hs -= cap[c] * (hs - h0[c]);
+      const k0 = hard[c];
+      h[c] = k0 >= 1 ? hs : h0[c] + k0 * (hs - h0[c]);
+    }
+  }
+  return h;
+}
+
+/**
+ * The terrain's field from the model's cells `T` (steadyLattice, or the same handed over by a cache): the change,
+ * the channels' valleys carved on the fine grid along their smoothed courses, their floors, and each cell's valley
+ * depth, faded out near the home field.
+ */
+export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
+  const n = inp.n;
+  const origin = -DOMAIN_HALF;
+  const { h0, mound, fixed, hard, home } = inp;
+  const fadeAt = (north: number, east: number): number => smoothstep(HOME_KEEP, HOME_FULL, Math.hypot(north - home.north, east - home.east));
+  const h = T.slice();
+  const R = new SteadyRouter(n);
+  R.route(h, fixed);
+  // No lake may lie by the home field (drainage.ts LAKE_HOME_CLEAR): a river's hollow there (the held field standing
+  // under the model's ground about it) would be breached by the drainage, its river cut down through ground the model
+  // left standing. Its valley is cut here instead, and the channels routed again down it.
+  if (drainByHome(h, n, home, hard, R.area)) R.route(h, fixed);
+  const { receiver, area, order, diag } = R;
+  // A channel that steps diagonally between two cells would leave a saddle between them in the interpolated
+  // terrain (the two cells beside the step are still high): bring those down to the mean of the step's two ends,
+  // so the valley floor runs on down the diagonal.
+  for (let k = 0; k < order.length; k++) {
+    const c = order[k];
+    const r = receiver[c];
+    if (r < 0 || !diag[c] || area[c] < CORNER_AREA) continue;
+    const mid = 0.5 * (h[c] + Math.max(h[r], LAND_MIN));
+    const ic = (c / n) | 0;
+    const ir = (r / n) | 0;
+    const a = ir * n + (c - ic * n);
+    const b = ic * n + (r - ir * n);
+    if (!fixed[a] && h[a] > mid) h[a] -= (h[a] - mid) * hard[a];
+    if (!fixed[b] && h[b] > mid) h[b] -= (h[b] - mid) * hard[b];
+  }
+  // The macro cells (what the drainage routes and the valleys are carved from), and the signed change as the terrain
+  // interpolates it: there the edge cells take their inner neighbours' change, so the interpolation leaves the lattice
+  // level (C1). (Not in the cells the drainage routes: an edge cell raised or lowered so would leave a false rim or
+  // hollow beside the domain's edge, and the drainage would breach a gorge through the ground the model built.)
   const change = new Float32Array(n * n);
+  const base = new Float32Array(n * n);
+  const eroded = new Float32Array(n * n);
   for (let c = 0; c < n * n; c++) {
-    change[c] = Math.min(0, h[c] - h0[c]);
-    h0[c] -= mound[c];
+    change[c] = h[c] - h0[c];
+    base[c] = h0[c] - mound[c];
+    eroded[c] = base[c] + change[c];
   }
   copyEdges(change, n);
-  // The eroded surface at the cells.
-  const eroded = new Float32Array(n * n);
-  for (let c = 0; c < n * n; c++) eroded[c] = h0[c] + change[c];
   const N = CUT_N;
   const surface = upsample(eroded, n);
   const carve = new Float32Array(N * N);
@@ -287,155 +388,321 @@ export function buildErosion(natural: (north: number, east: number) => number, h
     }
     if (donors === 0) carvePiece(c, c, r, strength);
   }
-  // The carve, faded out near home as the cut is; the edge points take their inner neighbours' value.
+  // The carve, faded out near home as the change is, and with the floor faded out toward the fine grid's edge (none
+  // within EDGE_KEEP[0] of it: the samples there read neither, so the ground stays continuous across it).
   for (let y = 0; y < N; y++) {
     const north = origin + y * CUT_CELL;
     for (let x = 0; x < N; x++) {
       const q = y * N + x;
-      if (carve[q] < 0) surface[q] += carve[q] * fadeAt(north, origin + x * CUT_CELL);
+      const edge = smoothstep(EDGE_KEEP[0], EDGE_KEEP[1], CUT_CELL * Math.min(x, y, N - 1 - x, N - 1 - y));
+      if (carve[q] < 0) carve[q] *= fadeAt(north, origin + x * CUT_CELL) * edge;
+      if (floorMask[q] > 0) floorMask[q] = Math.round(floorMask[q] * edge);
     }
   }
-  copyEdges(surface, N);
-  const field = { surface, floor: floorMask, lowered: change, home: { north: home.north, east: home.east } };
-  // The drainage routes over the eroded cells themselves (drained by the erosion, its channels running down them),
-  // not over the terrain sampled at the cells: a valley drawn along its smoothed course lies between the cells it
-  // steps through, and the cells beside it would leave hollows on the lattice that are not in the terrain.
-  return { ...field, delta: change, lattice: eroded };
+  // The lattice cells whose interpolation (4 x 4 fine points about each of the cell's own) touches any carve.
+  const carveAny = new Uint8Array(n * n);
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      if (carve[y * N + x] === 0) continue;
+      const i0 = Math.max(0, Math.floor((y - 2) / FINE));
+      const i1 = Math.min(n - 1, Math.floor((y + 1) / FINE));
+      const j0 = Math.max(0, Math.floor((x - 2) / FINE));
+      const j1 = Math.min(n - 1, Math.floor((x + 1) / FINE));
+      for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) carveAny[i * n + j] = 1;
+    }
+  }
+  return { delta: change, base, carve, carveAny, floor: floorMask, home: { north: home.north, east: home.east }, lattice: eroded, valley: valleyDepth(eroded, n, fixed) };
 }
 
-/**
- * The erosion's cut, m (<= 0), at (north, east) where the natural ground without its gullies and small relief stands
- * at `coarse`: the eroded surface where the cut is deep, the natural ground lowered by it where it is shallow. C1
- * (but where it would raise the ground: it never does).
- */
-export function erosionCut(f: Pick<ErosionField, 'surface' | 'lowered' | 'home'>, north: number, east: number, coarse: number): number {
-  sampleErosion(f, north, east, scratch);
-  return erosionCutAt(scratch, coarse);
+/** How far each cell lies below the mean of the macro cells within VALLEY_R of it (land only), m (>= 0). */
+function valleyDepth(t: Float32Array, n: number, fixed: Uint8Array): Float32Array {
+  const out = new Float32Array(n * n);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const c = i * n + j;
+      if (fixed[c]) continue;
+      let s = 0;
+      let k = 0;
+      for (let ii = Math.max(0, i - VALLEY_R); ii <= Math.min(n - 1, i + VALLEY_R); ii++) {
+        for (let jj = Math.max(0, j - VALLEY_R); jj <= Math.min(n - 1, j + VALLEY_R); jj++) {
+          s += Math.max(t[ii * n + jj], 0);
+          k++;
+        }
+      }
+      out[c] = Math.max(0, s / k - t[c]);
+    }
+  }
+  return out;
 }
 
-/** The erosion at a point (sampleErosion), for erosionGullies and erosionCutAt. */
+/** The model at a point (sampleErosion), for macroOffset and erosionGullies. */
 export interface ErosionSample {
-  /** The lattice's cut, interpolated, m. */
+  /** The lattice's change, interpolated (B-spline), m. */
   d: number;
-  /** The weight of the eroded surface (erosionWeight). */
+  /** The carve on the fine grid, m (<= 0 but for the interpolation's ringing). */
+  c: number;
+  /** How far the point lies on a valley floor, [0, 1]. */
+  f: number;
+  /** How far the relief finer than the lattice gives way, [0, 1]: on a valley floor and in the model's valleys. */
   w: number;
-  /** The eroded surface, m (when w > 0). */
-  t: number;
-  /** How much of the cut is kept: none over the home field's pad. */
+  /** The noise lattice's B-spline (where w > 0), m. */
+  r: number;
+  /** How much of the change is kept: none over the home field's pad. */
   keep: number;
   north: number;
   east: number;
 }
-const scratch: ErosionSample = { d: 0, w: 0, t: 0, keep: 1, north: 0, east: 0 };
 
-/** The erosion at (north, east), into `out`. */
-export function sampleErosion(f: Pick<ErosionField, 'surface' | 'lowered' | 'home'>, north: number, east: number, out: ErosionSample): void {
-  out.north = north;
-  out.east = east;
-  out.d = bicubic(f.lowered, LATTICE_N, -DOMAIN_HALF, DRAIN_CELL, north, east, true);
-  out.w = erosionWeight(out.d, north, east);
-  out.t = out.w > 0 ? bicubic(f.surface, CUT_N, -DOMAIN_HALF, CUT_CELL, north, east) : 0;
-  // The interpolation reaches a cell or two in from the faded cells about the home field: none over its pad.
-  const hn = north - f.home.north;
-  const he = east - f.home.east;
-  const r2 = hn * hn + he * he;
-  out.keep = r2 < PAD_KEEP[1] * PAD_KEEP[1] ? smoothstep(PAD_KEEP[0], PAD_KEEP[1], Math.sqrt(r2)) : 1;
+const DOMAIN_LO = -DOMAIN_HALF;
+
+/**
+ * The relief finer than the lattice gives way in the model's valleys as well as on the channels' floors: from none
+ * where the valley depth (`valley`, B-spline) is the first of these, m, to all of it at the second. It is the noise's
+ * own, not laid out along the model's valleys, and left in them it closes them into hollows (the seed 42 mountain box:
+ * 43 dry closed basins over 50 m deep with it, 1 without; the ridges and slopes keep it, so slope and relief over 1 km
+ * stay as they were). Probes: setResidualFade.
+ */
+let RESIDUAL_FADE = [20, 100];
+export function setResidualFade(fade: number[]): void {
+  RESIDUAL_FADE = fade;
+}
+/** smoothstep over RESIDUAL_FADE and its derivative (into fadeD). */
+let fadeD = 0;
+function residualFade(x: number): number {
+  const a = RESIDUAL_FADE[0];
+  const b = RESIDUAL_FADE[1];
+  const t = (x - a) / (b - a);
+  if (t <= 0 || t >= 1) {
+    fadeD = 0;
+    return t <= 0 ? 0 : 1;
+  }
+  fadeD = (6 * t * (1 - t)) / (b - a);
+  return t * t * (3 - 2 * t);
 }
 
-/** The gradient of the erosion at a point (sampleErosionGrad): of the lattice's cut and of the eroded surface, per m. */
+/** The model at (north, east), into `out`. */
+export function sampleErosion(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'home' | 'valley'>, north: number, east: number, out: ErosionSample): void {
+  out.north = north;
+  out.east = east;
+  out.d = bicubic(f.delta, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true);
+  const fy = (north - DOMAIN_LO) / CUT_CELL;
+  const fx = (east - DOMAIN_LO) / CUT_CELL;
+  const inside = fy >= 1 && fx >= 1 && fy < CUT_N - 2 && fx < CUT_N - 2;
+  out.c = inside && f.carveAny[cellAt(north, east)] ? catmullRom(f.carve, CUT_N, fy, fx) : 0;
+  out.f = inside ? Math.min(1, Math.max(0, catmullRomU8(f.floor, CUT_N, fy, fx) / 255)) : 0;
+  const g = residualFade(bicubic(f.valley, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true));
+  out.w = 1 - (1 - out.f) * (1 - g);
+  out.r = out.w > 0 ? bicubic(f.base, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true) : 0;
+  out.keep = padKeep(f.home, north, east);
+}
+
+/** The lattice cell (n x n) holding (north, east), clamped. */
+function cellAt(north: number, east: number): number {
+  const i = Math.min(LATTICE_N - 1, Math.max(0, Math.floor((north - DOMAIN_LO) / DRAIN_CELL)));
+  const j = Math.min(LATTICE_N - 1, Math.max(0, Math.floor((east - DOMAIN_LO) / DRAIN_CELL)));
+  return i * LATTICE_N + j;
+}
+
+/** The share of the change kept at a point: none over the home field's pad (the interpolation reaches a cell or two
+ * in from the held cells about it). */
+function padKeep(home: { north: number; east: number }, north: number, east: number): number {
+  const hn = north - home.north;
+  const he = east - home.east;
+  const r2 = hn * hn + he * he;
+  return r2 < PAD_KEEP[1] * PAD_KEEP[1] ? smoothstep(PAD_KEEP[0], PAD_KEEP[1], Math.sqrt(r2)) : 1;
+}
+
+/** The gradients of the model's fields at a point (sampleErosionGrad), per m. */
 export interface ErosionGrad {
   dN: number;
   dE: number;
-  tN: number;
-  tE: number;
+  cN: number;
+  cE: number;
+  fN: number;
+  fE: number;
+  /** Of the fade w. */
+  wN: number;
+  wE: number;
+  rN: number;
+  rE: number;
 }
 const cubic = { v: 0, gy: 0, gx: 0 };
 
 /**
- * sampleErosion with the gradients of its interpolated fields (`g`, per m), for the slope of the eroded ground
- * (erosionCutGrad). Off the lattice (where the fields fade out) the gradients are taken as 0.
+ * sampleErosion with the gradients of its interpolated fields (`g`, per m), for the slope of the macro ground
+ * (macroOffsetGrad). Values as sampleErosion's; gradients the B-spline's (Catmull-Rom's gradient is only C0, and the
+ * gullies turned and held by it crease the ground along every grid line). Off the grids the gradients are taken as 0.
  */
-export function sampleErosionGrad(f: Pick<ErosionField, 'surface' | 'lowered' | 'home'>, north: number, east: number, out: ErosionSample, g: ErosionGrad): void {
+export function sampleErosionGrad(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'home' | 'valley'>, north: number, east: number, out: ErosionSample, g: ErosionGrad): void {
   out.north = north;
   out.east = east;
-  const fy = (north + DOMAIN_HALF) / DRAIN_CELL;
-  const fx = (east + DOMAIN_HALF) / DRAIN_CELL;
-  const inside = fy >= 1 && fx >= 1 && fy < LATTICE_N - 2 && fx < LATTICE_N - 2;
+  const ly = (north - DOMAIN_LO) / DRAIN_CELL;
+  const lx = (east - DOMAIN_LO) / DRAIN_CELL;
+  const inLattice = ly >= 1 && lx >= 1 && ly < LATTICE_N - 2 && lx < LATTICE_N - 2;
+  latticeGrad(f.delta, inLattice, ly, lx, north, east);
+  out.d = cubic.v;
+  g.dN = cubic.gy;
+  g.dE = cubic.gx;
+  const fy = (north - DOMAIN_LO) / CUT_CELL;
+  const fx = (east - DOMAIN_LO) / CUT_CELL;
+  const inside = fy >= 1 && fx >= 1 && fy < CUT_N - 2 && fx < CUT_N - 2;
+  out.c = 0;
+  g.cN = g.cE = 0;
+  if (inside && f.carveAny[cellAt(north, east)]) {
+    out.c = catmullRom(f.carve, CUT_N, fy, fx);
+    cubicGrad(f.carve, CUT_N, fy, fx, true);
+    g.cN = cubic.gy / CUT_CELL;
+    g.cE = cubic.gx / CUT_CELL;
+  }
+  out.f = 0;
+  g.fN = g.fE = 0;
   if (inside) {
-    cubicGrad(f.lowered, LATTICE_N, fy, fx, true);
-    out.d = cubic.v;
-    g.dN = cubic.gy / DRAIN_CELL;
-    g.dE = cubic.gx / DRAIN_CELL;
-  } else {
-    out.d = bicubic(f.lowered, LATTICE_N, -DOMAIN_HALF, DRAIN_CELL, north, east, true);
-    g.dN = g.dE = 0;
-  }
-  out.w = erosionWeight(out.d, north, east);
-  g.tN = g.tE = 0;
-  if (out.w > 0) {
-    if (inside) {
-      // (The value Catmull-Rom, as sampleErosion's; the gradient the B-spline's: Catmull-Rom's gradient is only C0, and
-      // the gullies turned and held by it (heightfield.ts) creased the ground along every lattice line, 250 m apart.)
-      const fy2 = (north + DOMAIN_HALF) / CUT_CELL;
-      const fx2 = (east + DOMAIN_HALF) / CUT_CELL;
-      cubicGrad(f.surface, CUT_N, fy2, fx2, true);
-      g.tN = cubic.gy / CUT_CELL;
-      g.tE = cubic.gx / CUT_CELL;
-      out.t = catmullRom(f.surface, CUT_N, fy2, fx2);
-    } else out.t = bicubic(f.surface, CUT_N, -DOMAIN_HALF, CUT_CELL, north, east);
-  } else out.t = 0;
-  const hn = north - f.home.north;
-  const he = east - f.home.east;
-  const r2 = hn * hn + he * he;
-  out.keep = r2 < PAD_KEEP[1] * PAD_KEEP[1] ? smoothstep(PAD_KEEP[0], PAD_KEEP[1], Math.sqrt(r2)) : 1;
-}
-
-/**
- * The gradient (per m, into `out`: dx east, dy north) of the cut at the point sampleErosionGrad sampled, where the
- * ground without its gullies stands at `coarse` with gradient (cE, cN). The home pad's fade and the lattice's edge
- * fade are taken as constant (their gradients are left out).
- */
-export function erosionCutGrad(s: ErosionSample, g: ErosionGrad, coarse: number, cE: number, cN: number, out: { dx: number; dy: number }): void {
-  let gE = g.dE;
-  let gN = g.dN;
-  // (Where the eroded surface's cut comes up to nothing, erosionCutAt rounds it off to 0 over CUT_ROUND m: the
-  // derivative of that rounding.)
-  let fade = 1;
-  if (s.w > 0) {
-    const cut = s.w * (s.t - coarse) + (1 - s.w) * s.d;
-    if (cut >= CUT_ROUND) {
-      out.dx = out.dy = 0;
-      return;
+    const fl = catmullRomU8(f.floor, CUT_N, fy, fx) / 255;
+    if (fl > 0) {
+      out.f = Math.min(1, fl);
+      if (fl < 1) {
+        cubicGradU8(f.floor, CUT_N, fy, fx);
+        g.fN = cubic.gy / (255 * CUT_CELL);
+        g.fE = cubic.gx / (255 * CUT_CELL);
+      }
     }
-    if (cut > -CUT_ROUND) fade = (CUT_ROUND - cut) / (2 * CUT_ROUND);
-    // w = smoothstep(REPLACE, -d) times the edge fade: dw/dd from the first.
-    const depth = -s.d;
-    const u = (depth - REPLACE[0]) / (REPLACE[1] - REPLACE[0]);
-    const edge = u > 0 && u < 1 ? s.w / (u * u * (3 - 2 * u)) : 0;
-    const dwdd = u > 0 && u < 1 ? (-6 * u * (1 - u) * edge) / (REPLACE[1] - REPLACE[0]) : 0;
-    const k = s.t - coarse - s.d;
-    gE = dwdd * g.dE * k + s.w * (g.tE - cE) + (1 - s.w) * g.dE;
-    gN = dwdd * g.dN * k + s.w * (g.tN - cN) + (1 - s.w) * g.dN;
   }
-  out.dx = gE * s.keep * fade;
-  out.dy = gN * s.keep * fade;
-}
-/**
- * Where the eroded surface's cut comes up to nothing (the surface stands over the natural ground) it is 0, rounded off
- * over this much either side (C1: a kink there would crease the ground and turn the gullies oriented by it), m. The
- * rounding lowers the ground by at most a quarter of it.
- */
-const CUT_ROUND = 5;
-/** min(0, x) rounded off over |x| < CUT_ROUND (never above it). */
-function roundMin0(x: number): number {
-  if (x <= -CUT_ROUND) return x;
-  if (x >= CUT_ROUND) return 0;
-  const u = CUT_ROUND - x;
-  return -(u * u) / (4 * CUT_ROUND);
+  // The fade of the finer relief: the floor's and the valley's (gv, with its gradient).
+  let gv = 0;
+  let gvN = 0;
+  let gvE = 0;
+  latticeGrad(f.valley, inLattice, ly, lx, north, east);
+  gv = residualFade(cubic.v);
+  gvN = fadeD * cubic.gy;
+  gvE = fadeD * cubic.gx;
+  out.w = 1 - (1 - out.f) * (1 - gv);
+  g.wN = (1 - gv) * g.fN + (1 - out.f) * gvN;
+  g.wE = (1 - gv) * g.fE + (1 - out.f) * gvE;
+  out.r = 0;
+  g.rN = g.rE = 0;
+  if (out.w > 0) {
+    latticeGrad(f.base, inLattice, ly, lx, north, east);
+    out.r = cubic.v;
+    g.rN = cubic.gy;
+    g.rE = cubic.gx;
+  }
+  out.keep = padKeep(f.home, north, east);
 }
 
-/** Value and gradient (cell units, into `cubic`) of the bicubic interpolation of `v` at (fy, fx) cells, inside the
- * lattice: the uniform B-spline (`approx`) or Catmull-Rom. */
+/**
+ * A lattice field's B-spline value and gradient (per m, into `cubic`) at (north, east), `inLattice` at (ly, lx) cells:
+ * by the spline's own gradient inside, and by central differences of bicubic about the domain's edge and beyond it
+ * (where the field carries on from its edge and fades out), so the gradient stays continuous there too.
+ */
+function latticeGrad(v: Float32Array, inLattice: boolean, ly: number, lx: number, north: number, east: number): void {
+  if (inLattice) {
+    cubicGrad(v, LATTICE_N, ly, lx, true);
+    cubic.gy /= DRAIN_CELL;
+    cubic.gx /= DRAIN_CELL;
+    return;
+  }
+  const e = 5;
+  const v0 = bicubic(v, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true);
+  const gy = (bicubic(v, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north + e, east, true) - bicubic(v, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north - e, east, true)) / (2 * e);
+  const gx = (bicubic(v, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east + e, true) - bicubic(v, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east - e, true)) / (2 * e);
+  cubic.v = v0;
+  cubic.gy = gy;
+  cubic.gx = gx;
+}
+
+/**
+ * The macro ground's offset from the noise ground at the sampled point (sampleErosion), m, signed, where the ground
+ * without its gullies and small relief stands at `coarse`: the lattice's change, the channel's carve, and on a valley
+ * floor the relief finer than the lattice taken away (the ground there is T's own).
+ */
+export function macroOffset(s: ErosionSample, coarse: number): number {
+  return s.keep * coastKeep(coarse) * (s.d + s.c - s.w * (coarse - s.r));
+}
+
+/**
+ * The share of the model's offset kept where the noise ground stands at `coarse`, m: none out to sea and all of it
+ * from COAST_KEEP[1] up, so the shore stays where the noise ground put it (the model's sea cells keep their depth, but
+ * the interpolation would carry the raised land next to them out over the shallows). Its derivative into coastD.
+ */
+function coastKeep(coarse: number): number {
+  const t = (coarse - COAST_KEEP[0]) / (COAST_KEEP[1] - COAST_KEEP[0]);
+  if (t <= 0 || t >= 1) {
+    coastD = 0;
+    return t <= 0 ? 0 : 1;
+  }
+  coastD = (6 * t * (1 - t)) / (COAST_KEEP[1] - COAST_KEEP[0]);
+  return t * t * (3 - 2 * t);
+}
+let coastD = 0;
+const COAST_KEEP = [-3, 1];
+
+/**
+ * The gradient (per m, into `out`: dx east, dy north) of macroOffset at the point sampleErosionGrad sampled, where the
+ * ground without its gullies stands at `coarse` with gradient (cE, cN). The home pad's fade is taken as constant.
+ */
+export function macroOffsetGrad(s: ErosionSample, g: ErosionGrad, coarse: number, cE: number, cN: number, out: { dx: number; dy: number }): void {
+  const res = coarse - s.r;
+  const k = coastKeep(coarse);
+  const off = s.d + s.c - s.w * res;
+  out.dx = s.keep * (k * (g.dE + g.cE - g.wE * res - s.w * (cE - g.rE)) + coastD * cE * off);
+  out.dy = s.keep * (k * (g.dN + g.cN - g.wN * res - s.w * (cN - g.rN)) + coastD * cN * off);
+}
+
+/**
+ * How much of the gullies stay at the sampled point (sampleErosion), [0, 1]: they give way on a channel's valley
+ * floor (the river's bed and the ground it wanders over are its own, not the hillside's).
+ */
+export function erosionGullies(s: ErosionSample): number {
+  return 1 - s.f * s.keep;
+}
+
+/** Value and gradient (cell units, into `cubic`) of the uniform cubic B-spline of a Uint8Array grid at (fy, fx), inside it. */
+function cubicGradU8(v: Uint8Array, n: number, fy: number, fx: number): void {
+  const i = Math.min(n - 2, Math.floor(fy));
+  const j = Math.min(n - 2, Math.floor(fx));
+  const tx = fx - j;
+  const ty = fy - i;
+  const ux = 1 - tx;
+  const ax = (ux * ux * ux) / 6;
+  const bx = (3 * tx * tx * tx - 6 * tx * tx + 4) / 6;
+  const dx = (tx * tx * tx) / 6;
+  const cx = 1 - ax - bx - dx;
+  const ax1 = -0.5 * ux * ux;
+  const bx1 = 0.5 * (3 * tx * tx - 4 * tx);
+  const dx1 = 0.5 * tx * tx;
+  const cx1 = -ax1 - bx1 - dx1;
+  const uy = 1 - ty;
+  const ay = (uy * uy * uy) / 6;
+  const by = (3 * ty * ty * ty - 6 * ty * ty + 4) / 6;
+  const dy = (ty * ty * ty) / 6;
+  const cy = 1 - ay - by - dy;
+  const ay1 = -0.5 * uy * uy;
+  const by1 = 0.5 * (3 * ty * ty - 4 * ty);
+  const dy1 = 0.5 * ty * ty;
+  const cy1 = -ay1 - by1 - dy1;
+  const j0 = Math.max(0, j - 1);
+  const j2 = Math.min(n - 1, j + 1);
+  const j3 = Math.min(n - 1, j + 2);
+  const b0 = Math.max(0, i - 1) * n;
+  const b1 = i * n;
+  const b2 = Math.min(n - 1, i + 1) * n;
+  const b3 = Math.min(n - 1, i + 2) * n;
+  const r0 = ax * v[b0 + j0] + bx * v[b0 + j] + cx * v[b0 + j2] + dx * v[b0 + j3];
+  const r1 = ax * v[b1 + j0] + bx * v[b1 + j] + cx * v[b1 + j2] + dx * v[b1 + j3];
+  const r2 = ax * v[b2 + j0] + bx * v[b2 + j] + cx * v[b2 + j2] + dx * v[b2 + j3];
+  const r3 = ax * v[b3 + j0] + bx * v[b3 + j] + cx * v[b3 + j2] + dx * v[b3 + j3];
+  const q0 = ax1 * v[b0 + j0] + bx1 * v[b0 + j] + cx1 * v[b0 + j2] + dx1 * v[b0 + j3];
+  const q1 = ax1 * v[b1 + j0] + bx1 * v[b1 + j] + cx1 * v[b1 + j2] + dx1 * v[b1 + j3];
+  const q2 = ax1 * v[b2 + j0] + bx1 * v[b2 + j] + cx1 * v[b2 + j2] + dx1 * v[b2 + j3];
+  const q3 = ax1 * v[b3 + j0] + bx1 * v[b3 + j] + cx1 * v[b3 + j2] + dx1 * v[b3 + j3];
+  const v0 = ay * r0 + by * r1 + cy * r2 + dy * r3;
+  const gy = ay1 * r0 + by1 * r1 + cy1 * r2 + dy1 * r3;
+  const gx = ay * q0 + by * q1 + cy * q2 + dy * q3;
+  cubic.v = v0;
+  cubic.gy = gy;
+  cubic.gx = gx;
+}
+
 function cubicGrad(v: Float32Array, n: number, fy: number, fx: number, approx: boolean): void {
   const i = Math.min(n - 2, Math.floor(fy));
   const j = Math.min(n - 2, Math.floor(fx));
@@ -509,35 +776,6 @@ function cubicGrad(v: Float32Array, n: number, fy: number, fx: number, approx: b
 }
 
 /** The cut at the sampled point (sampleErosion) where the ground without its gullies stands at `coarse`. */
-export function erosionCutAt(s: ErosionSample, coarse: number): number {
-  const cut = s.w > 0 ? roundMin0(s.w * (s.t - coarse) + (1 - s.w) * s.d) : s.d;
-  return cut * s.keep;
-}
-
-/**
- * How much of the gullies stay at the sampled point (sampleErosion), [0, 1]: they give way on a channel's valley
- * floor where the eroded surface replaced the ground (the river's bed and the ground it wanders over are its own, not
- * the hillside's).
- */
-export function erosionGullies(f: Pick<ErosionField, 'floor'>, s: ErosionSample): number {
-  if (s.w <= 0) return 1;
-  const fl = bicubicU8(f.floor, CUT_N, -DOMAIN_HALF, CUT_CELL, s.north, s.east) / 255;
-  return 1 - Math.min(1, Math.max(0, fl)) * s.w * s.keep;
-}
-
-/**
- * How far the ground at (north, east) is replaced by the eroded surface, [0, 1]: by the depth of the lattice's cut
- * there (`d`, the interpolated `lowered`), none within a kilometre of the lattice's edge (and beyond it, where the cut carries
- * on outward over the natural ground), all of it from 4 km in. C1.
- */
-function erosionWeight(d: number, north: number, east: number): number {
-  const depth = -d;
-  if (depth <= REPLACE[0]) return 0;
-  const inside = DOMAIN_HALF - Math.max(Math.abs(north), Math.abs(east));
-  if (inside <= EDGE_KEEP[0]) return 0;
-  return smoothstep(REPLACE[0], REPLACE[1], depth) * smoothstep(EDGE_KEEP[0], EDGE_KEEP[1], inside);
-}
-
 /** Half-width of the window about the home field searched for hollows, cells. */
 const HOME_WINDOW = 30;
 
@@ -779,51 +1017,63 @@ function smoothstep(e0: number, e1: number, v: number): number {
  * drain off it) in place; the caller diffs against its copy. `hard` (per cell, [0, 1]) scales how readily each cell erodes (0: not
  * at all, nor lowered by the blur or beside a diagonal step). Returns the last routing: each cell's receiver (-1 at
  * base level) and catchment, cells, and `route` to route `h` again after a change (updating them).
+/**
+ * Water routing on the lattice for the model: a priority flood (Barnes et al. 2014, a FIFO for cells inside hollows)
+ * from the base-level cells, then steepest descent on the filled surface (a cell inside a filled hollow keeps the
+ * flood's receiver, toward the spill), a downstream-first order, catchments in cells and whether each cell's step to
+ * its receiver is diagonal. Deterministic (ties broken by index).
  */
-export function erodeLattice(h: Float32Array, n: number, p: ErosionParams = EROSION, hard?: Float32Array): { receiver: Int32Array; area: Float32Array; route: () => void } {
-  const N = n * n;
-  const receiver = new Int32Array(N);
-  const diag = new Uint8Array(N);
-  const order = new Int32Array(N);
-  const area = new Float32Array(N);
-  const filled = new Float32Array(N);
-  const done = new Uint8Array(N);
-  const heap = new Heap(N);
-  const pit = new Int32Array(N);
-  const DI = [-1, -1, -1, 0, 0, 1, 1, 1];
-  const DJ = [-1, 0, 1, -1, 1, -1, 0, 1];
+export class SteadyRouter {
+  readonly receiver: Int32Array;
+  readonly order: Int32Array;
+  readonly area: Float32Array;
+  readonly diag: Uint8Array;
+  private readonly filled: Float32Array;
+  private readonly done: Uint8Array;
+  private readonly pit: Int32Array;
+  private readonly heap: Heap;
+  private readonly start: Int32Array;
+  private readonly donors: Int32Array;
+  constructor(private readonly n: number) {
+    const N = n * n;
+    this.receiver = new Int32Array(N);
+    this.order = new Int32Array(N);
+    this.area = new Float32Array(N);
+    this.diag = new Uint8Array(N);
+    this.filled = new Float32Array(N);
+    this.done = new Uint8Array(N);
+    this.pit = new Int32Array(N);
+    this.heap = new Heap(N);
+    this.start = new Int32Array(N + 1);
+    this.donors = new Int32Array(N);
+  }
 
-  const route = (): void => {
-    // Priority flood (Barnes et al. 2014) with a FIFO for cells inside hollows, from the sea and the edge.
+  route(h: Float32Array, fixed: Uint8Array): void {
+    const { n, receiver, filled, done, pit, heap, order, area, diag } = this;
+    const N = n * n;
     done.fill(0);
     receiver.fill(-1);
-    let popped = 0;
     let pitHead = 0;
     let pitTail = 0;
     for (let c = 0; c < N; c++) {
-      const i = (c / n) | 0;
-      const j = c - i * n;
-      if (h[c] <= 0 || i === 0 || j === 0 || i === n - 1 || j === n - 1) {
-        filled[c] = h[c];
-        done[c] = 1;
-        heap.push(c, filled[c]);
-      }
+      if (!fixed[c]) continue;
+      filled[c] = h[c];
+      done[c] = 1;
+      heap.push(c, h[c]);
     }
     while (pitHead < pitTail || heap.size > 0) {
       const c = pitHead < pitTail ? pit[pitHead++] : heap.pop();
-      order[popped++] = c;
       const i = (c / n) | 0;
       const j = c - i * n;
       const fc = filled[c];
       for (let k = 0; k < 8; k++) {
-        const ii = i + DI[k];
-        const jj = j + DJ[k];
+        const ii = i + DI8[k];
+        const jj = j + DJ8[k];
         if (ii < 0 || jj < 0 || ii >= n || jj >= n) continue;
         const nb = ii * n + jj;
         if (done[nb]) continue;
         done[nb] = 1;
         receiver[nb] = c;
-        diag[nb] = DI[k] !== 0 && DJ[k] !== 0 ? 1 : 0;
         if (h[nb] <= fc + 1e-3) {
           filled[nb] = fc + 1e-3;
           pit[pitTail++] = nb;
@@ -833,94 +1083,52 @@ export function erodeLattice(h: Float32Array, n: number, p: ErosionParams = EROS
         }
       }
     }
-    // Catchment area in cells: upstream cells come later in flood order.
+    // Steepest descent on the filled surface, for the cells standing on it (not inside a hollow).
+    for (let c = 0; c < N; c++) {
+      if (fixed[c] || filled[c] > h[c] + 1e-6) continue;
+      const i = (c / n) | 0;
+      const j = c - i * n;
+      let best = -1;
+      let bs = 0;
+      for (let k = 0; k < 8; k++) {
+        const ii = i + DI8[k];
+        const jj = j + DJ8[k];
+        if (ii < 0 || jj < 0 || ii >= n || jj >= n) continue;
+        const nb = ii * n + jj;
+        const d = filled[c] - filled[nb];
+        if (d <= 0) continue;
+        const s = DI8[k] !== 0 && DJ8[k] !== 0 ? d / Math.SQRT2 : d;
+        if (s > bs) {
+          bs = s;
+          best = nb;
+        }
+      }
+      if (best >= 0) receiver[c] = best;
+    }
+    for (let c = 0; c < N; c++) {
+      const r = receiver[c];
+      diag[c] = r >= 0 && ((r / n) | 0) !== ((c / n) | 0) && r % n !== c % n ? 1 : 0;
+    }
+    // Downstream-first order: outlets, then each cell's donors after it.
+    const { start, donors } = this;
+    start.fill(0);
+    for (let c = 0; c < N; c++) if (receiver[c] >= 0) start[receiver[c] + 1]++;
+    for (let c = 0; c < N; c++) start[c + 1] += start[c];
+    const fill = start.slice(0, N);
+    for (let c = 0; c < N; c++) if (receiver[c] >= 0) donors[fill[receiver[c]]++] = c;
+    let head = 0;
+    let tail = 0;
+    for (let c = 0; c < N; c++) if (receiver[c] < 0) order[tail++] = c;
+    while (head < tail) {
+      const c = order[head++];
+      for (let k = start[c]; k < start[c + 1]; k++) order[tail++] = donors[k];
+    }
+    if (tail !== N) throw new Error(`model routing has a cycle (${N - tail} cells)`);
     area.fill(1);
     for (let k = N - 1; k >= 0; k--) {
       const c = order[k];
       const r = receiver[c];
       if (r >= 0) area[r] += area[c];
-    }
-  };
-
-  const h0 = h.slice();
-  const cut = new Float32Array(N);
-  const tmp = new Float32Array(N);
-  const kDiag = p.k / Math.SQRT2;
-  const kEdge = p.k * (DRAIN_CELL / EDGE_RUN);
-  for (let s = 0; s < p.steps; s++) {
-    if (s % p.reroute === 0) route();
-    for (let k = 0; k < N; k++) {
-      const c = order[k];
-      const r = receiver[c];
-      if (r < 0) {
-        // An edge cell: its river runs on beyond the lattice, graded toward a sea EDGE_RUN away, but cut no more than
-        // EDGE_CUT into the ground it leads out over (the cut carries on outward and fades, OUTSIDE_FADE).
-        const hc = h[c];
-        if (hc <= 0) continue;
-        const a = area[c];
-        const floor = Math.max(LAND_MIN + p.grade * Math.pow(a, -0.45) * EDGE_RUN, h0[c] - EDGE_CUT);
-        if (hc <= floor) continue;
-        const F = kEdge * Math.pow(a, p.m) * (hard ? hard[c] : 1);
-        h[c] = Math.max(floor, hc / (1 + F));
-        continue;
-      }
-      // The sea's surface is the base level (not the shelf under it), so the land stays land.
-      const hr = Math.max(h[r], LAND_MIN);
-      const hc = h[c];
-      // A cell in a hollow lies below its receiver: a sediment trap, left as it is.
-      if (hc <= hr) continue;
-      const a = area[c];
-      const F = (diag[c] ? kDiag : p.k) * Math.pow(a, p.m) * (hard ? hard[c] : 1);
-      if (F <= 0) continue;
-      const floor = hr + p.grade * Math.pow(a, -0.45) * (diag[c] ? DRAIN_CELL * Math.SQRT2 : DRAIN_CELL);
-      if (hc <= floor) continue;
-      h[c] = Math.max(floor, (hc + F * hr) / (1 + F));
-    }
-    if (s === p.steps - 1 - p.settle) for (let b = 0; b < p.blur; b++) spread(h, h0, cut, tmp, n, hard);
-  }
-  // A channel that steps diagonally between two cells would leave a saddle between them in the interpolated
-  // terrain (the two cells beside the step are still high): bring those down to the mean of the step's two ends,
-  // so the valley floor runs on down the diagonal.
-  for (let k = 0; k < N; k++) {
-    const c = order[k];
-    const r = receiver[c];
-    if (r < 0 || !diag[c] || area[c] < CORNER_AREA) continue;
-    const mid = 0.5 * (h[c] + Math.max(h[r], LAND_MIN));
-    const ic = (c / n) | 0;
-    const ir = (r / n) | 0;
-    const a = ir * n + (c - ic * n);
-    const b = ic * n + (r - ir * n);
-    const ka = hard ? hard[a] : 1;
-    const kb = hard ? hard[b] : 1;
-    if (h[a] > mid) h[a] -= (h[a] - mid) * ka;
-    if (h[b] > mid) h[b] -= (h[b] - mid) * kb;
-  }
-  return { receiver, area, route };
-}
-
-/** Spread the cut (h - h0, <= 0) sideways: a [1 2 1] blur of it, as far as `hard` lets it. Land stays land. */
-function spread(h: Float32Array, h0: Float32Array, cut: Float32Array, tmp: Float32Array, n: number, hard?: Float32Array): void {
-  const N = n * n;
-  for (let c = 0; c < N; c++) cut[c] = h[c] - h0[c];
-  for (let i = 0; i < n; i++) {
-    const row = i * n;
-    for (let j = 0; j < n; j++) {
-      const l = j > 0 ? cut[row + j - 1] : cut[row + j];
-      const r = j < n - 1 ? cut[row + j + 1] : cut[row + j];
-      tmp[row + j] = 0.25 * l + 0.5 * cut[row + j] + 0.25 * r;
-    }
-  }
-  for (let i = 0; i < n; i++) {
-    const up = (i > 0 ? i - 1 : i) * n;
-    const dn = (i < n - 1 ? i + 1 : i) * n;
-    const row = i * n;
-    for (let j = 0; j < n; j++) {
-      const c = row + j;
-      // Fixed cells (the sea) keep their height.
-      if (h0[c] <= 0) continue;
-      const b = 0.25 * tmp[up + j] + 0.5 * tmp[c] + 0.25 * tmp[dn + j];
-      const k = hard ? hard[c] : 1;
-      h[c] = Math.max(h0[c] + Math.min(0, k * b + (1 - k) * cut[c]), Math.min(h0[c], LAND_MIN));
     }
   }
 }

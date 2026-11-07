@@ -26,8 +26,8 @@ const OXBOW_LEVEL = 0.6;
  * straight runs drainage takes down even slopes. */
 const WANDER = 900;
 const WANDER_SHORT = 350;
-/** In a valley the erosion pass cut deeper than PIN_CUT[1], m, a course wanders this fraction of WANDER, WANDER_SHORT
- * and the jitter (all of them shallower than PIN_CUT[0]). */
+/** In a valley deeper than PIN_CUT[1] on the macro ground (erosion.ts valley: a cell's depth under the ground about it),
+ * m, a course wanders this fraction of WANDER, WANDER_SHORT and the jitter (all of them shallower than PIN_CUT[0]). */
 const PINNED_WANDER = 0.15;
 const PIN_CUT = [20, 80];
 /** Past a lake's outlet the river keeps the lake's level over this stretch, m (while its banks stand over it). */
@@ -176,13 +176,13 @@ export function networkLakes(d: Drainage, mask: LakeMask): Lake[] {
 }
 
 /** Build a seeded world's hydrology from its drainage and lakes. */
-export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyCut?: Float32Array, smoothGround: (north: number, east: number) => number = natural): Hydrology {
+export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyDepth?: Float32Array, smoothGround: (north: number, east: number) => number = natural): Hydrology {
   const lines = d.lines;
-  // How freely a course may wander off its lattice cells (1) or keeps to them (PINNED_WANDER): a valley the erosion
-  // pass cut (erosion.ts, `valleyCut` per cell, <= 0) is the river's own, and its floor lies along the lattice path; a
+  // How freely a course may wander off its lattice cells (1) or keeps to them (PINNED_WANDER): a valley of the macro
+  // ground (erosion.ts, `valleyDepth` per cell, >= 0) is the river's own, and its floor lies along the lattice path; a
   // course wandering a kilometre off it would ride up the valley side (its level held far under the ground there,
   // its meanders swinging back down onto a floor below its water).
-  const free = (c: number): number => (valleyCut ? 1 - (1 - PINNED_WANDER) * smooth(PIN_CUT[0], PIN_CUT[1], -valleyCut[c]) : 1);
+  const free = (c: number): number => (valleyDepth ? 1 - (1 - PINNED_WANDER) * smooth(PIN_CUT[0], PIN_CUT[1], valleyDepth[c]) : 1);
   // --- Lattice courses: jittered (the same jitter for a cell shared by two lines) and smoothed; a tributary's last
   // point is put back on its parent's smoothed course.
   const jitter = (c: number, k: number): number => ((hash2i(c, 0x51ed + k) & 0xffff) / 65536 - 0.5) * DRAIN_CELL * 0.55;

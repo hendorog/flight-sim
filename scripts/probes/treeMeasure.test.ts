@@ -6,8 +6,7 @@
 //   TREE_SEEDS=1,42,777777 TREE_OUT=out/tree npx vitest run --config scripts/probes/vitest.config.ts scripts/probes/treeMeasure.test.ts --silent=false
 import { it } from 'vitest';
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, type Drainage } from '../../src/world/terrain/drainage';
-import { buildErosion } from '../../src/world/terrain/erosion';
-import { hydrology, naturalHeightRaw, seededDrainage } from '../../src/world/terrain/heightfield';
+import { hydrology, modelMs, naturalHeightRaw, seededDrainage, seededModel } from '../../src/world/terrain/heightfield';
 import { setWorldSeed } from '../../src/world/worldSeed';
 import { AIRPORT } from '../../src/core/world';
 import { CLASS_MTN, CLASS_NAMES, CLASS_SEA, fieldClasses, macroFields, measureTree, quant, reliefClasses, renderTree, type Tree } from './treeMetrics';
@@ -156,14 +155,11 @@ it('tree measure', () => {
     // home mound.)
     const dAfter = seededDrainage as Drainage;
     const lat = Float32Array.from(dAfter.height);
-    const er = buildErosion((pn, pe) => naturalHeightRaw(pn, pe, false), AIRPORT.runway.center);
-    let maxDiff = 0;
-    for (let c = 0; c < lat.length; c++) maxDiff = Math.max(maxDiff, Math.abs(lat[c] - er.lattice[c]) * (Math.abs(lat[c]) > 100 ? 1 : 0));
     const rivers = (hydrology.rivers ?? []).filter((r) => (r.kind ?? 0) === 0).length;
     const streams = (hydrology.rivers ?? []).filter((r) => r.kind === 1).length;
     let same = 0;
     for (let li = 0; li < dAfter.lines.length; li++) if (hydrology.rivers?.[li] && (hydrology.rivers[li].kind ?? 0) === 0 && (hydrology.rivers[li].joins ?? -1) === dAfter.lines[li].joins) same++;
-    const lines: string[] = [`seed ${seed}: eroded lattice recomputed vs the world's: max |diff| ${maxDiff.toFixed(1)} m (land over 100 m); drawn rivers matching the lattice lines (index and parent) ${same} of ${dAfter.lines.length}`, `seed ${seed} (world ${tWorld.toFixed(0)} ms): lattice lines before ${dBefore.lines.length}, after ${dAfter.lines.length}; drawn rivers ${rivers}, streams ${streams}`];
+    const lines: string[] = [`seed ${seed}: model ${seededModel()?.key} (${modelMs.toFixed(0)} ms); drawn rivers matching the lattice lines (index and parent) ${same} of ${dAfter.lines.length}`, `seed ${seed} (world ${tWorld.toFixed(0)} ms): lattice lines before ${dBefore.lines.length}, after ${dAfter.lines.length}; drawn rivers ${rivers}, streams ${streams}`];
     // Class sanity.
     for (const [name, h] of [['before', raw], ['after', lat]] as Array<[string, Float32Array]>) {
       const cf = fieldClasses(n, fields, h);

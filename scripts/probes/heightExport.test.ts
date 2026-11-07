@@ -6,6 +6,7 @@
 import { it } from 'vitest';
 import { makeSample, sampleTerrain } from '../../src/world/terrain/heightfield';
 import { setWorldSeed } from '../../src/world/worldSeed';
+import { setResidualFade } from '../../src/world/terrain/erosion';
 
 const fs = (await import(/* @vite-ignore */ 'node:fs' as string)) as { writeFileSync(p: string, d: Uint8Array | string): void };
 const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
@@ -16,6 +17,8 @@ it('height export', () => {
   const cn = Number(env.EXPORT_N ?? 0);
   const ce = Number(env.EXPORT_E ?? 0);
   const dir = env.EXPORT_DIR ?? '.';
+  // (foundation stage 1 tuning) EXPORT_RES=lo,hi: erosion.ts setResidualFade before the build.
+  if (env.EXPORT_RES) setResidualFade(env.EXPORT_RES.split(',').map(Number));
   for (const seed of (env.EXPORT_SEEDS ?? '42').split(',')) {
     setWorldSeed(seed);
     const n = Math.round((2 * half) / step);
@@ -36,7 +39,7 @@ it('height export', () => {
         }
       }
     }
-    const base = `${dir}/seed${seed}_${cn}_${ce}`;
+    const base = `${dir}/seed${seed}_${cn}_${ce}${env.EXPORT_TAG ?? ''}`;
     fs.writeFileSync(`${base}.f32`, new Uint8Array(z.buffer));
     fs.writeFileSync(`${base}.json`, JSON.stringify({ seed, n, res: step, north: cn, east: ce, half, sea }));
     console.log(`seed ${seed}: ${n}x${n} at ${step} m, sea ${((100 * sea) / (n * n)).toFixed(1)} %`);

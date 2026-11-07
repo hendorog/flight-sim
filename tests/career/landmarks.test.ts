@@ -79,8 +79,9 @@ describe.each([0, 7])('the rules at seed %i', (seed) => {
         expect(Math.hypot(l.north - wp.north, l.east - wp.east), name).toBeLessThan(5);
       }
     } else {
-      // A seeded world's own lakes (riverNetwork.ts), each with its own generated name.
-      expect(lakes.length).toBeGreaterThan(4);
+      // A seeded world's own lakes (riverNetwork.ts), each with its own generated name. (Since the macro model, a
+      // seeded world has none until the ice stage, owner's decision 2026-11-07: at most one per lake the world has.)
+      expect(lakes.length).toBeLessThanOrEqual(hydrology.lakes.length);
       for (const l of lakes) expect(l.name).toBe(lakeName(Number(l.id.slice('lake-'.length))));
     }
     for (const l of lakes) expect(lakeRadius(hydrology.lakes[Number(l.id.slice('lake-'.length))], l.north, l.east)).toBeLessThan(AREA_NUDGE.lakeWater);
