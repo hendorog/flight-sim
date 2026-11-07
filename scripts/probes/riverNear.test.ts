@@ -12,7 +12,7 @@ it('river near', () => {
   const r = hydrology.rivers![bl];
   console.log(`line ${bl} kind ${r.kind} joins ${r.joins} samples ${r.north.length}, nearest ${bk} at ${best.toFixed(0)} m`);
   const span = Number(env.RN_SPAN ?? 30);
-  for (let k = Math.max(0, bk - span); k < Math.min(r.north.length, bk + span); k += 3) console.log(`  ${k} s ${r.s[k].toFixed(0)} at ${r.north[k].toFixed(0)},${r.east[k].toFixed(0)} level ${r.level[k].toFixed(1)} natural ${naturalHeight(r.north[k], r.east[k]).toFixed(1)} A ${r.area?.[k].toFixed(0)}`);
+  for (let k = Math.max(0, bk - span); k < Math.min(r.north.length, bk + span); k += Number(env.RN_EVERY ?? 3)) console.log(`  ${k} s ${r.s[k].toFixed(0)} at ${r.north[k].toFixed(0)},${r.east[k].toFixed(0)} level ${r.level[k].toFixed(1)} natural ${naturalHeight(r.north[k], r.east[k]).toFixed(1)} A ${r.area?.[k].toFixed(0)}`);
   const last = r.north.length - 1;
   console.log(`  end ${last} at ${r.north[last].toFixed(0)},${r.east[last].toFixed(0)} level ${r.level[last].toFixed(1)}`);
   setWorldSeed(0);

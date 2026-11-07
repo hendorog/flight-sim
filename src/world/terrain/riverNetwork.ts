@@ -1222,7 +1222,9 @@ function meanderChannel(a: Axis, phase0: number): { north: number[]; east: numbe
     const i = segmentAt(a.s, sv);
     const m = a.meander[i];
     const lambda = a.wavelength[i];
-    const belt = a.belt[i];
+    // (Over its last meander length the belt narrows to nothing: the channel comes back onto the axis at its end
+    // by bends, not by one straight jump that could cut across its own last loop.)
+    const belt = a.belt[i] * Math.min(1, Math.max(0, (total - along) / Math.max(1, lambda)));
     const ds = Math.min(40, Math.max(15, lambda / 10));
     // How far it swings (the spread of the direction, as a sine of amplitude omega would have) and how orderly.
     const omega = Math.min(2, 0.5 + 1.5 * m);
