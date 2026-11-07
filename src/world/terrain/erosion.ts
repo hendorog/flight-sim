@@ -291,7 +291,8 @@ function blur(v: Float32Array, n: number, sigma: number): Float32Array {
 /**
  * The lowland lakes (owner, 2026-11-08: they stay; the mountain ones may go until the ice stage). The steady state
  * drains by construction, so it would fill every hollow of the noise ground. The noise ground's closed hollows that
- * could hold a lake as drainage.ts judges one (at least LAKE_DEPTH_KEEP deep, LAKE_CELLS_KEEP cells) and lie off the
+ * could hold a lake as drainage.ts judges one (at least LAKE_DEPTH_KEEP deep over a river's breach allowance,
+ * LAKE_CELLS_KEEP cells) and lie off the
  * ranges (the ranges' uplift share at the hollow's deepest cell, with the orogen's envelope, under LAKE_RANGE_U: hill
  * country and plain) are kept: their cells may not rise over the noise ground (`cap`) and their rims may not fall
  * under it (`sill`). The flood still routes through them to their spill, so a kept lake sits in the
@@ -330,7 +331,12 @@ function keptHollows(h0: Float32Array, fixed: Uint8Array, ur: Float32Array, n: n
         stack.push(q);
       }
     }
-    if (level - h0[pit] < LAKE_DEPTH_KEEP || cells.length < LAKE_CELLS_KEEP[0] || cells.length > LAKE_CELLS_KEEP[1] || ur[pit] >= LAKE_RANGE_U) continue;
+    // (A big river through it keeps its course through the rim: drainage.ts cuts a pond out where the breach
+    // allowance, BREACH_DEPTH sqrt(A), leaves it under LAKE_DEPTH, unless the rim is too long to cut. Holding such a
+    // hollow on a trunk river would only leave a notch through ungraded ground on its way.)
+    let area = 0;
+    for (const c of cells) area = Math.max(area, R.area[c]);
+    if (level - h0[pit] < LAKE_DEPTH_KEEP + (area >= BREACH_AREA ? BREACH_KEEP * Math.sqrt(area) : 0) || cells.length < LAKE_CELLS_KEEP[0] || cells.length > LAKE_CELLS_KEEP[1] || ur[pit] >= LAKE_RANGE_U) continue;
     let near = false;
     for (const c of cells) if (Math.hypot(origin + Math.floor(c / n) * DRAIN_CELL - home.north, origin + (c % n) * DRAIN_CELL - home.east) < LAKE_HOME_CLEAR) near = true;
     if (near) continue;
@@ -369,6 +375,10 @@ const SILL_RAISE = 20;
 const HOLLOW_KEEP_TOL = 0.5;
 /** A kept hollow is at least this deep, m, and this many cells (drainage.ts LAKE_DEPTH, LAKE_CELLS; POND_MAX_CELLS). */
 const LAKE_DEPTH_KEEP = 15;
+/** drainage.ts BREACH_DEPTH: a river's breach allowance through a rim, m per sqrt(km²), checked from this catchment,
+ * km² (smaller rivers' ponds mostly stand behind rims too long to cut). */
+const BREACH_KEEP = 3;
+const BREACH_AREA = 500;
 const LAKE_CELLS_KEEP = [2, 120];
 /** Ranges' uplift share from which a hollow counts as mountain ground and is graded away (treeMetrics.ts field
  * classes: the alpine uplift 0.25, here over its 1.15). */
