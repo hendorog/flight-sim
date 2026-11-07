@@ -1,0 +1,22 @@
+NZ canterbury_1000 [relief classes]: land 25205 km² (mountain 10750, hill 5403, plain 9052); front 1548 cells; mountain cells' distance to the front p50/p90/p99/max 4.24/16.00/23.00/28.00 km
+  confluences both >= 10 km²: 556; mountain 143 (26 %), hill 129 (23 %), plain 284 (51 %); mountain+hill 49 %; inside the ranges 39 %; per 1000 km² mtn/hill/plain 13.30/23.88/31.37
+  confluences both >= 45 km²: 101; mountain 25 (25 %), hill 31 (31 %), plain 45 (45 %); mountain+hill 55 %; inside the ranges 49 %; per 1000 km² mtn/hill/plain 2.33/5.74/4.97
+  confluences both >= 200 km²: 15; mountain 2 (13 %), hill 5 (33 %), plain 8 (53 %); mountain+hill 47 %; inside the ranges 47 %; per 1000 km² mtn/hill/plain 0.19/0.93/0.88
+  exits >= 10 km²: 65 (front 1548 km -> one per 24 km); NN spacing p25/p50/p75 3/4/6 km; area p25/p50/p75/max 14/29/78/2185 km²
+  exits >= 45 km²: 26 (front 1548 km -> one per 60 km); NN spacing p25/p50/p75 4/12/15 km; area p25/p50/p75/max 61/141/392/2185 km²
+  exits >= 200 km²: 10 (front 1548 km -> one per 155 km); NN spacing p25/p50/p75 16/20/41 km; area p25/p50/p75/max 327/471/1495/2185 km²
+  water crossing the front: 11266 km² in 340 exits (any size); top 1/3/5/10 carry 19/50/60/75 %
+  rivers to the sea >= 500 km² fed from the ranges: 10; largest exit / mouth area p25/p50/p75 0.12/0.52/0.77; exits >= 10 km² per river p50 3, max 5
+    biggest: 2659 km² <- top exit 2185 (82 %), 2 exits>=10; 2532 km² <- top exit 36 (1 %), 3 exits>=10; 2467 km² <- top exit 1899 (77 %), 5 exits>=10; 1940 km² <- top exit 1495 (77 %), 4 exits>=10; 1401 km² <- top exit 722 (52 %), 2 exits>=10; 1027 km² <- top exit 272 (26 %), 3 exits>=10
+  Hack h (A >= 10 km², all land) 0.48 (c 2.39), mountain cells 0.58; elongation Re p50 sea basins >= 100 km² 0.44 (n 21), range-exit basins >= 100 km² 0.81 (n 14)
+NZ manawatu_1000 [relief classes]: land 19036 km² (mountain 1396, hill 10077, plain 7563); front 568 cells; mountain cells' distance to the front p50/p90/p99/max 1.41/3.00/4.41/5.24 km
+  confluences both >= 10 km²: 404; mountain 8 (2 %), hill 169 (42 %), plain 227 (56 %); mountain+hill 44 %; inside the ranges 5 %; per 1000 km² mtn/hill/plain 5.73/16.77/30.01
+  confluences both >= 45 km²: 89; mountain 3 (3 %), hill 30 (34 %), plain 56 (63 %); mountain+hill 37 %; inside the ranges 4 %; per 1000 km² mtn/hill/plain 2.15/2.98/7.40
+  confluences both >= 200 km²: 17; mountain 0 (0 %), hill 7 (41 %), plain 10 (59 %); mountain+hill 41 %; inside the ranges 0 %; per 1000 km² mtn/hill/plain 0.00/0.69/1.32
+  exits >= 10 km²: 26 (front 568 km -> one per 22 km); NN spacing p25/p50/p75 3/6/7 km; area p25/p50/p75/max 15/29/52/484 km²
+  exits >= 45 km²: 8 (front 568 km -> one per 71 km); NN spacing p25/p50/p75 12/16/16 km; area p25/p50/p75/max 64/69/86/484 km²
+  exits >= 200 km²: 2 (front 568 km -> one per 284 km); NN spacing p25/p50/p75 32/32/32 km; area p25/p50/p75/max 292/484/484/484 km²
+  water crossing the front: 1995 km² in 192 exits (any size); top 1/3/5/10 carry 24/43/50/62 %
+  rivers to the sea >= 500 km² fed from the ranges: 2; largest exit / mouth area p25/p50/p75 0.01/0.17/0.17; exits >= 10 km² per river p50 7, max 7
+    biggest: 5964 km² <- top exit 86 (1 %), 7 exits>=10; 2892 km² <- top exit 484 (17 %), 5 exits>=10
+  Hack h (A >= 10 km², all land) 0.57 (c 1.37), mountain cells 0.60; elongation Re p50 sea basins >= 100 km² 0.63 (n 8), range-exit basins >= 100 km² 0.97 (n 2)

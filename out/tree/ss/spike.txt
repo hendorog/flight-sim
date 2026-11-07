@@ -1,0 +1,918 @@
+seed 1 BEFORE (noise ground, steepest-descent routing) [field classes]: land 66306 km² (mountain 17844, hill 25546, plain 22916); front 2637 cells; mountain cells' distance to the front p50/p90/p99/max 4.24/10.00/15.00/20.24 km
+  confluences both >= 10 km²: 1408; mountain 201 (14 %), hill 644 (46 %), plain 563 (40 %); mountain+hill 60 %; inside the ranges 18 %; per 1000 km² mtn/hill/plain 11.26/25.21/24.57
+  confluences both >= 45 km²: 236; mountain 13 (6 %), hill 105 (44 %), plain 118 (50 %); mountain+hill 50 %; inside the ranges 8 %; per 1000 km² mtn/hill/plain 0.73/4.11/5.15
+  confluences both >= 200 km²: 56; mountain 3 (5 %), hill 18 (32 %), plain 35 (63 %); mountain+hill 38 %; inside the ranges 5 %; per 1000 km² mtn/hill/plain 0.17/0.70/1.53
+  exits >= 10 km²: 252 (front 2637 km -> one per 10 km); NN spacing p25/p50/p75 2/4/6 km; area p25/p50/p75/max 14/22/47/2975 km²
+  exits >= 45 km²: 71 (front 2637 km -> one per 37 km); NN spacing p25/p50/p75 5/8/14 km; area p25/p50/p75/max 60/77/117/2975 km²
+  exits >= 200 km²: 6 (front 2637 km -> one per 440 km); NN spacing p25/p50/p75 49/73/85 km; area p25/p50/p75/max 279/342/359/2975 km²
+  water crossing the front: 17720 km² in 2000 exits (any size); top 1/3/5/10 carry 17/21/24/30 %
+  rivers to the sea >= 500 km² fed from the ranges: 12; largest exit / mouth area p25/p50/p75 0.03/0.07/0.17; exits >= 10 km² per river p50 5, max 79
+    biggest: 12804 km² <- top exit 359 (3 %), 79 exits>=10; 8613 km² <- top exit 164 (2 %), 39 exits>=10; 3033 km² <- top exit 2975 (98 %), 2 exits>=10; 2735 km² <- top exit 228 (8 %), 8 exits>=10; 2568 km² <- top exit 73 (3 %), 4 exits>=10; 2238 km² <- top exit 144 (6 %), 6 exits>=10
+  Hack h (A >= 10 km², all land) 0.45 (c 2.51), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.70 (n 46), range-exit basins >= 100 km² 0.79 (n 25)
+seed 1 BEFORE [relief classes]: land 66306 km² (mountain 23659, hill 29560, plain 13087); front 4760 cells; mountain cells' distance to the front p50/p90/p99/max 3.00/7.00/10.24/14.14 km
+  confluences both >= 10 km²: 1408; mountain 308 (22 %), hill 715 (51 %), plain 385 (27 %); mountain+hill 73 %; inside the ranges 37 %; per 1000 km² mtn/hill/plain 13.02/24.19/29.42
+  confluences both >= 45 km²: 236; mountain 29 (12 %), hill 120 (51 %), plain 87 (37 %); mountain+hill 63 %; inside the ranges 26 %; per 1000 km² mtn/hill/plain 1.23/4.06/6.65
+  confluences both >= 200 km²: 56; mountain 4 (7 %), hill 25 (45 %), plain 27 (48 %); mountain+hill 52 %; inside the ranges 21 %; per 1000 km² mtn/hill/plain 0.17/0.85/2.06
+  exits >= 10 km²: 322 (front 4760 km -> one per 15 km); NN spacing p25/p50/p75 1/3/4 km; area p25/p50/p75/max 13/23/50/4581 km²
+  exits >= 45 km²: 88 (front 4760 km -> one per 54 km); NN spacing p25/p50/p75 6/10/13 km; area p25/p50/p75/max 60/81/142/4581 km²
+  exits >= 200 km²: 15 (front 4760 km -> one per 317 km); NN spacing p25/p50/p75 26/35/50 km; area p25/p50/p75/max 281/339/540/4581 km²
+  water crossing the front: 28425 km² in 1413 exits (any size); top 1/3/5/10 carry 16/36/39/46 %
+  rivers to the sea >= 500 km² fed from the ranges: 13; largest exit / mouth area p25/p50/p75 0.07/0.12/0.36; exits >= 10 km² per river p50 8, max 59
+    biggest: 12804 km² <- top exit 4581 (36 %), 38 exits>=10; 8613 km² <- top exit 167 (2 %), 59 exits>=10; 3033 km² <- top exit 2982 (98 %), 2 exits>=10; 2735 km² <- top exit 228 (8 %), 19 exits>=10; 2568 km² <- top exit 76 (3 %), 14 exits>=10; 2238 km² <- top exit 276 (12 %), 10 exits>=10
+  Hack h (A >= 10 km², all land) 0.45 (c 2.51), mountain cells 0.53; elongation Re p50 sea basins >= 100 km² 0.70 (n 46), range-exit basins >= 100 km² 0.79 (n 34)
+  mountain ground p50/p90/max 1324/1920/2872 m, 1 km slope p50/p90 10.6/19.5°; land above today's noise ground 0 % (mean 0 m there)
+  params U 5 m/step, ridge 450 m/km, m 0.45, Sc 0.6, grade 0.06
+    iteration 1: highest 4294 m; receivers changed (A >= 10 km²) 0
+    iteration 2: highest 3597 m; receivers changed (A >= 10 km²) 685
+    iteration 3: highest 3386 m; receivers changed (A >= 10 km²) 97
+    iteration 4: highest 3270 m; receivers changed (A >= 10 km²) 38
+    iteration 5: highest 3099 m; receivers changed (A >= 10 km²) 24
+    iteration 6: highest 3132 m; receivers changed (A >= 10 km²) 18
+    iteration 7: highest 3225 m; receivers changed (A >= 10 km²) 14
+    iteration 8: highest 3015 m; receivers changed (A >= 10 km²) 18
+    iteration 9: highest 3170 m; receivers changed (A >= 10 km²) 12
+    iteration 10: highest 2989 m; receivers changed (A >= 10 km²) 20
+    iteration 11: highest 3025 m; receivers changed (A >= 10 km²) 7
+    iteration 12: highest 3071 m; receivers changed (A >= 10 km²) 8
+    iteration 13: highest 2949 m; receivers changed (A >= 10 km²) 5
+    iteration 14: highest 2907 m; receivers changed (A >= 10 km²) 6
+    iteration 15: highest 2809 m; receivers changed (A >= 10 km²) 7
+    iteration 16: highest 2846 m; receivers changed (A >= 10 km²) 2
+    iteration 17: highest 2829 m; receivers changed (A >= 10 km²) 2
+    iteration 18: highest 2809 m; receivers changed (A >= 10 km²) 1
+    iteration 19: highest 2688 m; receivers changed (A >= 10 km²) 0
+    iteration 20: highest 2629 m; receivers changed (A >= 10 km²) 2
+    iteration 21: highest 2629 m; receivers changed (A >= 10 km²) 1
+    iteration 22: highest 2621 m; receivers changed (A >= 10 km²) 0
+    iteration 23: highest 2621 m; receivers changed (A >= 10 km²) 0
+    iteration 24: highest 2621 m; receivers changed (A >= 10 km²) 0
+    iteration 25: highest 2621 m; receivers changed (A >= 10 km²) 0
+    iteration 26: highest 2621 m; receivers changed (A >= 10 km²) 0
+    iteration 27: highest 2621 m; receivers changed (A >= 10 km²) 1
+    iteration 28: highest 2621 m; receivers changed (A >= 10 km²) 0
+    iteration 29: highest 2621 m; receivers changed (A >= 10 km²) 0
+    iteration 30: highest 2621 m; receivers changed (A >= 10 km²) 0
+seed 1 AFTER full STEADY-STATE ITERATION (30 iterations; route 13.6 ms + solve 5.2 ms per step) [field classes]: land 66306 km² (mountain 17844, hill 25546, plain 22916); front 2637 cells; mountain cells' distance to the front p50/p90/p99/max 4.24/10.00/15.00/20.24 km
+  confluences both >= 10 km²: 1344; mountain 171 (13 %), hill 592 (44 %), plain 581 (43 %); mountain+hill 57 %; inside the ranges 18 %; per 1000 km² mtn/hill/plain 9.58/23.17/25.35
+  confluences both >= 45 km²: 306; mountain 15 (5 %), hill 131 (43 %), plain 160 (52 %); mountain+hill 48 %; inside the ranges 11 %; per 1000 km² mtn/hill/plain 0.84/5.13/6.98
+  confluences both >= 200 km²: 59; mountain 4 (7 %), hill 19 (32 %), plain 36 (61 %); mountain+hill 39 %; inside the ranges 10 %; per 1000 km² mtn/hill/plain 0.22/0.74/1.57
+  exits >= 10 km²: 333 (front 2637 km -> one per 8 km); NN spacing p25/p50/p75 2/3/5 km; area p25/p50/p75/max 14/23/42/2911 km²
+  exits >= 45 km²: 77 (front 2637 km -> one per 34 km); NN spacing p25/p50/p75 6/8/14 km; area p25/p50/p75/max 59/73/101/2911 km²
+  exits >= 200 km²: 8 (front 2637 km -> one per 330 km); NN spacing p25/p50/p75 38/48/48 km; area p25/p50/p75/max 271/432/594/2911 km²
+  water crossing the front: 19607 km² in 1632 exits (any size); top 1/3/5/10 carry 15/24/27/33 %
+  rivers to the sea >= 500 km² fed from the ranges: 15; largest exit / mouth area p25/p50/p75 0.07/0.08/0.19; exits >= 10 km² per river p50 9, max 103
+    biggest: 14083 km² <- top exit 1158 (8 %), 103 exits>=10; 8688 km² <- top exit 135 (2 %), 44 exits>=10; 4137 km² <- top exit 594 (14 %), 20 exits>=10; 2963 km² <- top exit 2911 (98 %), 1 exits>=10; 2896 km² <- top exit 202 (7 %), 17 exits>=10; 2404 km² <- top exit 129 (5 %), 14 exits>=10
+  Hack h (A >= 10 km², all land) 0.57 (c 1.12), mountain cells 0.61; elongation Re p50 sea basins >= 100 km² 0.69 (n 54), range-exit basins >= 100 km² 0.84 (n 21)
+seed 1 AFTER full [relief classes]: land 66306 km² (mountain 17964, hill 16862, plain 31480); front 2976 cells; mountain cells' distance to the front p50/p90/p99/max 4.00/9.00/13.24/17.24 km
+  confluences both >= 10 km²: 1344; mountain 147 (11 %), hill 374 (28 %), plain 823 (61 %); mountain+hill 39 %; inside the ranges 17 %; per 1000 km² mtn/hill/plain 8.18/22.18/26.14
+  confluences both >= 45 km²: 306; mountain 3 (1 %), hill 69 (23 %), plain 234 (76 %); mountain+hill 24 %; inside the ranges 8 %; per 1000 km² mtn/hill/plain 0.17/4.09/7.43
+  confluences both >= 200 km²: 59; mountain 0 (0 %), hill 9 (15 %), plain 50 (85 %); mountain+hill 15 %; inside the ranges 10 %; per 1000 km² mtn/hill/plain 0.00/0.53/1.59
+  exits >= 10 km²: 357 (front 2976 km -> one per 8 km); NN spacing p25/p50/p75 2/4/4 km; area p25/p50/p75/max 14/22/39/2901 km²
+  exits >= 45 km²: 77 (front 2976 km -> one per 39 km); NN spacing p25/p50/p75 5/7/13 km; area p25/p50/p75/max 56/71/86/2901 km²
+  exits >= 200 km²: 6 (front 2976 km -> one per 496 km); NN spacing p25/p50/p75 35/41/47 km; area p25/p50/p75/max 265/591/1158/2901 km²
+  water crossing the front: 19707 km² in 1708 exits (any size); top 1/3/5/10 carry 15/24/26/31 %
+  rivers to the sea >= 500 km² fed from the ranges: 16; largest exit / mouth area p25/p50/p75 0.04/0.08/0.12; exits >= 10 km² per river p50 10, max 111
+    biggest: 14083 km² <- top exit 1158 (8 %), 111 exits>=10; 8688 km² <- top exit 98 (1 %), 52 exits>=10; 4137 km² <- top exit 591 (14 %), 20 exits>=10; 2963 km² <- top exit 2901 (98 %), 1 exits>=10; 2896 km² <- top exit 114 (4 %), 22 exits>=10; 2404 km² <- top exit 106 (4 %), 16 exits>=10
+  Hack h (A >= 10 km², all land) 0.57 (c 1.12), mountain cells 0.61; elongation Re p50 sea basins >= 100 km² 0.69 (n 54), range-exit basins >= 100 km² 0.85 (n 17)
+  mountain ground p50/p90/max 782/1440/2621 m, 1 km slope p50/p90 10.6/17.3°; land above today's noise ground 4 % (mean 153 m there)
+  params U 5 m/step, ridge 450 m/km, m 0.45, Sc 0.6, grade 0.06
+    iteration 1: highest 3416 m; receivers changed (A >= 10 km²) 0
+    iteration 2: highest 3490 m; receivers changed (A >= 10 km²) 682
+    iteration 3: highest 3181 m; receivers changed (A >= 10 km²) 91
+    iteration 4: highest 3218 m; receivers changed (A >= 10 km²) 22
+    iteration 5: highest 3272 m; receivers changed (A >= 10 km²) 19
+    iteration 6: highest 2982 m; receivers changed (A >= 10 km²) 11
+    iteration 7: highest 2787 m; receivers changed (A >= 10 km²) 16
+    iteration 8: highest 2737 m; receivers changed (A >= 10 km²) 8
+    iteration 9: highest 2568 m; receivers changed (A >= 10 km²) 2
+    iteration 10: highest 2455 m; receivers changed (A >= 10 km²) 8
+    iteration 11: highest 2483 m; receivers changed (A >= 10 km²) 4
+    iteration 12: highest 2485 m; receivers changed (A >= 10 km²) 3
+    iteration 13: highest 2507 m; receivers changed (A >= 10 km²) 3
+    iteration 14: highest 2535 m; receivers changed (A >= 10 km²) 0
+    iteration 15: highest 2558 m; receivers changed (A >= 10 km²) 0
+    iteration 16: highest 2579 m; receivers changed (A >= 10 km²) 0
+    iteration 17: highest 2633 m; receivers changed (A >= 10 km²) 0
+    iteration 18: highest 2662 m; receivers changed (A >= 10 km²) 1
+    iteration 19: highest 2738 m; receivers changed (A >= 10 km²) 1
+    iteration 20: highest 2656 m; receivers changed (A >= 10 km²) 0
+    iteration 21: highest 2800 m; receivers changed (A >= 10 km²) 0
+    iteration 22: highest 2808 m; receivers changed (A >= 10 km²) 0
+    iteration 23: highest 2490 m; receivers changed (A >= 10 km²) 1
+    iteration 24: highest 2503 m; receivers changed (A >= 10 km²) 0
+    iteration 25: highest 2514 m; receivers changed (A >= 10 km²) 0
+    iteration 26: highest 2521 m; receivers changed (A >= 10 km²) 1
+    iteration 27: highest 2525 m; receivers changed (A >= 10 km²) 0
+    iteration 28: highest 2533 m; receivers changed (A >= 10 km²) 0
+    iteration 29: highest 2540 m; receivers changed (A >= 10 km²) 0
+    iteration 30: highest 2538 m; receivers changed (A >= 10 km²) 0
+seed 1 AFTER low STEADY-STATE ITERATION (30 iterations; route 13.1 ms + solve 4.6 ms per step) [field classes]: land 66306 km² (mountain 17844, hill 25546, plain 22916); front 2637 cells; mountain cells' distance to the front p50/p90/p99/max 4.24/10.00/15.00/20.24 km
+  confluences both >= 10 km²: 1293; mountain 175 (14 %), hill 569 (44 %), plain 549 (42 %); mountain+hill 58 %; inside the ranges 18 %; per 1000 km² mtn/hill/plain 9.81/22.27/23.96
+  confluences both >= 45 km²: 290; mountain 13 (4 %), hill 120 (41 %), plain 157 (54 %); mountain+hill 46 %; inside the ranges 11 %; per 1000 km² mtn/hill/plain 0.73/4.70/6.85
+  confluences both >= 200 km²: 55; mountain 1 (2 %), hill 20 (36 %), plain 34 (62 %); mountain+hill 38 %; inside the ranges 9 %; per 1000 km² mtn/hill/plain 0.06/0.78/1.48
+  exits >= 10 km²: 328 (front 2637 km -> one per 8 km); NN spacing p25/p50/p75 2/3/5 km; area p25/p50/p75/max 14/22/42/2915 km²
+  exits >= 45 km²: 74 (front 2637 km -> one per 36 km); NN spacing p25/p50/p75 6/9/14 km; area p25/p50/p75/max 59/81/106/2915 km²
+  exits >= 200 km²: 8 (front 2637 km -> one per 330 km); NN spacing p25/p50/p75 38/48/48 km; area p25/p50/p75/max 238/431/534/2915 km²
+  water crossing the front: 19625 km² in 1602 exits (any size); top 1/3/5/10 carry 15/25/28/33 %
+  rivers to the sea >= 500 km² fed from the ranges: 16; largest exit / mouth area p25/p50/p75 0.06/0.09/0.12; exits >= 10 km² per river p50 7, max 103
+    biggest: 14179 km² <- top exit 1367 (10 %), 103 exits>=10; 8766 km² <- top exit 139 (2 %), 44 exits>=10; 4382 km² <- top exit 534 (12 %), 21 exits>=10; 2963 km² <- top exit 2915 (98 %), 1 exits>=10; 2599 km² <- top exit 206 (8 %), 14 exits>=10; 1826 km² <- top exit 129 (7 %), 9 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.13), mountain cells 0.60; elongation Re p50 sea basins >= 100 km² 0.66 (n 59), range-exit basins >= 100 km² 0.84 (n 22)
+seed 1 AFTER low [relief classes]: land 66306 km² (mountain 18125, hill 16720, plain 31461); front 3015 cells; mountain cells' distance to the front p50/p90/p99/max 4.00/8.83/12.90/17.97 km
+  confluences both >= 10 km²: 1293; mountain 145 (11 %), hill 366 (28 %), plain 782 (60 %); mountain+hill 40 %; inside the ranges 18 %; per 1000 km² mtn/hill/plain 8.00/21.89/24.86
+  confluences both >= 45 km²: 290; mountain 4 (1 %), hill 64 (22 %), plain 222 (77 %); mountain+hill 23 %; inside the ranges 11 %; per 1000 km² mtn/hill/plain 0.22/3.83/7.06
+  confluences both >= 200 km²: 55; mountain 0 (0 %), hill 7 (13 %), plain 48 (87 %); mountain+hill 13 %; inside the ranges 9 %; per 1000 km² mtn/hill/plain 0.00/0.42/1.53
+  exits >= 10 km²: 352 (front 3015 km -> one per 9 km); NN spacing p25/p50/p75 2/3/4 km; area p25/p50/p75/max 14/21/37/2905 km²
+  exits >= 45 km²: 76 (front 3015 km -> one per 40 km); NN spacing p25/p50/p75 5/8/13 km; area p25/p50/p75/max 56/70/98/2905 km²
+  exits >= 200 km²: 9 (front 3015 km -> one per 335 km); NN spacing p25/p50/p75 37/38/47 km; area p25/p50/p75/max 232/418/531/2905 km²
+  water crossing the front: 20277 km² in 1643 exits (any size); top 1/3/5/10 carry 14/24/28/34 %
+  rivers to the sea >= 500 km² fed from the ranges: 16; largest exit / mouth area p25/p50/p75 0.04/0.10/0.14; exits >= 10 km² per river p50 8, max 115
+    biggest: 14179 km² <- top exit 1367 (10 %), 115 exits>=10; 8766 km² <- top exit 98 (1 %), 53 exits>=10; 4382 km² <- top exit 531 (12 %), 23 exits>=10; 2963 km² <- top exit 2905 (98 %), 1 exits>=10; 2599 km² <- top exit 116 (4 %), 17 exits>=10; 1826 km² <- top exit 117 (6 %), 11 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.13), mountain cells 0.60; elongation Re p50 sea basins >= 100 km² 0.66 (n 59), range-exit basins >= 100 km² 0.84 (n 19)
+  mountain ground p50/p90/max 786/1440/2538 m, 1 km slope p50/p90 10.6/17.4°; land above today's noise ground 4 % (mean 141 m there)
+seed 1 BEFORE (noise ground) [uplift classes of wide]: land 66306 km² (mountain 38776, hill 10746, plain 16784); front 1446 cells; mountain cells' distance to the front p50/p90/p99/max 15.00/36.04/50.00/60.81 km
+  confluences both >= 10 km²: 1408; mountain 879 (62 %), hill 179 (13 %), plain 350 (25 %); mountain+hill 75 %; inside the ranges 69 %; per 1000 km² mtn/hill/plain 22.67/16.66/20.85
+  confluences both >= 45 km²: 236; mountain 147 (62 %), hill 21 (9 %), plain 68 (29 %); mountain+hill 71 %; inside the ranges 71 %; per 1000 km² mtn/hill/plain 3.79/1.95/4.05
+  confluences both >= 200 km²: 56; mountain 27 (48 %), hill 4 (7 %), plain 25 (45 %); mountain+hill 55 %; inside the ranges 55 %; per 1000 km² mtn/hill/plain 0.70/0.37/1.49
+  exits >= 10 km²: 127 (front 1446 km -> one per 11 km); NN spacing p25/p50/p75 1/2/6 km; area p25/p50/p75/max 16/32/154/4866 km²
+  exits >= 45 km²: 56 (front 1446 km -> one per 26 km); NN spacing p25/p50/p75 4/9/14 km; area p25/p50/p75/max 106/204/473/4866 km²
+  exits >= 200 km²: 28 (front 1446 km -> one per 52 km); NN spacing p25/p50/p75 10/15/36 km; area p25/p50/p75/max 333/554/711/4866 km²
+  water crossing the front: 33230 km² in 524 exits (any size); top 1/3/5/10 carry 15/41/51/63 %
+  rivers to the sea >= 500 km² fed from the ranges: 12; largest exit / mouth area p25/p50/p75 0.23/0.28/0.85; exits >= 10 km² per river p50 3, max 19
+    biggest: 12804 km² <- top exit 4866 (38 %), 19 exits>=10; 8613 km² <- top exit 2052 (24 %), 19 exits>=10; 2735 km² <- top exit 601 (22 %), 5 exits>=10; 2568 km² <- top exit 711 (28 %), 11 exits>=10; 2238 km² <- top exit 333 (15 %), 9 exits>=10; 1396 km² <- top exit 1261 (90 %), 2 exits>=10
+  Hack h (A >= 10 km², all land) 0.45 (c 2.51), mountain cells 0.43; elongation Re p50 sea basins >= 100 km² 0.70 (n 46), range-exit basins >= 100 km² 0.79 (n 43)
+  params U 5 m/step, ridge 450 m/km, m 0.45, Sc 0.6, grade 0.06, sigma 12 km
+    iteration 1: highest 7352 m; receivers changed (A >= 10 km²) 0
+    iteration 2: highest 6323 m; receivers changed (A >= 10 km²) 680
+    iteration 3: highest 5988 m; receivers changed (A >= 10 km²) 83
+    iteration 4: highest 5859 m; receivers changed (A >= 10 km²) 38
+    iteration 5: highest 6060 m; receivers changed (A >= 10 km²) 19
+    iteration 6: highest 5280 m; receivers changed (A >= 10 km²) 17
+    iteration 7: highest 5375 m; receivers changed (A >= 10 km²) 17
+    iteration 8: highest 5320 m; receivers changed (A >= 10 km²) 22
+    iteration 9: highest 4900 m; receivers changed (A >= 10 km²) 12
+    iteration 10: highest 5168 m; receivers changed (A >= 10 km²) 4
+    iteration 11: highest 4799 m; receivers changed (A >= 10 km²) 8
+    iteration 12: highest 4842 m; receivers changed (A >= 10 km²) 8
+    iteration 13: highest 4747 m; receivers changed (A >= 10 km²) 9
+    iteration 14: highest 4617 m; receivers changed (A >= 10 km²) 5
+    iteration 15: highest 4722 m; receivers changed (A >= 10 km²) 4
+    iteration 16: highest 4757 m; receivers changed (A >= 10 km²) 6
+    iteration 17: highest 4504 m; receivers changed (A >= 10 km²) 2
+    iteration 18: highest 4687 m; receivers changed (A >= 10 km²) 0
+    iteration 19: highest 4769 m; receivers changed (A >= 10 km²) 6
+    iteration 20: highest 4652 m; receivers changed (A >= 10 km²) 2
+    iteration 21: highest 4524 m; receivers changed (A >= 10 km²) 2
+    iteration 22: highest 4606 m; receivers changed (A >= 10 km²) 1
+    iteration 23: highest 4604 m; receivers changed (A >= 10 km²) 1
+    iteration 24: highest 4580 m; receivers changed (A >= 10 km²) 2
+    iteration 25: highest 4560 m; receivers changed (A >= 10 km²) 0
+    iteration 26: highest 4450 m; receivers changed (A >= 10 km²) 1
+    iteration 27: highest 4495 m; receivers changed (A >= 10 km²) 1
+    iteration 28: highest 4467 m; receivers changed (A >= 10 km²) 2
+    iteration 29: highest 4471 m; receivers changed (A >= 10 km²) 0
+    iteration 30: highest 4483 m; receivers changed (A >= 10 km²) 0
+seed 1 AFTER wide STEADY-STATE ITERATION (30 iterations; route 13.2 ms + solve 4.8 ms per step) [field classes]: land 66306 km² (mountain 17844, hill 25546, plain 22916); front 2637 cells; mountain cells' distance to the front p50/p90/p99/max 4.24/10.00/15.00/20.24 km
+  confluences both >= 10 km²: 1242; mountain 248 (20 %), hill 512 (41 %), plain 482 (39 %); mountain+hill 61 %; inside the ranges 24 %; per 1000 km² mtn/hill/plain 13.90/20.04/21.03
+  confluences both >= 45 km²: 270; mountain 24 (9 %), hill 115 (43 %), plain 131 (49 %); mountain+hill 51 %; inside the ranges 13 %; per 1000 km² mtn/hill/plain 1.34/4.50/5.72
+  confluences both >= 200 km²: 53; mountain 2 (4 %), hill 18 (34 %), plain 33 (62 %); mountain+hill 38 %; inside the ranges 9 %; per 1000 km² mtn/hill/plain 0.11/0.70/1.44
+  exits >= 10 km²: 283 (front 2637 km -> one per 9 km); NN spacing p25/p50/p75 2/4/5 km; area p25/p50/p75/max 15/28/60/2047 km²
+  exits >= 45 km²: 98 (front 2637 km -> one per 27 km); NN spacing p25/p50/p75 6/9/13 km; area p25/p50/p75/max 59/93/130/2047 km²
+  exits >= 200 km²: 11 (front 2637 km -> one per 240 km); NN spacing p25/p50/p75 26/30/46 km; area p25/p50/p75/max 264/373/725/2047 km²
+  water crossing the front: 19954 km² in 1154 exits (any size); top 1/3/5/10 carry 10/18/24/31 %
+  rivers to the sea >= 500 km² fed from the ranges: 16; largest exit / mouth area p25/p50/p75 0.07/0.13/0.16; exits >= 10 km² per river p50 7, max 68
+    biggest: 11640 km² <- top exit 891 (8 %), 68 exits>=10; 8126 km² <- top exit 164 (2 %), 38 exits>=10; 3142 km² <- top exit 479 (15 %), 14 exits>=10; 2539 km² <- top exit 707 (28 %), 7 exits>=10; 2521 km² <- top exit 331 (13 %), 6 exits>=10; 2296 km² <- top exit 122 (5 %), 6 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.09), mountain cells 0.58; elongation Re p50 sea basins >= 100 km² 0.63 (n 61), range-exit basins >= 100 km² 0.84 (n 43)
+seed 1 AFTER wide [uplift classes: mountain where U >= 0.3 of peak]: land 66306 km² (mountain 38776, hill 10746, plain 16784); front 1446 cells; mountain cells' distance to the front p50/p90/p99/max 15.00/36.04/50.00/60.81 km
+  confluences both >= 10 km²: 1242; mountain 715 (58 %), hill 185 (15 %), plain 342 (28 %); mountain+hill 72 %; inside the ranges 59 %; per 1000 km² mtn/hill/plain 18.44/17.22/20.38
+  confluences both >= 45 km²: 270; mountain 142 (53 %), hill 36 (13 %), plain 92 (34 %); mountain+hill 66 %; inside the ranges 55 %; per 1000 km² mtn/hill/plain 3.66/3.35/5.48
+  confluences both >= 200 km²: 53; mountain 18 (34 %), hill 8 (15 %), plain 27 (51 %); mountain+hill 49 %; inside the ranges 36 %; per 1000 km² mtn/hill/plain 0.46/0.74/1.61
+  exits >= 10 km²: 165 (front 1446 km -> one per 9 km); NN spacing p25/p50/p75 2/4/6 km; area p25/p50/p75/max 22/49/143/3541 km²
+  exits >= 45 km²: 85 (front 1446 km -> one per 17 km); NN spacing p25/p50/p75 3/8/11 km; area p25/p50/p75/max 78/132/312/3541 km²
+  exits >= 200 km²: 29 (front 1446 km -> one per 50 km); NN spacing p25/p50/p75 10/16/31 km; area p25/p50/p75/max 312/584/850/3541 km²
+  water crossing the front: 32150 km² in 637 exits (any size); top 1/3/5/10 carry 11/27/36/50 %
+  rivers to the sea >= 500 km² fed from the ranges: 13; largest exit / mouth area p25/p50/p75 0.17/0.26/0.64; exits >= 10 km² per river p50 4, max 21
+    biggest: 11640 km² <- top exit 3541 (30 %), 19 exits>=10; 8126 km² <- top exit 987 (12 %), 21 exits>=10; 3142 km² <- top exit 1135 (36 %), 4 exits>=10; 2539 km² <- top exit 1614 (64 %), 4 exits>=10; 2521 km² <- top exit 667 (26 %), 4 exits>=10; 2296 km² <- top exit 302 (13 %), 12 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.09), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.63 (n 61), range-exit basins >= 100 km² 0.76 (n 52)
+seed 1 AFTER wide [relief classes]: land 66306 km² (mountain 36110, hill 15468, plain 14728); front 2567 cells; mountain cells' distance to the front p50/p90/p99/max 11.49/32.41/45.94/59.04 km
+  confluences both >= 10 km²: 1242; mountain 595 (48 %), hill 314 (25 %), plain 333 (27 %); mountain+hill 73 %; inside the ranges 52 %; per 1000 km² mtn/hill/plain 16.48/20.30/22.61
+  confluences both >= 45 km²: 270; mountain 102 (38 %), hill 84 (31 %), plain 84 (31 %); mountain+hill 69 %; inside the ranges 46 %; per 1000 km² mtn/hill/plain 2.82/5.43/5.70
+  confluences both >= 200 km²: 53; mountain 11 (21 %), hill 17 (32 %), plain 25 (47 %); mountain+hill 53 %; inside the ranges 28 %; per 1000 km² mtn/hill/plain 0.30/1.10/1.70
+  exits >= 10 km²: 255 (front 2567 km -> one per 10 km); NN spacing p25/p50/p75 2/4/5 km; area p25/p50/p75/max 15/29/94/3321 km²
+  exits >= 45 km²: 105 (front 2567 km -> one per 24 km); NN spacing p25/p50/p75 4/7/10 km; area p25/p50/p75/max 68/119/267/3321 km²
+  exits >= 200 km²: 35 (front 2567 km -> one per 73 km); NN spacing p25/p50/p75 12/16/26 km; area p25/p50/p75/max 279/401/666/3321 km²
+  water crossing the front: 35751 km² in 1140 exits (any size); top 1/3/5/10 carry 9/24/32/44 %
+  rivers to the sea >= 500 km² fed from the ranges: 16; largest exit / mouth area p25/p50/p75 0.18/0.27/0.64; exits >= 10 km² per river p50 7, max 33
+    biggest: 11640 km² <- top exit 3321 (29 %), 28 exits>=10; 8126 km² <- top exit 967 (12 %), 33 exits>=10; 3142 km² <- top exit 1123 (36 %), 11 exits>=10; 2539 km² <- top exit 1614 (64 %), 6 exits>=10; 2521 km² <- top exit 645 (26 %), 12 exits>=10; 2296 km² <- top exit 289 (13 %), 16 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.09), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.63 (n 61), range-exit basins >= 100 km² 0.77 (n 60)
+  mountain ground p50/p90/max 1755/2809/4247 m, 1 km slope p50/p90 16.4/24.4°; land above today's noise ground 51 % (mean 644 m there)
+seed 42 BEFORE (noise ground, steepest-descent routing) [field classes]: land 69259 km² (mountain 19034, hill 24932, plain 25293); front 2417 cells; mountain cells' distance to the front p50/p90/p99/max 5.24/12.31/19.00/24.00 km
+  confluences both >= 10 km²: 1366; mountain 260 (19 %), hill 582 (43 %), plain 524 (38 %); mountain+hill 62 %; inside the ranges 21 %; per 1000 km² mtn/hill/plain 13.66/23.34/20.72
+  confluences both >= 45 km²: 232; mountain 21 (9 %), hill 99 (43 %), plain 112 (48 %); mountain+hill 52 %; inside the ranges 12 %; per 1000 km² mtn/hill/plain 1.10/3.97/4.43
+  confluences both >= 200 km²: 44; mountain 2 (5 %), hill 15 (34 %), plain 27 (61 %); mountain+hill 39 %; inside the ranges 7 %; per 1000 km² mtn/hill/plain 0.11/0.60/1.07
+  exits >= 10 km²: 235 (front 2417 km -> one per 10 km); NN spacing p25/p50/p75 2/5/7 km; area p25/p50/p75/max 14/25/56/2007 km²
+  exits >= 45 km²: 82 (front 2417 km -> one per 29 km); NN spacing p25/p50/p75 7/9/13 km; area p25/p50/p75/max 56/76/136/2007 km²
+  exits >= 200 km²: 12 (front 2417 km -> one per 201 km); NN spacing p25/p50/p75 32/36/39 km; area p25/p50/p75/max 257/347/575/2007 km²
+  water crossing the front: 19314 km² in 1809 exits (any size); top 1/3/5/10 carry 10/20/25/33 %
+  rivers to the sea >= 500 km² fed from the ranges: 25; largest exit / mouth area p25/p50/p75 0.06/0.10/0.19; exits >= 10 km² per river p50 5, max 19
+    biggest: 6367 km² <- top exit 2007 (32 %), 8 exits>=10; 3721 km² <- top exit 226 (6 %), 16 exits>=10; 2781 km² <- top exit 174 (6 %), 19 exits>=10; 2436 km² <- top exit 1131 (46 %), 12 exits>=10; 2260 km² <- top exit 535 (24 %), 17 exits>=10; 2257 km² <- top exit 82 (4 %), 11 exits>=10
+  Hack h (A >= 10 km², all land) 0.54 (c 1.54), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.72 (n 69), range-exit basins >= 100 km² 0.81 (n 30)
+seed 42 BEFORE [relief classes]: land 69259 km² (mountain 24329, hill 32769, plain 12161); front 4637 cells; mountain cells' distance to the front p50/p90/p99/max 3.00/8.83/14.49/19.07 km
+  confluences both >= 10 km²: 1366; mountain 331 (24 %), hill 688 (50 %), plain 347 (25 %); mountain+hill 75 %; inside the ranges 29 %; per 1000 km² mtn/hill/plain 13.61/21.00/28.53
+  confluences both >= 45 km²: 232; mountain 30 (13 %), hill 127 (55 %), plain 75 (32 %); mountain+hill 68 %; inside the ranges 17 %; per 1000 km² mtn/hill/plain 1.23/3.88/6.17
+  confluences both >= 200 km²: 44; mountain 3 (7 %), hill 21 (48 %), plain 20 (45 %); mountain+hill 55 %; inside the ranges 9 %; per 1000 km² mtn/hill/plain 0.12/0.64/1.64
+  exits >= 10 km²: 385 (front 4637 km -> one per 12 km); NN spacing p25/p50/p75 1/2/4 km; area p25/p50/p75/max 13/20/54/2007 km²
+  exits >= 45 km²: 108 (front 4637 km -> one per 43 km); NN spacing p25/p50/p75 6/8/11 km; area p25/p50/p75/max 61/88/145/2007 km²
+  exits >= 200 km²: 18 (front 4637 km -> one per 258 km); NN spacing p25/p50/p75 14/19/26 km; area p25/p50/p75/max 260/326/666/2007 km²
+  water crossing the front: 26067 km² in 1609 exits (any size); top 1/3/5/10 carry 8/16/21/29 %
+  rivers to the sea >= 500 km² fed from the ranges: 25; largest exit / mouth area p25/p50/p75 0.08/0.12/0.30; exits >= 10 km² per river p50 8, max 33
+    biggest: 6367 km² <- top exit 2007 (32 %), 20 exits>=10; 3721 km² <- top exit 270 (7 %), 33 exits>=10; 2781 km² <- top exit 386 (14 %), 20 exits>=10; 2436 km² <- top exit 1152 (47 %), 13 exits>=10; 2260 km² <- top exit 678 (30 %), 17 exits>=10; 2257 km² <- top exit 103 (5 %), 22 exits>=10
+  Hack h (A >= 10 km², all land) 0.54 (c 1.54), mountain cells 0.56; elongation Re p50 sea basins >= 100 km² 0.72 (n 69), range-exit basins >= 100 km² 0.79 (n 42)
+  mountain ground p50/p90/max 1340/1985/2981 m, 1 km slope p50/p90 10.6/19.7°; land above today's noise ground 0 % (mean 0 m there)
+  params U 5 m/step, ridge 450 m/km, m 0.45, Sc 0.6, grade 0.06
+    iteration 1: highest 4327 m; receivers changed (A >= 10 km²) 0
+    iteration 2: highest 4129 m; receivers changed (A >= 10 km²) 755
+    iteration 3: highest 4084 m; receivers changed (A >= 10 km²) 82
+    iteration 4: highest 4305 m; receivers changed (A >= 10 km²) 31
+    iteration 5: highest 3902 m; receivers changed (A >= 10 km²) 18
+    iteration 6: highest 3697 m; receivers changed (A >= 10 km²) 13
+    iteration 7: highest 3625 m; receivers changed (A >= 10 km²) 8
+    iteration 8: highest 3398 m; receivers changed (A >= 10 km²) 10
+    iteration 9: highest 3046 m; receivers changed (A >= 10 km²) 8
+    iteration 10: highest 3012 m; receivers changed (A >= 10 km²) 8
+    iteration 11: highest 3041 m; receivers changed (A >= 10 km²) 8
+    iteration 12: highest 3020 m; receivers changed (A >= 10 km²) 1
+    iteration 13: highest 2922 m; receivers changed (A >= 10 km²) 2
+    iteration 14: highest 2970 m; receivers changed (A >= 10 km²) 3
+    iteration 15: highest 3063 m; receivers changed (A >= 10 km²) 3
+    iteration 16: highest 3049 m; receivers changed (A >= 10 km²) 1
+    iteration 17: highest 3060 m; receivers changed (A >= 10 km²) 1
+    iteration 18: highest 3189 m; receivers changed (A >= 10 km²) 0
+    iteration 19: highest 3384 m; receivers changed (A >= 10 km²) 1
+    iteration 20: highest 2922 m; receivers changed (A >= 10 km²) 0
+    iteration 21: highest 2922 m; receivers changed (A >= 10 km²) 0
+    iteration 22: highest 2955 m; receivers changed (A >= 10 km²) 1
+    iteration 23: highest 2845 m; receivers changed (A >= 10 km²) 0
+    iteration 24: highest 2885 m; receivers changed (A >= 10 km²) 0
+    iteration 25: highest 2813 m; receivers changed (A >= 10 km²) 1
+    iteration 26: highest 2812 m; receivers changed (A >= 10 km²) 1
+    iteration 27: highest 2809 m; receivers changed (A >= 10 km²) 0
+    iteration 28: highest 2807 m; receivers changed (A >= 10 km²) 0
+    iteration 29: highest 2806 m; receivers changed (A >= 10 km²) 0
+    iteration 30: highest 2806 m; receivers changed (A >= 10 km²) 0
+seed 42 AFTER full STEADY-STATE ITERATION (30 iterations; route 13.5 ms + solve 5.3 ms per step) [field classes]: land 69259 km² (mountain 19034, hill 24932, plain 25293); front 2417 cells; mountain cells' distance to the front p50/p90/p99/max 5.24/12.31/19.00/24.00 km
+  confluences both >= 10 km²: 1353; mountain 239 (18 %), hill 544 (40 %), plain 570 (42 %); mountain+hill 58 %; inside the ranges 20 %; per 1000 km² mtn/hill/plain 12.56/21.82/22.54
+  confluences both >= 45 km²: 250; mountain 12 (5 %), hill 108 (43 %), plain 130 (52 %); mountain+hill 48 %; inside the ranges 11 %; per 1000 km² mtn/hill/plain 0.63/4.33/5.14
+  confluences both >= 200 km²: 41; mountain 2 (5 %), hill 13 (32 %), plain 26 (63 %); mountain+hill 37 %; inside the ranges 10 %; per 1000 km² mtn/hill/plain 0.11/0.52/1.03
+  exits >= 10 km²: 296 (front 2417 km -> one per 8 km); NN spacing p25/p50/p75 2/4/6 km; area p25/p50/p75/max 15/26/54/2031 km²
+  exits >= 45 km²: 95 (front 2417 km -> one per 25 km); NN spacing p25/p50/p75 5/8/12 km; area p25/p50/p75/max 60/85/125/2031 km²
+  exits >= 200 km²: 11 (front 2417 km -> one per 220 km); NN spacing p25/p50/p75 20/32/36 km; area p25/p50/p75/max 269/287/506/2031 km²
+  water crossing the front: 19881 km² in 1458 exits (any size); top 1/3/5/10 carry 10/18/21/28 %
+  rivers to the sea >= 500 km² fed from the ranges: 26; largest exit / mouth area p25/p50/p75 0.05/0.12/0.20; exits >= 10 km² per river p50 8, max 25
+    biggest: 5741 km² <- top exit 2031 (35 %), 12 exits>=10; 4156 km² <- top exit 196 (5 %), 25 exits>=10; 2622 km² <- top exit 160 (6 %), 19 exits>=10; 2427 km² <- top exit 125 (5 %), 10 exits>=10; 2348 km² <- top exit 506 (22 %), 19 exits>=10; 2345 km² <- top exit 991 (42 %), 16 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.09), mountain cells 0.60; elongation Re p50 sea basins >= 100 km² 0.70 (n 86), range-exit basins >= 100 km² 0.84 (n 37)
+seed 42 AFTER full [relief classes]: land 69259 km² (mountain 18510, hill 16955, plain 33794); front 2675 cells; mountain cells' distance to the front p50/p90/p99/max 4.41/11.00/18.00/22.80 km
+  confluences both >= 10 km²: 1353; mountain 201 (15 %), hill 318 (24 %), plain 834 (62 %); mountain+hill 38 %; inside the ranges 18 %; per 1000 km² mtn/hill/plain 10.86/18.76/24.68
+  confluences both >= 45 km²: 250; mountain 6 (2 %), hill 48 (19 %), plain 196 (78 %); mountain+hill 22 %; inside the ranges 9 %; per 1000 km² mtn/hill/plain 0.32/2.83/5.80
+  confluences both >= 200 km²: 41; mountain 1 (2 %), hill 3 (7 %), plain 37 (90 %); mountain+hill 10 %; inside the ranges 10 %; per 1000 km² mtn/hill/plain 0.05/0.18/1.09
+  exits >= 10 km²: 324 (front 2675 km -> one per 8 km); NN spacing p25/p50/p75 2/4/5 km; area p25/p50/p75/max 14/24/49/1847 km²
+  exits >= 45 km²: 89 (front 2675 km -> one per 30 km); NN spacing p25/p50/p75 6/9/11 km; area p25/p50/p75/max 56/84/124/1847 km²
+  exits >= 200 km²: 7 (front 2675 km -> one per 382 km); NN spacing p25/p50/p75 23/23/29 km; area p25/p50/p75/max 269/430/974/1847 km²
+  water crossing the front: 19451 km² in 1552 exits (any size); top 1/3/5/10 carry 9/17/20/26 %
+  rivers to the sea >= 500 km² fed from the ranges: 26; largest exit / mouth area p25/p50/p75 0.05/0.09/0.18; exits >= 10 km² per river p50 9, max 22
+    biggest: 5741 km² <- top exit 1847 (32 %), 16 exits>=10; 4156 km² <- top exit 190 (5 %), 22 exits>=10; 2622 km² <- top exit 158 (6 %), 17 exits>=10; 2427 km² <- top exit 169 (7 %), 11 exits>=10; 2348 km² <- top exit 430 (18 %), 20 exits>=10; 2345 km² <- top exit 974 (42 %), 17 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.09), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.70 (n 86), range-exit basins >= 100 km² 0.89 (n 34)
+  mountain ground p50/p90/max 778/1564/2806 m, 1 km slope p50/p90 10.6/18.0°; land above today's noise ground 3 % (mean 209 m there)
+  params U 5 m/step, ridge 450 m/km, m 0.45, Sc 0.6, grade 0.06
+    iteration 1: highest 4321 m; receivers changed (A >= 10 km²) 0
+    iteration 2: highest 3991 m; receivers changed (A >= 10 km²) 808
+    iteration 3: highest 4056 m; receivers changed (A >= 10 km²) 84
+    iteration 4: highest 3947 m; receivers changed (A >= 10 km²) 29
+    iteration 5: highest 3567 m; receivers changed (A >= 10 km²) 12
+    iteration 6: highest 3491 m; receivers changed (A >= 10 km²) 9
+    iteration 7: highest 3555 m; receivers changed (A >= 10 km²) 9
+    iteration 8: highest 3235 m; receivers changed (A >= 10 km²) 11
+    iteration 9: highest 3034 m; receivers changed (A >= 10 km²) 2
+    iteration 10: highest 2966 m; receivers changed (A >= 10 km²) 1
+    iteration 11: highest 2963 m; receivers changed (A >= 10 km²) 3
+    iteration 12: highest 2930 m; receivers changed (A >= 10 km²) 3
+    iteration 13: highest 2969 m; receivers changed (A >= 10 km²) 2
+    iteration 14: highest 2992 m; receivers changed (A >= 10 km²) 2
+    iteration 15: highest 3022 m; receivers changed (A >= 10 km²) 1
+    iteration 16: highest 3070 m; receivers changed (A >= 10 km²) 1
+    iteration 17: highest 3022 m; receivers changed (A >= 10 km²) 0
+    iteration 18: highest 3033 m; receivers changed (A >= 10 km²) 0
+    iteration 19: highest 3047 m; receivers changed (A >= 10 km²) 0
+    iteration 20: highest 3072 m; receivers changed (A >= 10 km²) 0
+    iteration 21: highest 3035 m; receivers changed (A >= 10 km²) 1
+    iteration 22: highest 3082 m; receivers changed (A >= 10 km²) 0
+    iteration 23: highest 3004 m; receivers changed (A >= 10 km²) 0
+    iteration 24: highest 3075 m; receivers changed (A >= 10 km²) 0
+    iteration 25: highest 3235 m; receivers changed (A >= 10 km²) 0
+    iteration 26: highest 3150 m; receivers changed (A >= 10 km²) 0
+    iteration 27: highest 2915 m; receivers changed (A >= 10 km²) 0
+    iteration 28: highest 2919 m; receivers changed (A >= 10 km²) 0
+    iteration 29: highest 2936 m; receivers changed (A >= 10 km²) 0
+    iteration 30: highest 2939 m; receivers changed (A >= 10 km²) 0
+seed 42 AFTER low STEADY-STATE ITERATION (30 iterations; route 13.3 ms + solve 4.7 ms per step) [field classes]: land 69259 km² (mountain 19034, hill 24932, plain 25293); front 2417 cells; mountain cells' distance to the front p50/p90/p99/max 5.24/12.31/19.00/24.00 km
+  confluences both >= 10 km²: 1251; mountain 231 (18 %), hill 504 (40 %), plain 516 (41 %); mountain+hill 59 %; inside the ranges 22 %; per 1000 km² mtn/hill/plain 12.14/20.21/20.40
+  confluences both >= 45 km²: 266; mountain 16 (6 %), hill 107 (40 %), plain 143 (54 %); mountain+hill 46 %; inside the ranges 12 %; per 1000 km² mtn/hill/plain 0.84/4.29/5.65
+  confluences both >= 200 km²: 37; mountain 2 (5 %), hill 11 (30 %), plain 24 (65 %); mountain+hill 35 %; inside the ranges 14 %; per 1000 km² mtn/hill/plain 0.11/0.44/0.95
+  exits >= 10 km²: 292 (front 2417 km -> one per 8 km); NN spacing p25/p50/p75 2/4/5 km; area p25/p50/p75/max 16/27/54/1994 km²
+  exits >= 45 km²: 90 (front 2417 km -> one per 27 km); NN spacing p25/p50/p75 5/9/11 km; area p25/p50/p75/max 59/85/126/1994 km²
+  exits >= 200 km²: 11 (front 2417 km -> one per 220 km); NN spacing p25/p50/p75 20/33/48 km; area p25/p50/p75/max 282/323/616/1994 km²
+  water crossing the front: 19965 km² in 1455 exits (any size); top 1/3/5/10 carry 10/18/23/30 %
+  rivers to the sea >= 500 km² fed from the ranges: 29; largest exit / mouth area p25/p50/p75 0.06/0.09/0.20; exits >= 10 km² per river p50 4, max 42
+    biggest: 6690 km² <- top exit 191 (3 %), 42 exits>=10; 3127 km² <- top exit 1994 (64 %), 7 exits>=10; 2380 km² <- top exit 486 (20 %), 19 exits>=10; 2364 km² <- top exit 1003 (42 %), 15 exits>=10; 2324 km² <- top exit 99 (4 %), 10 exits>=10; 2156 km² <- top exit 269 (12 %), 14 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.14), mountain cells 0.60; elongation Re p50 sea basins >= 100 km² 0.66 (n 90), range-exit basins >= 100 km² 0.86 (n 32)
+seed 42 AFTER low [relief classes]: land 69259 km² (mountain 18504, hill 17071, plain 33684); front 2710 cells; mountain cells' distance to the front p50/p90/p99/max 4.41/11.00/17.97/22.80 km
+  confluences both >= 10 km²: 1251; mountain 191 (15 %), hill 328 (26 %), plain 732 (59 %); mountain+hill 41 %; inside the ranges 19 %; per 1000 km² mtn/hill/plain 10.32/19.21/21.73
+  confluences both >= 45 km²: 266; mountain 9 (3 %), hill 59 (22 %), plain 198 (74 %); mountain+hill 26 %; inside the ranges 10 %; per 1000 km² mtn/hill/plain 0.49/3.46/5.88
+  confluences both >= 200 km²: 37; mountain 1 (3 %), hill 3 (8 %), plain 33 (89 %); mountain+hill 11 %; inside the ranges 11 %; per 1000 km² mtn/hill/plain 0.05/0.18/0.98
+  exits >= 10 km²: 329 (front 2710 km -> one per 8 km); NN spacing p25/p50/p75 2/3/5 km; area p25/p50/p75/max 14/24/49/1818 km²
+  exits >= 45 km²: 86 (front 2710 km -> one per 32 km); NN spacing p25/p50/p75 6/9/11 km; area p25/p50/p75/max 60/81/125/1818 km²
+  exits >= 200 km²: 9 (front 2710 km -> one per 301 km); NN spacing p25/p50/p75 24/25/40 km; area p25/p50/p75/max 240/323/438/1818 km²
+  water crossing the front: 19481 km² in 1554 exits (any size); top 1/3/5/10 carry 9/17/20/26 %
+  rivers to the sea >= 500 km² fed from the ranges: 28; largest exit / mouth area p25/p50/p75 0.06/0.11/0.16; exits >= 10 km² per river p50 7, max 39
+    biggest: 6690 km² <- top exit 191 (3 %), 39 exits>=10; 3127 km² <- top exit 1818 (58 %), 10 exits>=10; 2380 km² <- top exit 328 (14 %), 23 exits>=10; 2364 km² <- top exit 986 (42 %), 19 exits>=10; 2324 km² <- top exit 144 (6 %), 13 exits>=10; 2156 km² <- top exit 240 (11 %), 16 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.14), mountain cells 0.60; elongation Re p50 sea basins >= 100 km² 0.66 (n 90), range-exit basins >= 100 km² 0.90 (n 32)
+  mountain ground p50/p90/max 760/1545/2939 m, 1 km slope p50/p90 10.6/18.0°; land above today's noise ground 3 % (mean 215 m there)
+seed 42 BEFORE (noise ground) [uplift classes of wide]: land 69259 km² (mountain 35480, hill 12068, plain 21711); front 1533 cells; mountain cells' distance to the front p50/p90/p99/max 15.56/37.36/48.08/52.00 km
+  confluences both >= 10 km²: 1366; mountain 764 (56 %), hill 178 (13 %), plain 424 (31 %); mountain+hill 69 %; inside the ranges 57 %; per 1000 km² mtn/hill/plain 21.53/14.75/19.53
+  confluences both >= 45 km²: 232; mountain 116 (50 %), hill 27 (12 %), plain 89 (38 %); mountain+hill 62 %; inside the ranges 52 %; per 1000 km² mtn/hill/plain 3.27/2.24/4.10
+  confluences both >= 200 km²: 44; mountain 17 (39 %), hill 5 (11 %), plain 22 (50 %); mountain+hill 50 %; inside the ranges 41 %; per 1000 km² mtn/hill/plain 0.48/0.41/1.01
+  exits >= 10 km²: 150 (front 1533 km -> one per 10 km); NN spacing p25/p50/p75 1/3/7 km; area p25/p50/p75/max 16/43/152/2951 km²
+  exits >= 45 km²: 72 (front 1533 km -> one per 21 km); NN spacing p25/p50/p75 4/8/13 km; area p25/p50/p75/max 105/168/297/2951 km²
+  exits >= 200 km²: 28 (front 1533 km -> one per 55 km); NN spacing p25/p50/p75 4/27/31 km; area p25/p50/p75/max 274/406/1039/2951 km²
+  water crossing the front: 30861 km² in 828 exits (any size); top 1/3/5/10 carry 10/24/37/55 %
+  rivers to the sea >= 500 km² fed from the ranges: 24; largest exit / mouth area p25/p50/p75 0.27/0.46/0.88; exits >= 10 km² per river p50 3, max 8
+    biggest: 6367 km² <- top exit 2951 (46 %), 6 exits>=10; 3721 km² <- top exit 2024 (54 %), 4 exits>=10; 2781 km² <- top exit 1469 (53 %), 7 exits>=10; 2436 km² <- top exit 2197 (90 %), 3 exits>=10; 2260 km² <- top exit 2233 (99 %), 1 exits>=10; 2257 km² <- top exit 641 (28 %), 7 exits>=10
+  Hack h (A >= 10 km², all land) 0.54 (c 1.54), mountain cells 0.52; elongation Re p50 sea basins >= 100 km² 0.72 (n 69), range-exit basins >= 100 km² 0.81 (n 54)
+  params U 5 m/step, ridge 450 m/km, m 0.45, Sc 0.6, grade 0.06, sigma 12 km
+    iteration 1: highest 6680 m; receivers changed (A >= 10 km²) 0
+    iteration 2: highest 6042 m; receivers changed (A >= 10 km²) 760
+    iteration 3: highest 5706 m; receivers changed (A >= 10 km²) 92
+    iteration 4: highest 6039 m; receivers changed (A >= 10 km²) 25
+    iteration 5: highest 5042 m; receivers changed (A >= 10 km²) 15
+    iteration 6: highest 5188 m; receivers changed (A >= 10 km²) 15
+    iteration 7: highest 5101 m; receivers changed (A >= 10 km²) 6
+    iteration 8: highest 5034 m; receivers changed (A >= 10 km²) 7
+    iteration 9: highest 4877 m; receivers changed (A >= 10 km²) 5
+    iteration 10: highest 4941 m; receivers changed (A >= 10 km²) 6
+    iteration 11: highest 5129 m; receivers changed (A >= 10 km²) 6
+    iteration 12: highest 5210 m; receivers changed (A >= 10 km²) 1
+    iteration 13: highest 4919 m; receivers changed (A >= 10 km²) 6
+    iteration 14: highest 4909 m; receivers changed (A >= 10 km²) 3
+    iteration 15: highest 4971 m; receivers changed (A >= 10 km²) 2
+    iteration 16: highest 4732 m; receivers changed (A >= 10 km²) 4
+    iteration 17: highest 4843 m; receivers changed (A >= 10 km²) 1
+    iteration 18: highest 4935 m; receivers changed (A >= 10 km²) 0
+    iteration 19: highest 4553 m; receivers changed (A >= 10 km²) 1
+    iteration 20: highest 4598 m; receivers changed (A >= 10 km²) 0
+    iteration 21: highest 4390 m; receivers changed (A >= 10 km²) 0
+    iteration 22: highest 4302 m; receivers changed (A >= 10 km²) 1
+    iteration 23: highest 4265 m; receivers changed (A >= 10 km²) 1
+    iteration 24: highest 4308 m; receivers changed (A >= 10 km²) 0
+    iteration 25: highest 4398 m; receivers changed (A >= 10 km²) 0
+    iteration 26: highest 4409 m; receivers changed (A >= 10 km²) 0
+    iteration 27: highest 4278 m; receivers changed (A >= 10 km²) 1
+    iteration 28: highest 4288 m; receivers changed (A >= 10 km²) 0
+    iteration 29: highest 4295 m; receivers changed (A >= 10 km²) 0
+    iteration 30: highest 4206 m; receivers changed (A >= 10 km²) 0
+seed 42 AFTER wide STEADY-STATE ITERATION (30 iterations; route 13.3 ms + solve 4.6 ms per step) [field classes]: land 69259 km² (mountain 19034, hill 24932, plain 25293); front 2417 cells; mountain cells' distance to the front p50/p90/p99/max 5.24/12.31/19.00/24.00 km
+  confluences both >= 10 km²: 1196; mountain 296 (25 %), hill 452 (38 %), plain 448 (37 %); mountain+hill 63 %; inside the ranges 27 %; per 1000 km² mtn/hill/plain 15.55/18.13/17.71
+  confluences both >= 45 km²: 234; mountain 27 (12 %), hill 84 (36 %), plain 123 (53 %); mountain+hill 47 %; inside the ranges 14 %; per 1000 km² mtn/hill/plain 1.42/3.37/4.86
+  confluences both >= 200 km²: 32; mountain 1 (3 %), hill 9 (28 %), plain 22 (69 %); mountain+hill 31 %; inside the ranges 3 %; per 1000 km² mtn/hill/plain 0.05/0.36/0.87
+  exits >= 10 km²: 269 (front 2417 km -> one per 9 km); NN spacing p25/p50/p75 3/4/6 km; area p25/p50/p75/max 16/30/76/1371 km²
+  exits >= 45 km²: 103 (front 2417 km -> one per 23 km); NN spacing p25/p50/p75 6/8/10 km; area p25/p50/p75/max 66/89/139/1371 km²
+  exits >= 200 km²: 14 (front 2417 km -> one per 173 km); NN spacing p25/p50/p75 16/30/32 km; area p25/p50/p75/max 301/387/514/1371 km²
+  water crossing the front: 19817 km² in 1181 exits (any size); top 1/3/5/10 carry 7/13/18/27 %
+  rivers to the sea >= 500 km² fed from the ranges: 24; largest exit / mouth area p25/p50/p75 0.08/0.12/0.27; exits >= 10 km² per river p50 5, max 39
+    biggest: 6885 km² <- top exit 387 (6 %), 39 exits>=10; 2643 km² <- top exit 713 (27 %), 15 exits>=10; 2316 km² <- top exit 1371 (59 %), 6 exits>=10; 2228 km² <- top exit 168 (8 %), 7 exits>=10; 1974 km² <- top exit 184 (9 %), 12 exits>=10; 1887 km² <- top exit 514 (27 %), 9 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.09), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.63 (n 98), range-exit basins >= 100 km² 0.85 (n 41)
+seed 42 AFTER wide [uplift classes: mountain where U >= 0.3 of peak]: land 69259 km² (mountain 35480, hill 12068, plain 21711); front 1533 cells; mountain cells' distance to the front p50/p90/p99/max 15.56/37.36/48.08/52.00 km
+  confluences both >= 10 km²: 1196; mountain 693 (58 %), hill 137 (11 %), plain 366 (31 %); mountain+hill 69 %; inside the ranges 58 %; per 1000 km² mtn/hill/plain 19.53/11.35/16.86
+  confluences both >= 45 km²: 234; mountain 123 (53 %), hill 15 (6 %), plain 96 (41 %); mountain+hill 59 %; inside the ranges 54 %; per 1000 km² mtn/hill/plain 3.47/1.24/4.42
+  confluences both >= 200 km²: 32; mountain 11 (34 %), hill 3 (9 %), plain 18 (56 %); mountain+hill 44 %; inside the ranges 34 %; per 1000 km² mtn/hill/plain 0.31/0.25/0.83
+  exits >= 10 km²: 189 (front 1533 km -> one per 8 km); NN spacing p25/p50/p75 2/4/5 km; area p25/p50/p75/max 19/44/151/2616 km²
+  exits >= 45 km²: 94 (front 1533 km -> one per 16 km); NN spacing p25/p50/p75 2/7/12 km; area p25/p50/p75/max 74/153/281/2616 km²
+  exits >= 200 km²: 30 (front 1533 km -> one per 51 km); NN spacing p25/p50/p75 3/20/33 km; area p25/p50/p75/max 284/521/956/2616 km²
+  water crossing the front: 31882 km² in 757 exits (any size); top 1/3/5/10 carry 8/20/29/44 %
+  rivers to the sea >= 500 km² fed from the ranges: 24; largest exit / mouth area p25/p50/p75 0.23/0.40/0.69; exits >= 10 km² per river p50 3, max 17
+    biggest: 6885 km² <- top exit 1922 (28 %), 17 exits>=10; 2643 km² <- top exit 2616 (99 %), 1 exits>=10; 2316 km² <- top exit 1871 (81 %), 3 exits>=10; 2228 km² <- top exit 521 (23 %), 8 exits>=10; 1974 km² <- top exit 877 (44 %), 4 exits>=10; 1887 km² <- top exit 1116 (59 %), 6 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.09), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.63 (n 98), range-exit basins >= 100 km² 0.77 (n 64)
+seed 42 AFTER wide [relief classes]: land 69259 km² (mountain 32347, hill 16560, plain 20352); front 2437 cells; mountain cells' distance to the front p50/p90/p99/max 11.66/31.31/41.60/46.80 km
+  confluences both >= 10 km²: 1196; mountain 564 (47 %), hill 290 (24 %), plain 342 (29 %); mountain+hill 71 %; inside the ranges 49 %; per 1000 km² mtn/hill/plain 17.44/17.51/16.80
+  confluences both >= 45 km²: 234; mountain 87 (37 %), hill 58 (25 %), plain 89 (38 %); mountain+hill 62 %; inside the ranges 40 %; per 1000 km² mtn/hill/plain 2.69/3.50/4.37
+  confluences both >= 200 km²: 32; mountain 6 (19 %), hill 11 (34 %), plain 15 (47 %); mountain+hill 53 %; inside the ranges 19 %; per 1000 km² mtn/hill/plain 0.19/0.66/0.74
+  exits >= 10 km²: 255 (front 2437 km -> one per 10 km); NN spacing p25/p50/p75 2/4/5 km; area p25/p50/p75/max 16/31/103/1864 km²
+  exits >= 45 km²: 108 (front 2437 km -> one per 23 km); NN spacing p25/p50/p75 5/7/10 km; area p25/p50/p75/max 75/118/242/1864 km²
+  exits >= 200 km²: 34 (front 2437 km -> one per 72 km); NN spacing p25/p50/p75 6/20/26 km; area p25/p50/p75/max 312/396/597/1864 km²
+  water crossing the front: 30823 km² in 1270 exits (any size); top 1/3/5/10 carry 6/16/22/33 %
+  rivers to the sea >= 500 km² fed from the ranges: 24; largest exit / mouth area p25/p50/p75 0.23/0.39/0.47; exits >= 10 km² per river p50 5, max 34
+    biggest: 6885 km² <- top exit 909 (13 %), 34 exits>=10; 2643 km² <- top exit 1821 (69 %), 5 exits>=10; 2316 km² <- top exit 1864 (80 %), 3 exits>=10; 2228 km² <- top exit 521 (23 %), 9 exits>=10; 1974 km² <- top exit 843 (43 %), 9 exits>=10; 1887 km² <- top exit 597 (32 %), 7 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.09), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.63 (n 98), range-exit basins >= 100 km² 0.80 (n 66)
+  mountain ground p50/p90/max 1652/2713/4206 m, 1 km slope p50/p90 16.0/24.4°; land above today's noise ground 36 % (mean 552 m there)
+seed 777777 BEFORE (noise ground, steepest-descent routing) [field classes]: land 68879 km² (mountain 14891, hill 28679, plain 25309); front 2435 cells; mountain cells' distance to the front p50/p90/p99/max 3.83/8.07/11.41/16.14 km
+  confluences both >= 10 km²: 1428; mountain 158 (11 %), hill 669 (47 %), plain 601 (42 %); mountain+hill 58 %; inside the ranges 13 %; per 1000 km² mtn/hill/plain 10.61/23.33/23.75
+  confluences both >= 45 km²: 268; mountain 11 (4 %), hill 117 (44 %), plain 140 (52 %); mountain+hill 48 %; inside the ranges 6 %; per 1000 km² mtn/hill/plain 0.74/4.08/5.53
+  confluences both >= 200 km²: 50; mountain 1 (2 %), hill 17 (34 %), plain 32 (64 %); mountain+hill 36 %; inside the ranges 2 %; per 1000 km² mtn/hill/plain 0.07/0.59/1.26
+  exits >= 10 km²: 230 (front 2435 km -> one per 11 km); NN spacing p25/p50/p75 2/4/7 km; area p25/p50/p75/max 14/25/46/1790 km²
+  exits >= 45 km²: 61 (front 2435 km -> one per 40 km); NN spacing p25/p50/p75 9/10/16 km; area p25/p50/p75/max 55/73/99/1790 km²
+  exits >= 200 km²: 3 (front 2435 km -> one per 812 km); NN spacing p25/p50/p75 76/76/152 km; area p25/p50/p75/max 1536/1536/1790/1790 km²
+  water crossing the front: 15629 km² in 1947 exits (any size); top 1/3/5/10 carry 11/23/25/29 %
+  rivers to the sea >= 500 km² fed from the ranges: 10; largest exit / mouth area p25/p50/p75 0.07/0.09/0.15; exits >= 10 km² per river p50 6, max 37
+    biggest: 12814 km² <- top exit 1536 (12 %), 37 exits>=10; 6843 km² <- top exit 1790 (26 %), 19 exits>=10; 4486 km² <- top exit 102 (2 %), 19 exits>=10; 1586 km² <- top exit 236 (15 %), 4 exits>=10; 1341 km² <- top exit 97 (7 %), 6 exits>=10; 1186 km² <- top exit 81 (7 %), 8 exits>=10
+  Hack h (A >= 10 km², all land) 0.43 (c 3.03), mountain cells 0.58; elongation Re p50 sea basins >= 100 km² 0.68 (n 56), range-exit basins >= 100 km² 0.82 (n 15)
+seed 777777 BEFORE [relief classes]: land 68879 km² (mountain 20615, hill 32851, plain 15413); front 4052 cells; mountain cells' distance to the front p50/p90/p99/max 3.00/7.41/10.41/12.31 km
+  confluences both >= 10 km²: 1428; mountain 246 (17 %), hill 781 (55 %), plain 401 (28 %); mountain+hill 72 %; inside the ranges 34 %; per 1000 km² mtn/hill/plain 11.93/23.77/26.02
+  confluences both >= 45 km²: 268; mountain 19 (7 %), hill 150 (56 %), plain 99 (37 %); mountain+hill 63 %; inside the ranges 26 %; per 1000 km² mtn/hill/plain 0.92/4.57/6.42
+  confluences both >= 200 km²: 50; mountain 1 (2 %), hill 22 (44 %), plain 27 (54 %); mountain+hill 46 %; inside the ranges 26 %; per 1000 km² mtn/hill/plain 0.05/0.67/1.75
+  exits >= 10 km²: 290 (front 4052 km -> one per 14 km); NN spacing p25/p50/p75 1/3/5 km; area p25/p50/p75/max 14/23/55/7178 km²
+  exits >= 45 km²: 94 (front 4052 km -> one per 43 km); NN spacing p25/p50/p75 6/9/16 km; area p25/p50/p75/max 57/82/115/7178 km²
+  exits >= 200 km²: 10 (front 4052 km -> one per 405 km); NN spacing p25/p50/p75 19/44/61 km; area p25/p50/p75/max 282/860/1804/7178 km²
+  water crossing the front: 28746 km² in 1361 exits (any size); top 1/3/5/10 carry 25/38/46/52 %
+  rivers to the sea >= 500 km² fed from the ranges: 10; largest exit / mouth area p25/p50/p75 0.06/0.11/0.15; exits >= 10 km² per river p50 9, max 38
+    biggest: 12814 km² <- top exit 1804 (14 %), 38 exits>=10; 6843 km² <- top exit 1830 (27 %), 29 exits>=10; 4486 km² <- top exit 153 (3 %), 24 exits>=10; 1586 km² <- top exit 69 (4 %), 5 exits>=10; 1341 km² <- top exit 199 (15 %), 6 exits>=10; 1186 km² <- top exit 90 (8 %), 11 exits>=10
+  Hack h (A >= 10 km², all land) 0.43 (c 3.03), mountain cells 0.54; elongation Re p50 sea basins >= 100 km² 0.68 (n 56), range-exit basins >= 100 km² 0.86 (n 30)
+  mountain ground p50/p90/max 1306/1970/2959 m, 1 km slope p50/p90 11.2/20.4°; land above today's noise ground 0 % (mean 0 m there)
+  params U 5 m/step, ridge 450 m/km, m 0.45, Sc 0.6, grade 0.06
+    iteration 1: highest 3397 m; receivers changed (A >= 10 km²) 0
+    iteration 2: highest 2999 m; receivers changed (A >= 10 km²) 697
+    iteration 3: highest 2945 m; receivers changed (A >= 10 km²) 94
+    iteration 4: highest 2763 m; receivers changed (A >= 10 km²) 39
+    iteration 5: highest 2538 m; receivers changed (A >= 10 km²) 28
+    iteration 6: highest 2424 m; receivers changed (A >= 10 km²) 23
+    iteration 7: highest 2433 m; receivers changed (A >= 10 km²) 14
+    iteration 8: highest 2454 m; receivers changed (A >= 10 km²) 20
+    iteration 9: highest 2403 m; receivers changed (A >= 10 km²) 23
+    iteration 10: highest 2377 m; receivers changed (A >= 10 km²) 27
+    iteration 11: highest 2406 m; receivers changed (A >= 10 km²) 11
+    iteration 12: highest 2456 m; receivers changed (A >= 10 km²) 20
+    iteration 13: highest 2235 m; receivers changed (A >= 10 km²) 17
+    iteration 14: highest 2235 m; receivers changed (A >= 10 km²) 17
+    iteration 15: highest 2235 m; receivers changed (A >= 10 km²) 9
+    iteration 16: highest 2239 m; receivers changed (A >= 10 km²) 14
+    iteration 17: highest 2245 m; receivers changed (A >= 10 km²) 8
+    iteration 18: highest 2258 m; receivers changed (A >= 10 km²) 6
+    iteration 19: highest 2318 m; receivers changed (A >= 10 km²) 8
+    iteration 20: highest 2300 m; receivers changed (A >= 10 km²) 8
+    iteration 21: highest 2274 m; receivers changed (A >= 10 km²) 7
+    iteration 22: highest 2233 m; receivers changed (A >= 10 km²) 12
+    iteration 23: highest 2261 m; receivers changed (A >= 10 km²) 6
+    iteration 24: highest 2269 m; receivers changed (A >= 10 km²) 8
+    iteration 25: highest 2233 m; receivers changed (A >= 10 km²) 2
+    iteration 26: highest 2233 m; receivers changed (A >= 10 km²) 6
+    iteration 27: highest 2235 m; receivers changed (A >= 10 km²) 7
+    iteration 28: highest 2235 m; receivers changed (A >= 10 km²) 11
+    iteration 29: highest 2236 m; receivers changed (A >= 10 km²) 5
+    iteration 30: highest 2236 m; receivers changed (A >= 10 km²) 4
+seed 777777 AFTER full STEADY-STATE ITERATION (30 iterations; route 13.1 ms + solve 4.6 ms per step) [field classes]: land 68879 km² (mountain 14891, hill 28679, plain 25309); front 2435 cells; mountain cells' distance to the front p50/p90/p99/max 3.83/8.07/11.41/16.14 km
+  confluences both >= 10 km²: 1410; mountain 127 (9 %), hill 661 (47 %), plain 622 (44 %); mountain+hill 56 %; inside the ranges 17 %; per 1000 km² mtn/hill/plain 8.53/23.05/24.58
+  confluences both >= 45 km²: 324; mountain 12 (4 %), hill 141 (44 %), plain 171 (53 %); mountain+hill 47 %; inside the ranges 14 %; per 1000 km² mtn/hill/plain 0.81/4.92/6.76
+  confluences both >= 200 km²: 58; mountain 2 (3 %), hill 19 (33 %), plain 37 (64 %); mountain+hill 36 %; inside the ranges 9 %; per 1000 km² mtn/hill/plain 0.13/0.66/1.46
+  exits >= 10 km²: 307 (front 2435 km -> one per 8 km); NN spacing p25/p50/p75 2/4/5 km; area p25/p50/p75/max 16/24/43/1807 km²
+  exits >= 45 km²: 73 (front 2435 km -> one per 33 km); NN spacing p25/p50/p75 6/9/13 km; area p25/p50/p75/max 51/62/84/1807 km²
+  exits >= 200 km²: 5 (front 2435 km -> one per 487 km); NN spacing p25/p50/p75 20/76/76 km; area p25/p50/p75/max 1209/1391/1697/1807 km²
+  water crossing the front: 18395 km² in 1494 exits (any size); top 1/3/5/10 carry 10/27/34/38 %
+  rivers to the sea >= 500 km² fed from the ranges: 15; largest exit / mouth area p25/p50/p75 0.05/0.07/0.13; exits >= 10 km² per river p50 9, max 47
+    biggest: 12020 km² <- top exit 1391 (12 %), 47 exits>=10; 6901 km² <- top exit 1697 (25 %), 28 exits>=10; 5555 km² <- top exit 1807 (33 %), 26 exits>=10; 4914 km² <- top exit 87 (2 %), 33 exits>=10; 3800 km² <- top exit 65 (2 %), 13 exits>=10; 2893 km² <- top exit 1209 (42 %), 7 exits>=10
+  Hack h (A >= 10 km², all land) 0.57 (c 1.13), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.69 (n 64), range-exit basins >= 100 km² 0.88 (n 11)
+seed 777777 AFTER full [relief classes]: land 68879 km² (mountain 14823, hill 17276, plain 36780); front 2675 cells; mountain cells' distance to the front p50/p90/p99/max 3.83/8.00/11.00/16.73 km
+  confluences both >= 10 km²: 1410; mountain 111 (8 %), hill 313 (22 %), plain 986 (70 %); mountain+hill 30 %; inside the ranges 12 %; per 1000 km² mtn/hill/plain 7.49/18.12/26.81
+  confluences both >= 45 km²: 324; mountain 4 (1 %), hill 56 (17 %), plain 264 (81 %); mountain+hill 19 %; inside the ranges 7 %; per 1000 km² mtn/hill/plain 0.27/3.24/7.18
+  confluences both >= 200 km²: 58; mountain 2 (3 %), hill 3 (5 %), plain 53 (91 %); mountain+hill 9 %; inside the ranges 3 %; per 1000 km² mtn/hill/plain 0.13/0.17/1.44
+  exits >= 10 km²: 339 (front 2675 km -> one per 8 km); NN spacing p25/p50/p75 2/4/5 km; area p25/p50/p75/max 14/22/38/1694 km²
+  exits >= 45 km²: 65 (front 2675 km -> one per 41 km); NN spacing p25/p50/p75 6/11/15 km; area p25/p50/p75/max 51/61/81/1694 km²
+  exits >= 200 km²: 2 (front 2675 km -> one per 1338 km); NN spacing p25/p50/p75 75/75/75 km; area p25/p50/p75/max 1388/1694/1694/1694 km²
+  water crossing the front: 16010 km² in 1594 exits (any size); top 1/3/5/10 carry 11/20/21/24 %
+  rivers to the sea >= 500 km² fed from the ranges: 14; largest exit / mouth area p25/p50/p75 0.02/0.06/0.09; exits >= 10 km² per river p50 11, max 49
+    biggest: 12020 km² <- top exit 1388 (12 %), 49 exits>=10; 6901 km² <- top exit 1694 (25 %), 37 exits>=10; 5555 km² <- top exit 51 (1 %), 44 exits>=10; 4914 km² <- top exit 98 (2 %), 33 exits>=10; 3800 km² <- top exit 68 (2 %), 13 exits>=10; 2893 km² <- top exit 52 (2 %), 11 exits>=10
+  Hack h (A >= 10 km², all land) 0.57 (c 1.13), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.69 (n 64), range-exit basins >= 100 km² 0.88 (n 6)
+  mountain ground p50/p90/max 738/1434/2236 m, 1 km slope p50/p90 10.5/17.8°; land above today's noise ground 6 % (mean 116 m there)
+  params U 5 m/step, ridge 450 m/km, m 0.45, Sc 0.6, grade 0.06
+    iteration 1: highest 3107 m; receivers changed (A >= 10 km²) 0
+    iteration 2: highest 2693 m; receivers changed (A >= 10 km²) 749
+    iteration 3: highest 2718 m; receivers changed (A >= 10 km²) 72
+    iteration 4: highest 2753 m; receivers changed (A >= 10 km²) 35
+    iteration 5: highest 2473 m; receivers changed (A >= 10 km²) 10
+    iteration 6: highest 2504 m; receivers changed (A >= 10 km²) 8
+    iteration 7: highest 2295 m; receivers changed (A >= 10 km²) 8
+    iteration 8: highest 2327 m; receivers changed (A >= 10 km²) 2
+    iteration 9: highest 2401 m; receivers changed (A >= 10 km²) 2
+    iteration 10: highest 2303 m; receivers changed (A >= 10 km²) 2
+    iteration 11: highest 2303 m; receivers changed (A >= 10 km²) 3
+    iteration 12: highest 2303 m; receivers changed (A >= 10 km²) 5
+    iteration 13: highest 2303 m; receivers changed (A >= 10 km²) 2
+    iteration 14: highest 2303 m; receivers changed (A >= 10 km²) 5
+    iteration 15: highest 2303 m; receivers changed (A >= 10 km²) 0
+    iteration 16: highest 2314 m; receivers changed (A >= 10 km²) 1
+    iteration 17: highest 2303 m; receivers changed (A >= 10 km²) 0
+    iteration 18: highest 2303 m; receivers changed (A >= 10 km²) 1
+    iteration 19: highest 2303 m; receivers changed (A >= 10 km²) 2
+    iteration 20: highest 2303 m; receivers changed (A >= 10 km²) 0
+    iteration 21: highest 2303 m; receivers changed (A >= 10 km²) 0
+    iteration 22: highest 2303 m; receivers changed (A >= 10 km²) 0
+    iteration 23: highest 2303 m; receivers changed (A >= 10 km²) 0
+    iteration 24: highest 2303 m; receivers changed (A >= 10 km²) 0
+    iteration 25: highest 2303 m; receivers changed (A >= 10 km²) 1
+    iteration 26: highest 2303 m; receivers changed (A >= 10 km²) 0
+    iteration 27: highest 2303 m; receivers changed (A >= 10 km²) 0
+    iteration 28: highest 2303 m; receivers changed (A >= 10 km²) 0
+    iteration 29: highest 2303 m; receivers changed (A >= 10 km²) 0
+    iteration 30: highest 2303 m; receivers changed (A >= 10 km²) 0
+seed 777777 AFTER low STEADY-STATE ITERATION (30 iterations; route 13.1 ms + solve 4.6 ms per step) [field classes]: land 68879 km² (mountain 14891, hill 28679, plain 25309); front 2435 cells; mountain cells' distance to the front p50/p90/p99/max 3.83/8.07/11.41/16.14 km
+  confluences both >= 10 km²: 1418; mountain 126 (9 %), hill 618 (44 %), plain 674 (48 %); mountain+hill 52 %; inside the ranges 23 %; per 1000 km² mtn/hill/plain 8.46/21.55/26.63
+  confluences both >= 45 km²: 309; mountain 13 (4 %), hill 115 (37 %), plain 181 (59 %); mountain+hill 41 %; inside the ranges 24 %; per 1000 km² mtn/hill/plain 0.87/4.01/7.15
+  confluences both >= 200 km²: 59; mountain 2 (3 %), hill 21 (36 %), plain 36 (61 %); mountain+hill 39 %; inside the ranges 22 %; per 1000 km² mtn/hill/plain 0.13/0.73/1.42
+  exits >= 10 km²: 260 (front 2435 km -> one per 9 km); NN spacing p25/p50/p75 2/4/5 km; area p25/p50/p75/max 14/23/42/5086 km²
+  exits >= 45 km²: 55 (front 2435 km -> one per 44 km); NN spacing p25/p50/p75 7/10/17 km; area p25/p50/p75/max 52/66/90/5086 km²
+  exits >= 200 km²: 4 (front 2435 km -> one per 609 km); NN spacing p25/p50/p75 76/97/97 km; area p25/p50/p75/max 1676/3463/3463/5086 km²
+  water crossing the front: 21892 km² in 1301 exits (any size); top 1/3/5/10 carry 23/47/54/56 %
+  rivers to the sea >= 500 km² fed from the ranges: 17; largest exit / mouth area p25/p50/p75 0.04/0.08/0.11; exits >= 10 km² per river p50 6, max 54
+    biggest: 10253 km² <- top exit 1676 (16 %), 54 exits>=10; 8670 km² <- top exit 127 (1 %), 40 exits>=10; 5640 km² <- top exit 5086 (90 %), 6 exits>=10; 5616 km² <- top exit 74 (1 %), 34 exits>=10; 4405 km² <- top exit 3463 (79 %), 2 exits>=10; 3960 km² <- top exit 57 (1 %), 11 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.12), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.69 (n 60), range-exit basins >= 100 km² 0.89 (n 11)
+seed 777777 AFTER low [relief classes]: land 68879 km² (mountain 14855, hill 16867, plain 37157); front 2682 cells; mountain cells' distance to the front p50/p90/p99/max 3.83/8.00/10.49/12.73 km
+  confluences both >= 10 km²: 1418; mountain 106 (7 %), hill 279 (20 %), plain 1033 (73 %); mountain+hill 27 %; inside the ranges 11 %; per 1000 km² mtn/hill/plain 7.14/16.54/27.80
+  confluences both >= 45 km²: 309; mountain 5 (2 %), hill 35 (11 %), plain 269 (87 %); mountain+hill 13 %; inside the ranges 7 %; per 1000 km² mtn/hill/plain 0.34/2.08/7.24
+  confluences both >= 200 km²: 59; mountain 2 (3 %), hill 2 (3 %), plain 55 (93 %); mountain+hill 7 %; inside the ranges 3 %; per 1000 km² mtn/hill/plain 0.13/0.12/1.48
+  exits >= 10 km²: 335 (front 2682 km -> one per 8 km); NN spacing p25/p50/p75 2/4/5 km; area p25/p50/p75/max 13/22/36/1673 km²
+  exits >= 45 km²: 60 (front 2682 km -> one per 45 km); NN spacing p25/p50/p75 6/11/15 km; area p25/p50/p75/max 52/67/89/1673 km²
+  exits >= 200 km²: 2 (front 2682 km -> one per 1341 km); NN spacing p25/p50/p75 75/75/75 km; area p25/p50/p75/max 1326/1673/1673/1673 km²
+  water crossing the front: 16065 km² in 1647 exits (any size); top 1/3/5/10 carry 10/19/21/24 %
+  rivers to the sea >= 500 km² fed from the ranges: 17; largest exit / mouth area p25/p50/p75 0.02/0.06/0.08; exits >= 10 km² per river p50 10, max 64
+    biggest: 10253 km² <- top exit 1673 (16 %), 64 exits>=10; 8670 km² <- top exit 122 (1 %), 41 exits>=10; 5640 km² <- top exit 105 (2 %), 43 exits>=10; 5616 km² <- top exit 74 (1 %), 33 exits>=10; 4405 km² <- top exit 97 (2 %), 28 exits>=10; 3960 km² <- top exit 57 (1 %), 13 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.12), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.69 (n 60), range-exit basins >= 100 km² 0.99 (n 8)
+  mountain ground p50/p90/max 715/1400/2303 m, 1 km slope p50/p90 10.6/17.8°; land above today's noise ground 2 % (mean 115 m there)
+seed 777777 BEFORE (noise ground) [uplift classes of wide]: land 68879 km² (mountain 41709, hill 11313, plain 15857); front 1504 cells; mountain cells' distance to the front p50/p90/p99/max 13.73/29.04/40.46/47.18 km
+  confluences both >= 10 km²: 1428; mountain 865 (61 %), hill 219 (15 %), plain 344 (24 %); mountain+hill 76 %; inside the ranges 68 %; per 1000 km² mtn/hill/plain 20.74/19.36/21.69
+  confluences both >= 45 km²: 268; mountain 151 (56 %), hill 41 (15 %), plain 76 (28 %); mountain+hill 72 %; inside the ranges 66 %; per 1000 km² mtn/hill/plain 3.62/3.62/4.79
+  confluences both >= 200 km²: 50; mountain 19 (38 %), hill 8 (16 %), plain 23 (46 %); mountain+hill 54 %; inside the ranges 56 %; per 1000 km² mtn/hill/plain 0.46/0.71/1.45
+  exits >= 10 km²: 121 (front 1504 km -> one per 12 km); NN spacing p25/p50/p75 1/3/5 km; area p25/p50/p75/max 18/49/146/2958 km²
+  exits >= 45 km²: 61 (front 1504 km -> one per 25 km); NN spacing p25/p50/p75 4/8/13 km; area p25/p50/p75/max 76/146/398/2958 km²
+  exits >= 200 km²: 28 (front 1504 km -> one per 54 km); NN spacing p25/p50/p75 13/19/27 km; area p25/p50/p75/max 316/448/943/2958 km²
+  water crossing the front: 26391 km² in 552 exits (any size); top 1/3/5/10 carry 11/28/39/56 %
+  rivers to the sea >= 500 km² fed from the ranges: 10; largest exit / mouth area p25/p50/p75 0.23/0.44/0.70; exits >= 10 km² per river p50 2, max 24
+    biggest: 12814 km² <- top exit 2958 (23 %), 24 exits>=10; 6843 km² <- top exit 2756 (40 %), 12 exits>=10; 4486 km² <- top exit 643 (14 %), 17 exits>=10; 1586 km² <- top exit 574 (36 %), 7 exits>=10; 1341 km² <- top exit 943 (70 %), 2 exits>=10; 1186 km² <- top exit 1029 (87 %), 2 exits>=10
+  Hack h (A >= 10 km², all land) 0.43 (c 3.03), mountain cells 0.46; elongation Re p50 sea basins >= 100 km² 0.68 (n 56), range-exit basins >= 100 km² 0.79 (n 39)
+  params U 5 m/step, ridge 450 m/km, m 0.45, Sc 0.6, grade 0.06, sigma 12 km
+    iteration 1: highest 6743 m; receivers changed (A >= 10 km²) 0
+    iteration 2: highest 5597 m; receivers changed (A >= 10 km²) 695
+    iteration 3: highest 5244 m; receivers changed (A >= 10 km²) 90
+    iteration 4: highest 4825 m; receivers changed (A >= 10 km²) 28
+    iteration 5: highest 4722 m; receivers changed (A >= 10 km²) 22
+    iteration 6: highest 4747 m; receivers changed (A >= 10 km²) 15
+    iteration 7: highest 4847 m; receivers changed (A >= 10 km²) 7
+    iteration 8: highest 4457 m; receivers changed (A >= 10 km²) 13
+    iteration 9: highest 4468 m; receivers changed (A >= 10 km²) 5
+    iteration 10: highest 4511 m; receivers changed (A >= 10 km²) 9
+    iteration 11: highest 4401 m; receivers changed (A >= 10 km²) 5
+    iteration 12: highest 4480 m; receivers changed (A >= 10 km²) 10
+    iteration 13: highest 4435 m; receivers changed (A >= 10 km²) 6
+    iteration 14: highest 4501 m; receivers changed (A >= 10 km²) 6
+    iteration 15: highest 4610 m; receivers changed (A >= 10 km²) 4
+    iteration 16: highest 4500 m; receivers changed (A >= 10 km²) 4
+    iteration 17: highest 4640 m; receivers changed (A >= 10 km²) 4
+    iteration 18: highest 4374 m; receivers changed (A >= 10 km²) 3
+    iteration 19: highest 4479 m; receivers changed (A >= 10 km²) 5
+    iteration 20: highest 4505 m; receivers changed (A >= 10 km²) 2
+    iteration 21: highest 4289 m; receivers changed (A >= 10 km²) 4
+    iteration 22: highest 4352 m; receivers changed (A >= 10 km²) 5
+    iteration 23: highest 4207 m; receivers changed (A >= 10 km²) 2
+    iteration 24: highest 4275 m; receivers changed (A >= 10 km²) 3
+    iteration 25: highest 4234 m; receivers changed (A >= 10 km²) 1
+    iteration 26: highest 4140 m; receivers changed (A >= 10 km²) 1
+    iteration 27: highest 4292 m; receivers changed (A >= 10 km²) 0
+    iteration 28: highest 4232 m; receivers changed (A >= 10 km²) 1
+    iteration 29: highest 4242 m; receivers changed (A >= 10 km²) 0
+    iteration 30: highest 4341 m; receivers changed (A >= 10 km²) 0
+seed 777777 AFTER wide STEADY-STATE ITERATION (30 iterations; route 13.0 ms + solve 4.6 ms per step) [field classes]: land 68879 km² (mountain 14891, hill 28679, plain 25309); front 2435 cells; mountain cells' distance to the front p50/p90/p99/max 3.83/8.07/11.41/16.14 km
+  confluences both >= 10 km²: 1319; mountain 206 (16 %), hill 551 (42 %), plain 562 (43 %); mountain+hill 57 %; inside the ranges 23 %; per 1000 km² mtn/hill/plain 13.83/19.21/22.21
+  confluences both >= 45 km²: 298; mountain 22 (7 %), hill 112 (38 %), plain 164 (55 %); mountain+hill 45 %; inside the ranges 16 %; per 1000 km² mtn/hill/plain 1.48/3.91/6.48
+  confluences both >= 200 km²: 51; mountain 0 (0 %), hill 14 (27 %), plain 37 (73 %); mountain+hill 27 %; inside the ranges 10 %; per 1000 km² mtn/hill/plain 0.00/0.49/1.46
+  exits >= 10 km²: 246 (front 2435 km -> one per 10 km); NN spacing p25/p50/p75 2/4/6 km; area p25/p50/p75/max 15/27/53/3469 km²
+  exits >= 45 km²: 84 (front 2435 km -> one per 29 km); NN spacing p25/p50/p75 6/9/16 km; area p25/p50/p75/max 53/65/133/3469 km²
+  exits >= 200 km²: 13 (front 2435 km -> one per 187 km); NN spacing p25/p50/p75 20/32/37 km; area p25/p50/p75/max 237/401/525/3469 km²
+  water crossing the front: 18858 km² in 1069 exits (any size); top 1/3/5/10 carry 18/27/32/41 %
+  rivers to the sea >= 500 km² fed from the ranges: 17; largest exit / mouth area p25/p50/p75 0.07/0.11/0.20; exits >= 10 km² per river p50 6, max 38
+    biggest: 8530 km² <- top exit 186 (2 %), 38 exits>=10; 6277 km² <- top exit 430 (7 %), 30 exits>=10; 5448 km² <- top exit 532 (10 %), 10 exits>=10; 5093 km² <- top exit 226 (4 %), 23 exits>=10; 3939 km² <- top exit 3469 (88 %), 5 exits>=10; 3882 km² <- top exit 284 (7 %), 13 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.07), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.67 (n 62), range-exit basins >= 100 km² 0.85 (n 27)
+seed 777777 AFTER wide [uplift classes: mountain where U >= 0.3 of peak]: land 68879 km² (mountain 41709, hill 11313, plain 15857); front 1504 cells; mountain cells' distance to the front p50/p90/p99/max 13.73/29.04/40.46/47.18 km
+  confluences both >= 10 km²: 1319; mountain 798 (61 %), hill 178 (13 %), plain 343 (26 %); mountain+hill 74 %; inside the ranges 71 %; per 1000 km² mtn/hill/plain 19.13/15.73/21.63
+  confluences both >= 45 km²: 298; mountain 153 (51 %), hill 39 (13 %), plain 106 (36 %); mountain+hill 64 %; inside the ranges 69 %; per 1000 km² mtn/hill/plain 3.67/3.45/6.68
+  confluences both >= 200 km²: 51; mountain 15 (29 %), hill 5 (10 %), plain 31 (61 %); mountain+hill 39 %; inside the ranges 67 %; per 1000 km² mtn/hill/plain 0.36/0.44/1.95
+  exits >= 10 km²: 109 (front 1504 km -> one per 14 km); NN spacing p25/p50/p75 3/5/6 km; area p25/p50/p75/max 20/52/154/8490 km²
+  exits >= 45 km²: 59 (front 1504 km -> one per 25 km); NN spacing p25/p50/p75 4/6/12 km; area p25/p50/p75/max 77/136/491/8490 km²
+  exits >= 200 km²: 25 (front 1504 km -> one per 60 km); NN spacing p25/p50/p75 14/17/31 km; area p25/p50/p75/max 322/570/1179/8490 km²
+  water crossing the front: 35340 km² in 472 exits (any size); top 1/3/5/10 carry 24/45/55/70 %
+  rivers to the sea >= 500 km² fed from the ranges: 15; largest exit / mouth area p25/p50/p75 0.37/0.46/0.86; exits >= 10 km² per river p50 3, max 12
+    biggest: 8530 km² <- top exit 8490 (100 %), 1 exits>=10; 6277 km² <- top exit 1484 (24 %), 12 exits>=10; 5448 km² <- top exit 2015 (37 %), 9 exits>=10; 5093 km² <- top exit 4952 (97 %), 2 exits>=10; 3882 km² <- top exit 1179 (30 %), 9 exits>=10; 2567 km² <- top exit 2437 (95 %), 3 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.07), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.67 (n 62), range-exit basins >= 100 km² 0.76 (n 38)
+seed 777777 AFTER wide [relief classes]: land 68879 km² (mountain 37153, hill 16695, plain 15031); front 2668 cells; mountain cells' distance to the front p50/p90/p99/max 10.49/25.46/36.77/43.28 km
+  confluences both >= 10 km²: 1319; mountain 619 (47 %), hill 364 (28 %), plain 336 (25 %); mountain+hill 75 %; inside the ranges 52 %; per 1000 km² mtn/hill/plain 16.66/21.80/22.35
+  confluences both >= 45 km²: 298; mountain 94 (32 %), hill 107 (36 %), plain 97 (33 %); mountain+hill 67 %; inside the ranges 41 %; per 1000 km² mtn/hill/plain 2.53/6.41/6.45
+  confluences both >= 200 km²: 51; mountain 8 (16 %), hill 21 (41 %), plain 22 (43 %); mountain+hill 57 %; inside the ranges 27 %; per 1000 km² mtn/hill/plain 0.22/1.26/1.46
+  exits >= 10 km²: 279 (front 2668 km -> one per 10 km); NN spacing p25/p50/p75 2/3/4 km; area p25/p50/p75/max 15/34/88/3836 km²
+  exits >= 45 km²: 116 (front 2668 km -> one per 23 km); NN spacing p25/p50/p75 4/7/9 km; area p25/p50/p75/max 66/113/204/3836 km²
+  exits >= 200 km²: 32 (front 2668 km -> one per 83 km); NN spacing p25/p50/p75 7/16/24 km; area p25/p50/p75/max 283/497/806/3836 km²
+  water crossing the front: 35767 km² in 1271 exits (any size); top 1/3/5/10 carry 11/20/28/40 %
+  rivers to the sea >= 500 km² fed from the ranges: 17; largest exit / mouth area p25/p50/p75 0.22/0.35/0.52; exits >= 10 km² per river p50 6, max 48
+    biggest: 8530 km² <- top exit 874 (10 %), 48 exits>=10; 6277 km² <- top exit 1396 (22 %), 26 exits>=10; 5448 km² <- top exit 2015 (37 %), 13 exits>=10; 5093 km² <- top exit 806 (16 %), 29 exits>=10; 3939 km² <- top exit 3836 (97 %), 3 exits>=10; 3882 km² <- top exit 1128 (29 %), 17 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.07), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.67 (n 62), range-exit basins >= 100 km² 0.78 (n 65)
+  mountain ground p50/p90/max 1908/2870/4068 m, 1 km slope p50/p90 17.0/24.7°; land above today's noise ground 56 % (mean 651 m there)
+seed 1 BEFORE (noise ground, steepest-descent routing) [field classes]: land 66306 km² (mountain 17844, hill 25546, plain 22916); front 2637 cells; mountain cells' distance to the front p50/p90/p99/max 4.24/10.00/15.00/20.24 km
+  confluences both >= 10 km²: 1408; mountain 201 (14 %), hill 644 (46 %), plain 563 (40 %); mountain+hill 60 %; inside the ranges 18 %; per 1000 km² mtn/hill/plain 11.26/25.21/24.57
+  confluences both >= 45 km²: 236; mountain 13 (6 %), hill 105 (44 %), plain 118 (50 %); mountain+hill 50 %; inside the ranges 8 %; per 1000 km² mtn/hill/plain 0.73/4.11/5.15
+  confluences both >= 200 km²: 56; mountain 3 (5 %), hill 18 (32 %), plain 35 (63 %); mountain+hill 38 %; inside the ranges 5 %; per 1000 km² mtn/hill/plain 0.17/0.70/1.53
+  exits >= 10 km²: 252 (front 2637 km -> one per 10 km); NN spacing p25/p50/p75 2/4/6 km; area p25/p50/p75/max 14/22/47/2975 km²
+  exits >= 45 km²: 71 (front 2637 km -> one per 37 km); NN spacing p25/p50/p75 5/8/14 km; area p25/p50/p75/max 60/77/117/2975 km²
+  exits >= 200 km²: 6 (front 2637 km -> one per 440 km); NN spacing p25/p50/p75 49/73/85 km; area p25/p50/p75/max 279/342/359/2975 km²
+  water crossing the front: 17720 km² in 2000 exits (any size); top 1/3/5/10 carry 17/21/24/30 %
+  rivers to the sea >= 500 km² fed from the ranges: 12; largest exit / mouth area p25/p50/p75 0.03/0.07/0.17; exits >= 10 km² per river p50 5, max 79
+    biggest: 12804 km² <- top exit 359 (3 %), 79 exits>=10; 8613 km² <- top exit 164 (2 %), 39 exits>=10; 3033 km² <- top exit 2975 (98 %), 2 exits>=10; 2735 km² <- top exit 228 (8 %), 8 exits>=10; 2568 km² <- top exit 73 (3 %), 4 exits>=10; 2238 km² <- top exit 144 (6 %), 6 exits>=10
+  Hack h (A >= 10 km², all land) 0.45 (c 2.51), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.70 (n 46), range-exit basins >= 100 km² 0.79 (n 25)
+seed 1 BEFORE [relief classes]: land 66306 km² (mountain 23659, hill 29560, plain 13087); front 4760 cells; mountain cells' distance to the front p50/p90/p99/max 3.00/7.00/10.24/14.14 km
+  confluences both >= 10 km²: 1408; mountain 308 (22 %), hill 715 (51 %), plain 385 (27 %); mountain+hill 73 %; inside the ranges 37 %; per 1000 km² mtn/hill/plain 13.02/24.19/29.42
+  confluences both >= 45 km²: 236; mountain 29 (12 %), hill 120 (51 %), plain 87 (37 %); mountain+hill 63 %; inside the ranges 26 %; per 1000 km² mtn/hill/plain 1.23/4.06/6.65
+  confluences both >= 200 km²: 56; mountain 4 (7 %), hill 25 (45 %), plain 27 (48 %); mountain+hill 52 %; inside the ranges 21 %; per 1000 km² mtn/hill/plain 0.17/0.85/2.06
+  exits >= 10 km²: 322 (front 4760 km -> one per 15 km); NN spacing p25/p50/p75 1/3/4 km; area p25/p50/p75/max 13/23/50/4581 km²
+  exits >= 45 km²: 88 (front 4760 km -> one per 54 km); NN spacing p25/p50/p75 6/10/13 km; area p25/p50/p75/max 60/81/142/4581 km²
+  exits >= 200 km²: 15 (front 4760 km -> one per 317 km); NN spacing p25/p50/p75 26/35/50 km; area p25/p50/p75/max 281/339/540/4581 km²
+  water crossing the front: 28425 km² in 1413 exits (any size); top 1/3/5/10 carry 16/36/39/46 %
+  rivers to the sea >= 500 km² fed from the ranges: 13; largest exit / mouth area p25/p50/p75 0.07/0.12/0.36; exits >= 10 km² per river p50 8, max 59
+    biggest: 12804 km² <- top exit 4581 (36 %), 38 exits>=10; 8613 km² <- top exit 167 (2 %), 59 exits>=10; 3033 km² <- top exit 2982 (98 %), 2 exits>=10; 2735 km² <- top exit 228 (8 %), 19 exits>=10; 2568 km² <- top exit 76 (3 %), 14 exits>=10; 2238 km² <- top exit 276 (12 %), 10 exits>=10
+  Hack h (A >= 10 km², all land) 0.45 (c 2.51), mountain cells 0.53; elongation Re p50 sea basins >= 100 km² 0.70 (n 46), range-exit basins >= 100 km² 0.79 (n 34)
+  mountain ground p50/p90/max 1324/1920/2872 m, 1 km slope p50/p90 10.6/19.5°; land above today's noise ground 0 % (mean 0 m there)
+seed 1 BEFORE (noise ground) [uplift classes of widefull]: land 66306 km² (mountain 38776, hill 10746, plain 16784); front 1446 cells; mountain cells' distance to the front p50/p90/p99/max 15.00/36.04/50.00/60.81 km
+  confluences both >= 10 km²: 1408; mountain 879 (62 %), hill 179 (13 %), plain 350 (25 %); mountain+hill 75 %; inside the ranges 69 %; per 1000 km² mtn/hill/plain 22.67/16.66/20.85
+  confluences both >= 45 km²: 236; mountain 147 (62 %), hill 21 (9 %), plain 68 (29 %); mountain+hill 71 %; inside the ranges 71 %; per 1000 km² mtn/hill/plain 3.79/1.95/4.05
+  confluences both >= 200 km²: 56; mountain 27 (48 %), hill 4 (7 %), plain 25 (45 %); mountain+hill 55 %; inside the ranges 55 %; per 1000 km² mtn/hill/plain 0.70/0.37/1.49
+  exits >= 10 km²: 127 (front 1446 km -> one per 11 km); NN spacing p25/p50/p75 1/2/6 km; area p25/p50/p75/max 16/32/154/4866 km²
+  exits >= 45 km²: 56 (front 1446 km -> one per 26 km); NN spacing p25/p50/p75 4/9/14 km; area p25/p50/p75/max 106/204/473/4866 km²
+  exits >= 200 km²: 28 (front 1446 km -> one per 52 km); NN spacing p25/p50/p75 10/15/36 km; area p25/p50/p75/max 333/554/711/4866 km²
+  water crossing the front: 33230 km² in 524 exits (any size); top 1/3/5/10 carry 15/41/51/63 %
+  rivers to the sea >= 500 km² fed from the ranges: 12; largest exit / mouth area p25/p50/p75 0.23/0.28/0.85; exits >= 10 km² per river p50 3, max 19
+    biggest: 12804 km² <- top exit 4866 (38 %), 19 exits>=10; 8613 km² <- top exit 2052 (24 %), 19 exits>=10; 2735 km² <- top exit 601 (22 %), 5 exits>=10; 2568 km² <- top exit 711 (28 %), 11 exits>=10; 2238 km² <- top exit 333 (15 %), 9 exits>=10; 1396 km² <- top exit 1261 (90 %), 2 exits>=10
+  Hack h (A >= 10 km², all land) 0.45 (c 2.51), mountain cells 0.43; elongation Re p50 sea basins >= 100 km² 0.70 (n 46), range-exit basins >= 100 km² 0.79 (n 43)
+  params U 5 m/step, ridge 450 m/km, m 0.45, Sc 0.6, grade 0.06
+    iteration 1: highest 7352 m; receivers changed (A >= 10 km²) 0
+    iteration 2: highest 6111 m; receivers changed (A >= 10 km²) 706
+    iteration 3: highest 5997 m; receivers changed (A >= 10 km²) 84
+    iteration 4: highest 5669 m; receivers changed (A >= 10 km²) 32
+    iteration 5: highest 5845 m; receivers changed (A >= 10 km²) 27
+    iteration 6: highest 5326 m; receivers changed (A >= 10 km²) 14
+    iteration 7: highest 5205 m; receivers changed (A >= 10 km²) 25
+    iteration 8: highest 5356 m; receivers changed (A >= 10 km²) 17
+    iteration 9: highest 5049 m; receivers changed (A >= 10 km²) 5
+    iteration 10: highest 5162 m; receivers changed (A >= 10 km²) 12
+    iteration 11: highest 5163 m; receivers changed (A >= 10 km²) 4
+    iteration 12: highest 5263 m; receivers changed (A >= 10 km²) 12
+    iteration 13: highest 5300 m; receivers changed (A >= 10 km²) 2
+    iteration 14: highest 5175 m; receivers changed (A >= 10 km²) 8
+    iteration 15: highest 5162 m; receivers changed (A >= 10 km²) 9
+    iteration 16: highest 4747 m; receivers changed (A >= 10 km²) 6
+    iteration 17: highest 4699 m; receivers changed (A >= 10 km²) 6
+    iteration 18: highest 4726 m; receivers changed (A >= 10 km²) 6
+    iteration 19: highest 4770 m; receivers changed (A >= 10 km²) 1
+    iteration 20: highest 4811 m; receivers changed (A >= 10 km²) 2
+    iteration 21: highest 4773 m; receivers changed (A >= 10 km²) 4
+    iteration 22: highest 4812 m; receivers changed (A >= 10 km²) 0
+    iteration 23: highest 5025 m; receivers changed (A >= 10 km²) 3
+    iteration 24: highest 4882 m; receivers changed (A >= 10 km²) 3
+    iteration 25: highest 4681 m; receivers changed (A >= 10 km²) 1
+    iteration 26: highest 4636 m; receivers changed (A >= 10 km²) 1
+    iteration 27: highest 4788 m; receivers changed (A >= 10 km²) 0
+    iteration 28: highest 4626 m; receivers changed (A >= 10 km²) 3
+    iteration 29: highest 4769 m; receivers changed (A >= 10 km²) 1
+    iteration 30: highest 4751 m; receivers changed (A >= 10 km²) 2
+seed 1 AFTER widefull STEADY-STATE ITERATION (30 iterations; route 13.2 ms + solve 4.8 ms per step) [field classes]: land 66306 km² (mountain 17844, hill 25546, plain 22916); front 2637 cells; mountain cells' distance to the front p50/p90/p99/max 4.24/10.00/15.00/20.24 km
+  confluences both >= 10 km²: 1302; mountain 269 (21 %), hill 534 (41 %), plain 499 (38 %); mountain+hill 62 %; inside the ranges 24 %; per 1000 km² mtn/hill/plain 15.08/20.90/21.78
+  confluences both >= 45 km²: 289; mountain 25 (9 %), hill 124 (43 %), plain 140 (48 %); mountain+hill 52 %; inside the ranges 12 %; per 1000 km² mtn/hill/plain 1.40/4.85/6.11
+  confluences both >= 200 km²: 57; mountain 2 (4 %), hill 19 (33 %), plain 36 (63 %); mountain+hill 37 %; inside the ranges 7 %; per 1000 km² mtn/hill/plain 0.11/0.74/1.57
+  exits >= 10 km²: 281 (front 2637 km -> one per 9 km); NN spacing p25/p50/p75 2/4/6 km; area p25/p50/p75/max 17/30/68/2175 km²
+  exits >= 45 km²: 103 (front 2637 km -> one per 26 km); NN spacing p25/p50/p75 6/9/13 km; area p25/p50/p75/max 61/82/119/2175 km²
+  exits >= 200 km²: 9 (front 2637 km -> one per 293 km); NN spacing p25/p50/p75 30/30/45 km; area p25/p50/p75/max 316/409/545/2175 km²
+  water crossing the front: 19415 km² in 1151 exits (any size); top 1/3/5/10 carry 11/17/22/29 %
+  rivers to the sea >= 500 km² fed from the ranges: 14; largest exit / mouth area p25/p50/p75 0.05/0.13/0.15; exits >= 10 km² per river p50 8, max 65
+    biggest: 10890 km² <- top exit 409 (4 %), 65 exits>=10; 7796 km² <- top exit 181 (2 %), 37 exits>=10; 3623 km² <- top exit 500 (14 %), 13 exits>=10; 3518 km² <- top exit 157 (4 %), 14 exits>=10; 2570 km² <- top exit 305 (12 %), 5 exits>=10; 2312 km² <- top exit 122 (5 %), 10 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.08), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.67 (n 57), range-exit basins >= 100 km² 0.87 (n 39)
+seed 1 AFTER widefull [uplift classes: mountain where U >= 0.3 of peak]: land 66306 km² (mountain 38776, hill 10746, plain 16784); front 1446 cells; mountain cells' distance to the front p50/p90/p99/max 15.00/36.04/50.00/60.81 km
+  confluences both >= 10 km²: 1302; mountain 769 (59 %), hill 183 (14 %), plain 350 (27 %); mountain+hill 73 %; inside the ranges 63 %; per 1000 km² mtn/hill/plain 19.83/17.03/20.85
+  confluences both >= 45 km²: 289; mountain 157 (54 %), hill 34 (12 %), plain 98 (34 %); mountain+hill 66 %; inside the ranges 58 %; per 1000 km² mtn/hill/plain 4.05/3.16/5.84
+  confluences both >= 200 km²: 57; mountain 20 (35 %), hill 6 (11 %), plain 31 (54 %); mountain+hill 46 %; inside the ranges 40 %; per 1000 km² mtn/hill/plain 0.52/0.56/1.85
+  exits >= 10 km²: 151 (front 1446 km -> one per 10 km); NN spacing p25/p50/p75 2/4/6 km; area p25/p50/p75/max 19/41/160/4484 km²
+  exits >= 45 km²: 71 (front 1446 km -> one per 20 km); NN spacing p25/p50/p75 7/9/15 km; area p25/p50/p75/max 90/164/366/4484 km²
+  exits >= 200 km²: 31 (front 1446 km -> one per 47 km); NN spacing p25/p50/p75 10/14/28 km; area p25/p50/p75/max 285/483/830/4484 km²
+  water crossing the front: 31173 km² in 595 exits (any size); top 1/3/5/10 carry 14/30/39/52 %
+  rivers to the sea >= 500 km² fed from the ranges: 14; largest exit / mouth area p25/p50/p75 0.12/0.41/0.85; exits >= 10 km² per river p50 5, max 21
+    biggest: 10890 km² <- top exit 4484 (41 %), 11 exits>=10; 7796 km² <- top exit 912 (12 %), 21 exits>=10; 3623 km² <- top exit 1416 (39 %), 5 exits>=10; 3518 km² <- top exit 368 (10 %), 16 exits>=10; 2570 km² <- top exit 666 (26 %), 6 exits>=10; 2312 km² <- top exit 341 (15 %), 6 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.08), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.67 (n 57), range-exit basins >= 100 km² 0.77 (n 51)
+seed 1 AFTER widefull [relief classes]: land 66306 km² (mountain 35950, hill 15690, plain 14666); front 2605 cells; mountain cells' distance to the front p50/p90/p99/max 11.41/32.14/45.84/58.57 km
+  confluences both >= 10 km²: 1302; mountain 624 (48 %), hill 364 (28 %), plain 314 (24 %); mountain+hill 76 %; inside the ranges 55 %; per 1000 km² mtn/hill/plain 17.36/23.20/21.41
+  confluences both >= 45 km²: 289; mountain 109 (38 %), hill 92 (32 %), plain 88 (30 %); mountain+hill 70 %; inside the ranges 49 %; per 1000 km² mtn/hill/plain 3.03/5.86/6.00
+  confluences both >= 200 km²: 57; mountain 10 (18 %), hill 23 (40 %), plain 24 (42 %); mountain+hill 58 %; inside the ranges 33 %; per 1000 km² mtn/hill/plain 0.28/1.47/1.64
+  exits >= 10 km²: 225 (front 2605 km -> one per 12 km); NN spacing p25/p50/p75 2/3/5 km; area p25/p50/p75/max 16/34/97/4245 km²
+  exits >= 45 km²: 92 (front 2605 km -> one per 28 km); NN spacing p25/p50/p75 4/7/10 km; area p25/p50/p75/max 73/121/302/4245 km²
+  exits >= 200 km²: 34 (front 2605 km -> one per 77 km); NN spacing p25/p50/p75 13/16/22 km; area p25/p50/p75/max 265/399/742/4245 km²
+  water crossing the front: 35276 km² in 1025 exits (any size); top 1/3/5/10 carry 12/27/36/48 %
+  rivers to the sea >= 500 km² fed from the ranges: 15; largest exit / mouth area p25/p50/p75 0.15/0.26/0.64; exits >= 10 km² per river p50 7, max 30
+    biggest: 10890 km² <- top exit 4245 (39 %), 16 exits>=10; 7796 km² <- top exit 903 (12 %), 30 exits>=10; 3623 km² <- top exit 1406 (39 %), 11 exits>=10; 3518 km² <- top exit 327 (9 %), 21 exits>=10; 2570 km² <- top exit 666 (26 %), 8 exits>=10; 2312 km² <- top exit 350 (15 %), 7 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.08), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.67 (n 57), range-exit basins >= 100 km² 0.79 (n 54)
+  mountain ground p50/p90/max 1786/2843/4751 m, 1 km slope p50/p90 16.3/24.4°; land above today's noise ground 52 % (mean 654 m there)
+seed 42 BEFORE (noise ground, steepest-descent routing) [field classes]: land 69259 km² (mountain 19034, hill 24932, plain 25293); front 2417 cells; mountain cells' distance to the front p50/p90/p99/max 5.24/12.31/19.00/24.00 km
+  confluences both >= 10 km²: 1366; mountain 260 (19 %), hill 582 (43 %), plain 524 (38 %); mountain+hill 62 %; inside the ranges 21 %; per 1000 km² mtn/hill/plain 13.66/23.34/20.72
+  confluences both >= 45 km²: 232; mountain 21 (9 %), hill 99 (43 %), plain 112 (48 %); mountain+hill 52 %; inside the ranges 12 %; per 1000 km² mtn/hill/plain 1.10/3.97/4.43
+  confluences both >= 200 km²: 44; mountain 2 (5 %), hill 15 (34 %), plain 27 (61 %); mountain+hill 39 %; inside the ranges 7 %; per 1000 km² mtn/hill/plain 0.11/0.60/1.07
+  exits >= 10 km²: 235 (front 2417 km -> one per 10 km); NN spacing p25/p50/p75 2/5/7 km; area p25/p50/p75/max 14/25/56/2007 km²
+  exits >= 45 km²: 82 (front 2417 km -> one per 29 km); NN spacing p25/p50/p75 7/9/13 km; area p25/p50/p75/max 56/76/136/2007 km²
+  exits >= 200 km²: 12 (front 2417 km -> one per 201 km); NN spacing p25/p50/p75 32/36/39 km; area p25/p50/p75/max 257/347/575/2007 km²
+  water crossing the front: 19314 km² in 1809 exits (any size); top 1/3/5/10 carry 10/20/25/33 %
+  rivers to the sea >= 500 km² fed from the ranges: 25; largest exit / mouth area p25/p50/p75 0.06/0.10/0.19; exits >= 10 km² per river p50 5, max 19
+    biggest: 6367 km² <- top exit 2007 (32 %), 8 exits>=10; 3721 km² <- top exit 226 (6 %), 16 exits>=10; 2781 km² <- top exit 174 (6 %), 19 exits>=10; 2436 km² <- top exit 1131 (46 %), 12 exits>=10; 2260 km² <- top exit 535 (24 %), 17 exits>=10; 2257 km² <- top exit 82 (4 %), 11 exits>=10
+  Hack h (A >= 10 km², all land) 0.54 (c 1.54), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.72 (n 69), range-exit basins >= 100 km² 0.81 (n 30)
+seed 42 BEFORE [relief classes]: land 69259 km² (mountain 24329, hill 32769, plain 12161); front 4637 cells; mountain cells' distance to the front p50/p90/p99/max 3.00/8.83/14.49/19.07 km
+  confluences both >= 10 km²: 1366; mountain 331 (24 %), hill 688 (50 %), plain 347 (25 %); mountain+hill 75 %; inside the ranges 29 %; per 1000 km² mtn/hill/plain 13.61/21.00/28.53
+  confluences both >= 45 km²: 232; mountain 30 (13 %), hill 127 (55 %), plain 75 (32 %); mountain+hill 68 %; inside the ranges 17 %; per 1000 km² mtn/hill/plain 1.23/3.88/6.17
+  confluences both >= 200 km²: 44; mountain 3 (7 %), hill 21 (48 %), plain 20 (45 %); mountain+hill 55 %; inside the ranges 9 %; per 1000 km² mtn/hill/plain 0.12/0.64/1.64
+  exits >= 10 km²: 385 (front 4637 km -> one per 12 km); NN spacing p25/p50/p75 1/2/4 km; area p25/p50/p75/max 13/20/54/2007 km²
+  exits >= 45 km²: 108 (front 4637 km -> one per 43 km); NN spacing p25/p50/p75 6/8/11 km; area p25/p50/p75/max 61/88/145/2007 km²
+  exits >= 200 km²: 18 (front 4637 km -> one per 258 km); NN spacing p25/p50/p75 14/19/26 km; area p25/p50/p75/max 260/326/666/2007 km²
+  water crossing the front: 26067 km² in 1609 exits (any size); top 1/3/5/10 carry 8/16/21/29 %
+  rivers to the sea >= 500 km² fed from the ranges: 25; largest exit / mouth area p25/p50/p75 0.08/0.12/0.30; exits >= 10 km² per river p50 8, max 33
+    biggest: 6367 km² <- top exit 2007 (32 %), 20 exits>=10; 3721 km² <- top exit 270 (7 %), 33 exits>=10; 2781 km² <- top exit 386 (14 %), 20 exits>=10; 2436 km² <- top exit 1152 (47 %), 13 exits>=10; 2260 km² <- top exit 678 (30 %), 17 exits>=10; 2257 km² <- top exit 103 (5 %), 22 exits>=10
+  Hack h (A >= 10 km², all land) 0.54 (c 1.54), mountain cells 0.56; elongation Re p50 sea basins >= 100 km² 0.72 (n 69), range-exit basins >= 100 km² 0.79 (n 42)
+  mountain ground p50/p90/max 1340/1985/2981 m, 1 km slope p50/p90 10.6/19.7°; land above today's noise ground 0 % (mean 0 m there)
+seed 42 BEFORE (noise ground) [uplift classes of widefull]: land 69259 km² (mountain 35480, hill 12068, plain 21711); front 1533 cells; mountain cells' distance to the front p50/p90/p99/max 15.56/37.36/48.08/52.00 km
+  confluences both >= 10 km²: 1366; mountain 764 (56 %), hill 178 (13 %), plain 424 (31 %); mountain+hill 69 %; inside the ranges 57 %; per 1000 km² mtn/hill/plain 21.53/14.75/19.53
+  confluences both >= 45 km²: 232; mountain 116 (50 %), hill 27 (12 %), plain 89 (38 %); mountain+hill 62 %; inside the ranges 52 %; per 1000 km² mtn/hill/plain 3.27/2.24/4.10
+  confluences both >= 200 km²: 44; mountain 17 (39 %), hill 5 (11 %), plain 22 (50 %); mountain+hill 50 %; inside the ranges 41 %; per 1000 km² mtn/hill/plain 0.48/0.41/1.01
+  exits >= 10 km²: 150 (front 1533 km -> one per 10 km); NN spacing p25/p50/p75 1/3/7 km; area p25/p50/p75/max 16/43/152/2951 km²
+  exits >= 45 km²: 72 (front 1533 km -> one per 21 km); NN spacing p25/p50/p75 4/8/13 km; area p25/p50/p75/max 105/168/297/2951 km²
+  exits >= 200 km²: 28 (front 1533 km -> one per 55 km); NN spacing p25/p50/p75 4/27/31 km; area p25/p50/p75/max 274/406/1039/2951 km²
+  water crossing the front: 30861 km² in 828 exits (any size); top 1/3/5/10 carry 10/24/37/55 %
+  rivers to the sea >= 500 km² fed from the ranges: 24; largest exit / mouth area p25/p50/p75 0.27/0.46/0.88; exits >= 10 km² per river p50 3, max 8
+    biggest: 6367 km² <- top exit 2951 (46 %), 6 exits>=10; 3721 km² <- top exit 2024 (54 %), 4 exits>=10; 2781 km² <- top exit 1469 (53 %), 7 exits>=10; 2436 km² <- top exit 2197 (90 %), 3 exits>=10; 2260 km² <- top exit 2233 (99 %), 1 exits>=10; 2257 km² <- top exit 641 (28 %), 7 exits>=10
+  Hack h (A >= 10 km², all land) 0.54 (c 1.54), mountain cells 0.52; elongation Re p50 sea basins >= 100 km² 0.72 (n 69), range-exit basins >= 100 km² 0.81 (n 54)
+  params U 5 m/step, ridge 450 m/km, m 0.45, Sc 0.6, grade 0.06
+    iteration 1: highest 6705 m; receivers changed (A >= 10 km²) 0
+    iteration 2: highest 6073 m; receivers changed (A >= 10 km²) 730
+    iteration 3: highest 5792 m; receivers changed (A >= 10 km²) 79
+    iteration 4: highest 5449 m; receivers changed (A >= 10 km²) 40
+    iteration 5: highest 5177 m; receivers changed (A >= 10 km²) 19
+    iteration 6: highest 4976 m; receivers changed (A >= 10 km²) 13
+    iteration 7: highest 4950 m; receivers changed (A >= 10 km²) 14
+    iteration 8: highest 5205 m; receivers changed (A >= 10 km²) 12
+    iteration 9: highest 5159 m; receivers changed (A >= 10 km²) 4
+    iteration 10: highest 4893 m; receivers changed (A >= 10 km²) 6
+    iteration 11: highest 4907 m; receivers changed (A >= 10 km²) 4
+    iteration 12: highest 4898 m; receivers changed (A >= 10 km²) 1
+    iteration 13: highest 4795 m; receivers changed (A >= 10 km²) 0
+    iteration 14: highest 4756 m; receivers changed (A >= 10 km²) 1
+    iteration 15: highest 4773 m; receivers changed (A >= 10 km²) 3
+    iteration 16: highest 4862 m; receivers changed (A >= 10 km²) 2
+    iteration 17: highest 4890 m; receivers changed (A >= 10 km²) 1
+    iteration 18: highest 4427 m; receivers changed (A >= 10 km²) 1
+    iteration 19: highest 4336 m; receivers changed (A >= 10 km²) 1
+    iteration 20: highest 4376 m; receivers changed (A >= 10 km²) 0
+    iteration 21: highest 4409 m; receivers changed (A >= 10 km²) 1
+    iteration 22: highest 4515 m; receivers changed (A >= 10 km²) 1
+    iteration 23: highest 4400 m; receivers changed (A >= 10 km²) 2
+    iteration 24: highest 4379 m; receivers changed (A >= 10 km²) 1
+    iteration 25: highest 4390 m; receivers changed (A >= 10 km²) 1
+    iteration 26: highest 4346 m; receivers changed (A >= 10 km²) 2
+    iteration 27: highest 4270 m; receivers changed (A >= 10 km²) 0
+    iteration 28: highest 4307 m; receivers changed (A >= 10 km²) 0
+    iteration 29: highest 4432 m; receivers changed (A >= 10 km²) 0
+    iteration 30: highest 4294 m; receivers changed (A >= 10 km²) 0
+seed 42 AFTER widefull STEADY-STATE ITERATION (30 iterations; route 13.7 ms + solve 5.1 ms per step) [field classes]: land 69259 km² (mountain 19034, hill 24932, plain 25293); front 2417 cells; mountain cells' distance to the front p50/p90/p99/max 5.24/12.31/19.00/24.00 km
+  confluences both >= 10 km²: 1290; mountain 306 (24 %), hill 489 (38 %), plain 495 (38 %); mountain+hill 62 %; inside the ranges 26 %; per 1000 km² mtn/hill/plain 16.08/19.61/19.57
+  confluences both >= 45 km²: 232; mountain 31 (13 %), hill 86 (37 %), plain 115 (50 %); mountain+hill 50 %; inside the ranges 16 %; per 1000 km² mtn/hill/plain 1.63/3.45/4.55
+  confluences both >= 200 km²: 33; mountain 1 (3 %), hill 11 (33 %), plain 21 (64 %); mountain+hill 36 %; inside the ranges 3 %; per 1000 km² mtn/hill/plain 0.05/0.44/0.83
+  exits >= 10 km²: 270 (front 2417 km -> one per 9 km); NN spacing p25/p50/p75 2/4/6 km; area p25/p50/p75/max 16/31/75/1480 km²
+  exits >= 45 km²: 102 (front 2417 km -> one per 24 km); NN spacing p25/p50/p75 5/9/11 km; area p25/p50/p75/max 65/88/134/1480 km²
+  exits >= 200 km²: 16 (front 2417 km -> one per 151 km); NN spacing p25/p50/p75 19/30/32 km; area p25/p50/p75/max 288/326/457/1480 km²
+  water crossing the front: 19884 km² in 1086 exits (any size); top 1/3/5/10 carry 7/14/18/27 %
+  rivers to the sea >= 500 km² fed from the ranges: 25; largest exit / mouth area p25/p50/p75 0.06/0.12/0.27; exits >= 10 km² per river p50 5, max 22
+    biggest: 4653 km² <- top exit 1480 (32 %), 10 exits>=10; 4117 km² <- top exit 211 (5 %), 22 exits>=10; 2689 km² <- top exit 326 (12 %), 15 exits>=10; 2597 km² <- top exit 667 (26 %), 15 exits>=10; 2245 km² <- top exit 99 (4 %), 11 exits>=10; 1903 km² <- top exit 555 (29 %), 10 exits>=10
+  Hack h (A >= 10 km², all land) 0.59 (c 1.04), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.68 (n 91), range-exit basins >= 100 km² 0.85 (n 40)
+seed 42 AFTER widefull [uplift classes: mountain where U >= 0.3 of peak]: land 69259 km² (mountain 35480, hill 12068, plain 21711); front 1533 cells; mountain cells' distance to the front p50/p90/p99/max 15.56/37.36/48.08/52.00 km
+  confluences both >= 10 km²: 1290; mountain 723 (56 %), hill 168 (13 %), plain 399 (31 %); mountain+hill 69 %; inside the ranges 57 %; per 1000 km² mtn/hill/plain 20.38/13.92/18.38
+  confluences both >= 45 km²: 232; mountain 123 (53 %), hill 22 (9 %), plain 87 (38 %); mountain+hill 63 %; inside the ranges 55 %; per 1000 km² mtn/hill/plain 3.47/1.82/4.01
+  confluences both >= 200 km²: 33; mountain 13 (39 %), hill 4 (12 %), plain 16 (48 %); mountain+hill 52 %; inside the ranges 42 %; per 1000 km² mtn/hill/plain 0.37/0.33/0.74
+  exits >= 10 km²: 173 (front 1533 km -> one per 9 km); NN spacing p25/p50/p75 2/4/6 km; area p25/p50/p75/max 16/50/151/2562 km²
+  exits >= 45 km²: 92 (front 1533 km -> one per 17 km); NN spacing p25/p50/p75 4/8/10 km; area p25/p50/p75/max 71/142/230/2562 km²
+  exits >= 200 km²: 30 (front 1533 km -> one per 51 km); NN spacing p25/p50/p75 4/25/30 km; area p25/p50/p75/max 244/414/1278/2562 km²
+  water crossing the front: 30954 km² in 776 exits (any size); top 1/3/5/10 carry 8/22/31/50 %
+  rivers to the sea >= 500 km² fed from the ranges: 24; largest exit / mouth area p25/p50/p75 0.26/0.46/0.76; exits >= 10 km² per river p50 3, max 12
+    biggest: 4653 km² <- top exit 2154 (46 %), 8 exits>=10; 4117 km² <- top exit 1975 (48 %), 12 exits>=10; 2689 km² <- top exit 1541 (57 %), 5 exits>=10; 2597 km² <- top exit 2562 (99 %), 1 exits>=10; 2245 km² <- top exit 529 (24 %), 9 exits>=10; 1903 km² <- top exit 1278 (67 %), 3 exits>=10
+  Hack h (A >= 10 km², all land) 0.59 (c 1.04), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.68 (n 91), range-exit basins >= 100 km² 0.81 (n 59)
+seed 42 AFTER widefull [relief classes]: land 69259 km² (mountain 32224, hill 16622, plain 20413); front 2499 cells; mountain cells' distance to the front p50/p90/p99/max 11.41/30.70/40.80/45.00 km
+  confluences both >= 10 km²: 1290; mountain 572 (44 %), hill 316 (24 %), plain 402 (31 %); mountain+hill 69 %; inside the ranges 47 %; per 1000 km² mtn/hill/plain 17.75/19.01/19.69
+  confluences both >= 45 km²: 232; mountain 87 (38 %), hill 63 (27 %), plain 82 (35 %); mountain+hill 65 %; inside the ranges 42 %; per 1000 km² mtn/hill/plain 2.70/3.79/4.02
+  confluences both >= 200 km²: 33; mountain 7 (21 %), hill 12 (36 %), plain 14 (42 %); mountain+hill 58 %; inside the ranges 24 %; per 1000 km² mtn/hill/plain 0.22/0.72/0.69
+  exits >= 10 km²: 261 (front 2499 km -> one per 10 km); NN spacing p25/p50/p75 2/4/5 km; area p25/p50/p75/max 14/27/85/2140 km²
+  exits >= 45 km²: 99 (front 2499 km -> one per 25 km); NN spacing p25/p50/p75 5/7/11 km; area p25/p50/p75/max 74/114/235/2140 km²
+  exits >= 200 km²: 32 (front 2499 km -> one per 78 km); NN spacing p25/p50/p75 6/15/30 km; area p25/p50/p75/max 250/397/637/2140 km²
+  water crossing the front: 30076 km² in 1222 exits (any size); top 1/3/5/10 carry 7/18/26/38 %
+  rivers to the sea >= 500 km² fed from the ranges: 24; largest exit / mouth area p25/p50/p75 0.24/0.37/0.54; exits >= 10 km² per river p50 5, max 21
+    biggest: 4653 km² <- top exit 2140 (46 %), 13 exits>=10; 4117 km² <- top exit 821 (20 %), 21 exits>=10; 2689 km² <- top exit 669 (25 %), 12 exits>=10; 2597 km² <- top exit 1927 (74 %), 5 exits>=10; 2245 km² <- top exit 529 (24 %), 12 exits>=10; 1903 km² <- top exit 1150 (60 %), 5 exits>=10
+  Hack h (A >= 10 km², all land) 0.59 (c 1.04), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.68 (n 91), range-exit basins >= 100 km² 0.80 (n 55)
+  mountain ground p50/p90/max 1674/2741/4294 m, 1 km slope p50/p90 16.0/24.4°; land above today's noise ground 37 % (mean 558 m there)
+seed 777777 BEFORE (noise ground, steepest-descent routing) [field classes]: land 68879 km² (mountain 14891, hill 28679, plain 25309); front 2435 cells; mountain cells' distance to the front p50/p90/p99/max 3.83/8.07/11.41/16.14 km
+  confluences both >= 10 km²: 1428; mountain 158 (11 %), hill 669 (47 %), plain 601 (42 %); mountain+hill 58 %; inside the ranges 13 %; per 1000 km² mtn/hill/plain 10.61/23.33/23.75
+  confluences both >= 45 km²: 268; mountain 11 (4 %), hill 117 (44 %), plain 140 (52 %); mountain+hill 48 %; inside the ranges 6 %; per 1000 km² mtn/hill/plain 0.74/4.08/5.53
+  confluences both >= 200 km²: 50; mountain 1 (2 %), hill 17 (34 %), plain 32 (64 %); mountain+hill 36 %; inside the ranges 2 %; per 1000 km² mtn/hill/plain 0.07/0.59/1.26
+  exits >= 10 km²: 230 (front 2435 km -> one per 11 km); NN spacing p25/p50/p75 2/4/7 km; area p25/p50/p75/max 14/25/46/1790 km²
+  exits >= 45 km²: 61 (front 2435 km -> one per 40 km); NN spacing p25/p50/p75 9/10/16 km; area p25/p50/p75/max 55/73/99/1790 km²
+  exits >= 200 km²: 3 (front 2435 km -> one per 812 km); NN spacing p25/p50/p75 76/76/152 km; area p25/p50/p75/max 1536/1536/1790/1790 km²
+  water crossing the front: 15629 km² in 1947 exits (any size); top 1/3/5/10 carry 11/23/25/29 %
+  rivers to the sea >= 500 km² fed from the ranges: 10; largest exit / mouth area p25/p50/p75 0.07/0.09/0.15; exits >= 10 km² per river p50 6, max 37
+    biggest: 12814 km² <- top exit 1536 (12 %), 37 exits>=10; 6843 km² <- top exit 1790 (26 %), 19 exits>=10; 4486 km² <- top exit 102 (2 %), 19 exits>=10; 1586 km² <- top exit 236 (15 %), 4 exits>=10; 1341 km² <- top exit 97 (7 %), 6 exits>=10; 1186 km² <- top exit 81 (7 %), 8 exits>=10
+  Hack h (A >= 10 km², all land) 0.43 (c 3.03), mountain cells 0.58; elongation Re p50 sea basins >= 100 km² 0.68 (n 56), range-exit basins >= 100 km² 0.82 (n 15)
+seed 777777 BEFORE [relief classes]: land 68879 km² (mountain 20615, hill 32851, plain 15413); front 4052 cells; mountain cells' distance to the front p50/p90/p99/max 3.00/7.41/10.41/12.31 km
+  confluences both >= 10 km²: 1428; mountain 246 (17 %), hill 781 (55 %), plain 401 (28 %); mountain+hill 72 %; inside the ranges 34 %; per 1000 km² mtn/hill/plain 11.93/23.77/26.02
+  confluences both >= 45 km²: 268; mountain 19 (7 %), hill 150 (56 %), plain 99 (37 %); mountain+hill 63 %; inside the ranges 26 %; per 1000 km² mtn/hill/plain 0.92/4.57/6.42
+  confluences both >= 200 km²: 50; mountain 1 (2 %), hill 22 (44 %), plain 27 (54 %); mountain+hill 46 %; inside the ranges 26 %; per 1000 km² mtn/hill/plain 0.05/0.67/1.75
+  exits >= 10 km²: 290 (front 4052 km -> one per 14 km); NN spacing p25/p50/p75 1/3/5 km; area p25/p50/p75/max 14/23/55/7178 km²
+  exits >= 45 km²: 94 (front 4052 km -> one per 43 km); NN spacing p25/p50/p75 6/9/16 km; area p25/p50/p75/max 57/82/115/7178 km²
+  exits >= 200 km²: 10 (front 4052 km -> one per 405 km); NN spacing p25/p50/p75 19/44/61 km; area p25/p50/p75/max 282/860/1804/7178 km²
+  water crossing the front: 28746 km² in 1361 exits (any size); top 1/3/5/10 carry 25/38/46/52 %
+  rivers to the sea >= 500 km² fed from the ranges: 10; largest exit / mouth area p25/p50/p75 0.06/0.11/0.15; exits >= 10 km² per river p50 9, max 38
+    biggest: 12814 km² <- top exit 1804 (14 %), 38 exits>=10; 6843 km² <- top exit 1830 (27 %), 29 exits>=10; 4486 km² <- top exit 153 (3 %), 24 exits>=10; 1586 km² <- top exit 69 (4 %), 5 exits>=10; 1341 km² <- top exit 199 (15 %), 6 exits>=10; 1186 km² <- top exit 90 (8 %), 11 exits>=10
+  Hack h (A >= 10 km², all land) 0.43 (c 3.03), mountain cells 0.54; elongation Re p50 sea basins >= 100 km² 0.68 (n 56), range-exit basins >= 100 km² 0.86 (n 30)
+  mountain ground p50/p90/max 1306/1970/2959 m, 1 km slope p50/p90 11.2/20.4°; land above today's noise ground 0 % (mean 0 m there)
+seed 777777 BEFORE (noise ground) [uplift classes of widefull]: land 68879 km² (mountain 41709, hill 11313, plain 15857); front 1504 cells; mountain cells' distance to the front p50/p90/p99/max 13.73/29.04/40.46/47.18 km
+  confluences both >= 10 km²: 1428; mountain 865 (61 %), hill 219 (15 %), plain 344 (24 %); mountain+hill 76 %; inside the ranges 68 %; per 1000 km² mtn/hill/plain 20.74/19.36/21.69
+  confluences both >= 45 km²: 268; mountain 151 (56 %), hill 41 (15 %), plain 76 (28 %); mountain+hill 72 %; inside the ranges 66 %; per 1000 km² mtn/hill/plain 3.62/3.62/4.79
+  confluences both >= 200 km²: 50; mountain 19 (38 %), hill 8 (16 %), plain 23 (46 %); mountain+hill 54 %; inside the ranges 56 %; per 1000 km² mtn/hill/plain 0.46/0.71/1.45
+  exits >= 10 km²: 121 (front 1504 km -> one per 12 km); NN spacing p25/p50/p75 1/3/5 km; area p25/p50/p75/max 18/49/146/2958 km²
+  exits >= 45 km²: 61 (front 1504 km -> one per 25 km); NN spacing p25/p50/p75 4/8/13 km; area p25/p50/p75/max 76/146/398/2958 km²
+  exits >= 200 km²: 28 (front 1504 km -> one per 54 km); NN spacing p25/p50/p75 13/19/27 km; area p25/p50/p75/max 316/448/943/2958 km²
+  water crossing the front: 26391 km² in 552 exits (any size); top 1/3/5/10 carry 11/28/39/56 %
+  rivers to the sea >= 500 km² fed from the ranges: 10; largest exit / mouth area p25/p50/p75 0.23/0.44/0.70; exits >= 10 km² per river p50 2, max 24
+    biggest: 12814 km² <- top exit 2958 (23 %), 24 exits>=10; 6843 km² <- top exit 2756 (40 %), 12 exits>=10; 4486 km² <- top exit 643 (14 %), 17 exits>=10; 1586 km² <- top exit 574 (36 %), 7 exits>=10; 1341 km² <- top exit 943 (70 %), 2 exits>=10; 1186 km² <- top exit 1029 (87 %), 2 exits>=10
+  Hack h (A >= 10 km², all land) 0.43 (c 3.03), mountain cells 0.46; elongation Re p50 sea basins >= 100 km² 0.68 (n 56), range-exit basins >= 100 km² 0.79 (n 39)
+  params U 5 m/step, ridge 450 m/km, m 0.45, Sc 0.6, grade 0.06
+    iteration 1: highest 6806 m; receivers changed (A >= 10 km²) 0
+    iteration 2: highest 5470 m; receivers changed (A >= 10 km²) 673
+    iteration 3: highest 5369 m; receivers changed (A >= 10 km²) 80
+    iteration 4: highest 4865 m; receivers changed (A >= 10 km²) 50
+    iteration 5: highest 4780 m; receivers changed (A >= 10 km²) 14
+    iteration 6: highest 4928 m; receivers changed (A >= 10 km²) 15
+    iteration 7: highest 4979 m; receivers changed (A >= 10 km²) 12
+    iteration 8: highest 4510 m; receivers changed (A >= 10 km²) 16
+    iteration 9: highest 4558 m; receivers changed (A >= 10 km²) 12
+    iteration 10: highest 4690 m; receivers changed (A >= 10 km²) 16
+    iteration 11: highest 4692 m; receivers changed (A >= 10 km²) 15
+    iteration 12: highest 4657 m; receivers changed (A >= 10 km²) 9
+    iteration 13: highest 4573 m; receivers changed (A >= 10 km²) 6
+    iteration 14: highest 4805 m; receivers changed (A >= 10 km²) 3
+    iteration 15: highest 4810 m; receivers changed (A >= 10 km²) 4
+    iteration 16: highest 4571 m; receivers changed (A >= 10 km²) 6
+    iteration 17: highest 4421 m; receivers changed (A >= 10 km²) 13
+    iteration 18: highest 4407 m; receivers changed (A >= 10 km²) 1
+    iteration 19: highest 4485 m; receivers changed (A >= 10 km²) 3
+    iteration 20: highest 4363 m; receivers changed (A >= 10 km²) 2
+    iteration 21: highest 4366 m; receivers changed (A >= 10 km²) 2
+    iteration 22: highest 4320 m; receivers changed (A >= 10 km²) 3
+    iteration 23: highest 4557 m; receivers changed (A >= 10 km²) 2
+    iteration 24: highest 4373 m; receivers changed (A >= 10 km²) 2
+    iteration 25: highest 4376 m; receivers changed (A >= 10 km²) 4
+    iteration 26: highest 4380 m; receivers changed (A >= 10 km²) 8
+    iteration 27: highest 4290 m; receivers changed (A >= 10 km²) 7
+    iteration 28: highest 4492 m; receivers changed (A >= 10 km²) 9
+    iteration 29: highest 4346 m; receivers changed (A >= 10 km²) 1
+    iteration 30: highest 4225 m; receivers changed (A >= 10 km²) 2
+seed 777777 AFTER widefull STEADY-STATE ITERATION (30 iterations; route 13.2 ms + solve 4.7 ms per step) [field classes]: land 68879 km² (mountain 14891, hill 28679, plain 25309); front 2435 cells; mountain cells' distance to the front p50/p90/p99/max 3.83/8.07/11.41/16.14 km
+  confluences both >= 10 km²: 1398; mountain 230 (16 %), hill 594 (42 %), plain 574 (41 %); mountain+hill 59 %; inside the ranges 18 %; per 1000 km² mtn/hill/plain 15.45/20.71/22.68
+  confluences both >= 45 km²: 306; mountain 24 (8 %), hill 123 (40 %), plain 159 (52 %); mountain+hill 48 %; inside the ranges 10 %; per 1000 km² mtn/hill/plain 1.61/4.29/6.28
+  confluences both >= 200 km²: 55; mountain 1 (2 %), hill 18 (33 %), plain 36 (65 %); mountain+hill 35 %; inside the ranges 4 %; per 1000 km² mtn/hill/plain 0.07/0.63/1.42
+  exits >= 10 km²: 255 (front 2435 km -> one per 10 km); NN spacing p25/p50/p75 2/4/6 km; area p25/p50/p75/max 16/30/59/1431 km²
+  exits >= 45 km²: 93 (front 2435 km -> one per 26 km); NN spacing p25/p50/p75 5/8/12 km; area p25/p50/p75/max 56/78/118/1431 km²
+  exits >= 200 km²: 12 (front 2435 km -> one per 203 km); NN spacing p25/p50/p75 20/35/41 km; area p25/p50/p75/max 279/313/398/1431 km²
+  water crossing the front: 16637 km² in 1058 exits (any size); top 1/3/5/10 carry 9/15/19/28 %
+  rivers to the sea >= 500 km² fed from the ranges: 13; largest exit / mouth area p25/p50/p75 0.06/0.11/0.13; exits >= 10 km² per river p50 7, max 27
+    biggest: 12006 km² <- top exit 1431 (12 %), 27 exits>=10; 5793 km² <- top exit 398 (7 %), 26 exits>=10; 4904 km² <- top exit 282 (6 %), 22 exits>=10; 3835 km² <- top exit 93 (2 %), 16 exits>=10; 1821 km² <- top exit 231 (13 %), 7 exits>=10; 1318 km² <- top exit 279 (21 %), 9 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.06), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.66 (n 67), range-exit basins >= 100 km² 0.86 (n 31)
+seed 777777 AFTER widefull [uplift classes: mountain where U >= 0.3 of peak]: land 68879 km² (mountain 41709, hill 11313, plain 15857); front 1504 cells; mountain cells' distance to the front p50/p90/p99/max 13.73/29.04/40.46/47.18 km
+  confluences both >= 10 km²: 1398; mountain 852 (61 %), hill 195 (14 %), plain 351 (25 %); mountain+hill 75 %; inside the ranges 70 %; per 1000 km² mtn/hill/plain 20.43/17.24/22.14
+  confluences both >= 45 km²: 306; mountain 174 (57 %), hill 40 (13 %), plain 92 (30 %); mountain+hill 70 %; inside the ranges 67 %; per 1000 km² mtn/hill/plain 4.17/3.54/5.80
+  confluences both >= 200 km²: 55; mountain 23 (42 %), hill 8 (15 %), plain 24 (44 %); mountain+hill 56 %; inside the ranges 60 %; per 1000 km² mtn/hill/plain 0.55/0.71/1.51
+  exits >= 10 km²: 121 (front 1504 km -> one per 12 km); NN spacing p25/p50/p75 3/4/6 km; area p25/p50/p75/max 19/60/191/3767 km²
+  exits >= 45 km²: 72 (front 1504 km -> one per 21 km); NN spacing p25/p50/p75 5/6/10 km; area p25/p50/p75/max 74/127/370/3767 km²
+  exits >= 200 km²: 29 (front 1504 km -> one per 52 km); NN spacing p25/p50/p75 8/15/28 km; area p25/p50/p75/max 286/423/1111/3767 km²
+  water crossing the front: 29144 km² in 547 exits (any size); top 1/3/5/10 carry 13/28/39/57 %
+  rivers to the sea >= 500 km² fed from the ranges: 11; largest exit / mouth area p25/p50/p75 0.23/0.35/0.74; exits >= 10 km² per river p50 3, max 21
+    biggest: 12006 km² <- top exit 2600 (22 %), 21 exits>=10; 5793 km² <- top exit 1509 (26 %), 11 exits>=10; 4904 km² <- top exit 1111 (23 %), 13 exits>=10; 3835 km² <- top exit 3767 (98 %), 1 exits>=10; 1821 km² <- top exit 421 (23 %), 6 exits>=10; 1318 km² <- top exit 1130 (86 %), 2 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.06), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.66 (n 67), range-exit basins >= 100 km² 0.78 (n 43)
+seed 777777 AFTER widefull [relief classes]: land 68879 km² (mountain 37539, hill 16439, plain 14901); front 2890 cells; mountain cells' distance to the front p50/p90/p99/max 10.24/25.46/36.80/44.04 km
+  confluences both >= 10 km²: 1398; mountain 679 (49 %), hill 383 (27 %), plain 336 (24 %); mountain+hill 76 %; inside the ranges 58 %; per 1000 km² mtn/hill/plain 18.09/23.30/22.55
+  confluences both >= 45 km²: 306; mountain 123 (40 %), hill 100 (33 %), plain 83 (27 %); mountain+hill 73 %; inside the ranges 52 %; per 1000 km² mtn/hill/plain 3.28/6.08/5.57
+  confluences both >= 200 km²: 55; mountain 14 (25 %), hill 25 (45 %), plain 16 (29 %); mountain+hill 71 %; inside the ranges 44 %; per 1000 km² mtn/hill/plain 0.37/1.52/1.07
+  exits >= 10 km²: 243 (front 2890 km -> one per 12 km); NN spacing p25/p50/p75 2/4/5 km; area p25/p50/p75/max 15/32/91/3323 km²
+  exits >= 45 km²: 107 (front 2890 km -> one per 27 km); NN spacing p25/p50/p75 4/7/10 km; area p25/p50/p75/max 67/109/252/3323 km²
+  exits >= 200 km²: 34 (front 2890 km -> one per 85 km); NN spacing p25/p50/p75 13/16/21 km; area p25/p50/p75/max 253/339/895/3323 km²
+  water crossing the front: 34649 km² in 1145 exits (any size); top 1/3/5/10 carry 10/22/31/46 %
+  rivers to the sea >= 500 km² fed from the ranges: 13; largest exit / mouth area p25/p50/p75 0.21/0.26/0.48; exits >= 10 km² per river p50 6, max 33
+    biggest: 12006 km² <- top exit 2565 (21 %), 33 exits>=10; 5793 km² <- top exit 1502 (26 %), 18 exits>=10; 4904 km² <- top exit 1087 (22 %), 20 exits>=10; 3835 km² <- top exit 362 (9 %), 24 exits>=10; 1821 km² <- top exit 253 (14 %), 11 exits>=10; 1318 km² <- top exit 1037 (79 %), 3 exits>=10
+  Hack h (A >= 10 km², all land) 0.58 (c 1.06), mountain cells 0.59; elongation Re p50 sea basins >= 100 km² 0.66 (n 67), range-exit basins >= 100 km² 0.81 (n 57)
+  mountain ground p50/p90/max 1881/2874/4169 m, 1 km slope p50/p90 16.9/24.7°; land above today's noise ground 57 % (mean 695 m there)

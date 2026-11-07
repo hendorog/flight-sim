@@ -18,7 +18,7 @@ import type { SurfaceType } from '../../core/types';
 import { AIRPORT, onHomeAirport } from '../../core/world';
 import { breachWall } from './streams';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
-import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth } from './drainage';
+import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth, type Drainage } from './drainage';
 import { buildErosion, erosionCutAt, erosionCutGrad, erosionGullies, sampleErosion, sampleErosionGrad, type ErosionField, type ErosionGrad, type ErosionSample } from './erosion';
 import { buildNetworkHydrology } from './riverNetwork';
 import { fbm, gnoise, gullies, gulliesFast, type Deriv } from './noise';
@@ -615,6 +615,8 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
 // A seeded world (any seed but 0) has no hand-placed water: its rivers and lakes come from its drainage
 // (drainage.ts, riverNetwork.ts), the same network in every era.
 let lakes: Lake[] = [];
+/** The last seeded world's drainage lattice (probes only: scripts/probes/treeMeasure.test.ts); null at seed 0. */
+export let seededDrainage: Drainage | null = null;
 let presentHydro: Hydrology;
 let legacyHydro: Hydrology;
 // The generated airfields (airfields.ts, present day only), sited against the same natural terrain and water.
@@ -655,6 +657,7 @@ function buildWater(): void {
       shoreSmooth = new ShoreSmooth(EROSION_N, -DOMAIN_HALF, ponds, home);
       shoreSeed = worldSeed();
     }, lat);
+    seededDrainage = drainage;
     // Its lakes are the drainage's ponds, flooded on the detailed ground (LakeMask): the water covers the natural
     // ground below their level, nothing carved; the fitted ellipses only place things by them.
     const mask = new LakeMask(drainage, naturalHeightCoarse);
@@ -670,6 +673,7 @@ function buildWater(): void {
     return;
   } else {
     erosion = null;
+    seededDrainage = null;
     lakes = buildLakes(naturalHeight);
     presentHydro = buildHydrology(naturalHeight, lakes);
     legacyHydro = buildLegacyHydrology(naturalHeight, lakes);
