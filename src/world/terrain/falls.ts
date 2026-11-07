@@ -113,6 +113,21 @@ function levelAt(a: LineArrays, sv: number): number {
 }
 
 /**
+ * A fault's fall at arc length sv on the line `a` (its level as it stands), for a throw of `throwM` m: the gorge below as
+ * steep as GORGE_SHARE of the channel's own fall over GORGE_MAX below the fault (at least GORGE_GRADIENT_MIN), and the
+ * drop what the throw and the gorge leave of that fall. Fall and gorge together drop no more than the channel does
+ * over GORGE_MAX, so the gorge meets the line's level again within it. (Taking only the share for the drop, the least
+ * gradient on a gentle reach, or a second fault's fall within the first's gorge, measured on the level before the
+ * first, overshot it: the gorge never met the river's level again and ran on at 0.4-0.6 % down to the sea's level.)
+ */
+function faultFit(a: LineArrays, sv: number, throwM: number): { drop: number; gorge: number } {
+  const total = a.s[a.s.length - 1];
+  const below = levelAt(a, sv) - levelAt(a, Math.min(total, sv + GORGE_MAX));
+  const gorge = Math.max(GORGE_GRADIENT_MIN, (GORGE_SHARE * below) / GORGE_MAX);
+  return { drop: Math.min(throwM, below - gorge * GORGE_MAX), gorge };
+}
+
+/**
  * A fall at arc length sLip of `drop` m: a lip sample there and a foot FALL_RUN on (samples between them go), the water
  * from the foot on lowered to a gorge whose floor falls at `gorge` (m/m) from the foot until it meets the line's own
  * level again, never under `floor` (the water the line ends in). Returns the arrays and the lip's index.
@@ -219,7 +234,7 @@ export function shapeLines(lines: ShapeInput[], faults: FaultIndex | null, confl
     }
     const floor = mouth > -Infinity ? mouth : a.level[n - 1];
     // The falls this line gathers, by arc length: a hanging valley's lip, an outlet's cliff, the faults it crosses.
-    const want: Array<{ s: number; drop: number; gorge: number; cause: FallCause }> = [];
+    const want: Array<{ s: number; drop: number; gorge: number; cause: FallCause; throw?: number }> = [];
     // --- A hanging valley: a tributary high in the ranges whose last reach drops far into its receiver, over a break
     // of slope: the drop of its wall gathered at the lip, its foot in a gorge cut back into the wall.
     if (L.joins >= 0) {
@@ -253,13 +268,9 @@ export function shapeLines(lines: ShapeInput[], faults: FaultIndex | null, confl
         const pn = a.north[c.seg] + (a.north[c.seg + 1] - a.north[c.seg]) * c.t;
         const pe = a.east[c.seg] + (a.east[c.seg + 1] - a.east[c.seg]) * c.t;
         if (L.wet(pn, pe) || levelAt(a, sv) < 2) continue;
-        // The gorge below: as steep as GORGE_SHARE of the channel's own fall below the fault, at most GORGE_MAX long: a
-        // throw bigger than its gorge can take up is cut down to it.
-        const top = levelAt(a, sv);
-        const below = top - levelAt(a, Math.min(total, sv + GORGE_MAX));
-        const drop = Math.min(c.throw, below * (1 - GORGE_SHARE));
-        if (drop < FALL_MIN) continue;
-        want.push({ s: sv, drop, gorge: Math.max(GORGE_GRADIENT_MIN, (GORGE_SHARE * below) / GORGE_MAX), cause: 'fault' });
+        const fit = faultFit(a, sv, c.throw);
+        if (fit.drop < FALL_MIN) continue;
+        want.push({ s: sv, ...fit, cause: 'fault', throw: c.throw });
       }
     }
     want.sort((x, y) => x.s - y.s);
@@ -268,14 +279,16 @@ export function shapeLines(lines: ShapeInput[], faults: FaultIndex | null, confl
     for (const f of want) {
       // (One break at a time: a fall within FALL_SPACING of the last is left out.)
       if (f.s - lastS < FALL_SPACING) continue;
+      // A fault's fall fitted again to the level as the falls before it left it (they gathered its fall into theirs).
+      const fit = f.throw !== undefined ? faultFit(a, f.s, f.throw) : f;
       const room = levelAt(a, f.s) - floor - 1;
-      const drop = Math.min(f.drop, room);
+      const drop = Math.min(fit.drop, room);
       if (drop < FALL_MIN) continue;
       // A fault's throw over FLIGHT_MAX is a short flight of falls.
       const k = f.cause === 'fault' ? Math.ceil(drop / FLIGHT_MAX) : 1;
       const id = k > 1 ? flight++ : -1;
       for (let q = 0; q < k; q++) {
-        const r = cutFall(a, f.s + q * FLIGHT_STEP, drop / k, f.gorge, floor);
+        const r = cutFall(a, f.s + q * FLIGHT_STEP, drop / k, fit.gorge, floor);
         a = r.a;
         lips[li].push(r.lip);
         lastLip = r.lip;
