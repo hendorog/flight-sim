@@ -83,7 +83,7 @@ describe('running water', () => {
       expect(fs).toContain('mix(1.0 - wSeen, 1.0, wIce)');
       expect(fs).toContain('fresnel *= 1.0 - wSpecCut;');
       if (falls) expect(fs).toContain('* (1.0 - fMist * wIce);');
-      expect(key).toMatch(/-ice\d+-(flow2|falls2)$/);
+      expect(key).toMatch(/-ice-?\d+-(flow2|falls2)$/);
     }
   });
 

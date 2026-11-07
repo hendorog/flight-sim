@@ -99,8 +99,10 @@ describe('seed 42', () => {
 
   it('gives a tile the steepness of the channels in it, and none far from them', () => {
     setWorldSeed(42);
-    const [cx, cz] = steepCells()[0];
-    const t = buildTile({ level: 0, ix: Math.floor((cx * CELL) / 128), iz: Math.floor((cz * CELL) / 128), grid: 32, leafSize: 128 });
+    // The tile holding the first steep reach's sample (the tile at its boulder cell's corner may miss the channel).
+    const r = (hydrology.rivers ?? []).find((x) => x.steepness?.some((v) => v >= 0.85))!;
+    const i = r.steepness!.findIndex((v) => v >= 0.85);
+    const t = buildTile({ level: 0, ix: Math.floor(r.east[i] / 128), iz: Math.floor(r.north[i] / 128), grid: 32, leafSize: 128 });
     expect(t.flow).not.toBeNull();
     let steep = 0;
     for (const v of t.flow!) if (v / 255 >= BOULDER_STEEP) steep++;

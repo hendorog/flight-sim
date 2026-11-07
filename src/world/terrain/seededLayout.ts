@@ -13,6 +13,7 @@ import { fbm, fbmGrad, gnoise, mulberry32, type Deriv } from './noise';
 import { onWorldSeed, seeded, worldSeed } from '../worldSeed';
 import { SEED0_HOME, setHomeAirport } from '../../core/world';
 import { siteHome, type HomeSite } from './homeSiting';
+import type { Orogen } from './erosion';
 
 /** The macro fields at one point (macroAt). */
 export interface Macro {
@@ -379,6 +380,23 @@ let report: LayoutReport = { candidate: -1, tried: 0, inlandAtField: 0, coastKm:
 /** The layout search's result for the current seed. */
 export const layoutReport = (): LayoutReport => report;
 
+/**
+ * The seed's type of mountains (out/tree/PLAN.md §3.1): most seeds get a wide orogen (a "Canterbury" type: one wide
+ * mountain mass, its big rivers joining inside it and leaving through a few gorges; erosion.ts Orogen), the rest keep
+ * the narrow ridged-noise ranges in wide hill country (a "Manawatu" type). Both are real; the macro model makes either
+ * consistent with its rivers. OROGEN_WIDE of the seeds are wide.
+ */
+const OROGEN_WIDE = 0.75;
+export const OROGEN: Orogen = { sigma: 12000, gain: 2.2 };
+let orogen: Orogen | null = null;
+/** Probes: force the orogen of the next layouts (undefined: the seed's own). */
+let orogenForced: Orogen | null | undefined;
+export function forceOrogen(o: Orogen | null | undefined): void {
+  orogenForced = o;
+}
+/** The current seed's wide orogen, or null for narrow ranges (and at seed 0). */
+export const seededOrogen = (): Orogen | null => orogen;
+
 const CANDIDATES = 400;
 const M: Macro = { inland: 0, uplift: 0, foothill: 0, hilly: 0 };
 
@@ -401,7 +419,9 @@ function chooseLayout(): void {
   setHomeAirport(SEED0_HOME);
   // (The last world's slow macro fields are not this one's.)
   macroCacheOff();
+  orogen = null;
   if (worldSeed() === 0) return;
+  orogen = orogenForced !== undefined ? orogenForced : mulberry32(seeded(0x0a06e))() < OROGEN_WIDE ? OROGEN : null;
   const rnd = mulberry32(seeded(0x1a7b0));
   let fallback: { L: Layout; report: LayoutReport } | null = null;
   for (let k = 0; k < CANDIDATES; k++) {

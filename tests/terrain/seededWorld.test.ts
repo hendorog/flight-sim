@@ -186,8 +186,9 @@ describe.each(SEEDS)('seed %i', (seed) => {
       hydrology.queryRiver(rw.center.north + Math.cos(rw.heading) * rw.length * a, rw.center.east + Math.sin(rw.heading) * rw.length * a, hit);
       expect(hit.dist).toBeGreaterThan(1200);
     }
-    // (The macro model's ground drains to the sea by construction: a seeded world has no lattice lakes until the ice
-    // stage, owner's decision 2026-11-07; out/f1/REPORT.md. Any it has must hold water.)
+    // (The macro model's ground drains to the sea by construction, but it keeps the noise ground's lowland hollows as
+    // lakes, owner's decision 2026-11-08 (erosion.ts keptHollows; the mountain ones go until the ice stage).)
+    expect(hydrology.lakes.length).toBeGreaterThan(3);
     const s = makeSample();
     for (const l of hydrology.lakes) {
       expect(l.level).toBeGreaterThan(0);

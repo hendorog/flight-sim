@@ -43,13 +43,17 @@ export interface SteadyParams {
 }
 
 /**
- * Calibrated against today's eroded lattice (cea3349) on seeds 1, 42 and 777777 (scripts/probes/ssCalib.test.ts,
- * out/f1/REPORT.md): mountain ground p50/p90 within -12/+6 %, hill country and plains within a few percent, 5 km relief
- * within -15/+15 %, the relief classes' shares within 2 points; the highest peaks stand 0-600 m higher.
+ * Set with the wide orogen (foundation stage 2, scripts/probes/orogenSweep.test.ts, out/f2/REPORT.md) on seeds 1, 42
+ * and 777777: highest land p99 2100-2250 m (the seed-42 box's summits under ~2900 m, not the 3000-3500 m domes of
+ * U/K 450 over the orogen), the ranges' 1 km slope p50 ~13 degrees, and the big rivers (>= 500 km²) at 400-700 m
+ * graded at 0.4-0.6 % (stage 1's m 0.45 gave 1-2 % there over the orogen: n = 1 stream power on a 1 km lattice puts
+ * the hillslopes' relief into the one-cell catchments, so the trunks came out too steep for the ridges' height).
+ * m 0.6 is the lattice's concavity, steeper than the 0.41-0.45 of real channels measured at 20 m: the smallest
+ * lattice catchments stand for hillslope as well as channel.
  */
-export const STEADY: SteadyParams = { iterations: 30, ridge: 450, m: 0.45, sc: 0.45, grade: 0.06 };
+export const STEADY: SteadyParams = { iterations: 30, ridge: 400, m: 0.6, sc: 0.45, grade: 0.06 };
 /** Bump when the model or its inputs change meaning: part of the cache key (macroCache.ts). */
-export const MODEL_VERSION = 'ss1';
+export const MODEL_VERSION = 'ss2';
 
 /** Catchment, cells, from which a diagonal step of a channel lowers the cells beside it. */
 const CORNER_AREA = 10;
@@ -84,6 +88,9 @@ export interface ModelInputs {
   mound: Float32Array;
   /** Uplift rate per cell (1: the steady drop of `ridge` m per km on a one-cell catchment). */
   u: Float32Array;
+  /** The ranges' share of the uplift rate per cell, with the orogen's envelope (orogenEnvelope) and before the fade
+   * toward the coast: what tells mountain ground from hill country and plain here (the kept lakes, modelInputs). */
+  ur: Float32Array;
   /** How much of the gentlest graded gradient (SteadyParams.grade) holds per cell, [0, 1]: less toward the coast,
    * where the plains are built by the rivers' gravel (heightfield.ts gradeShare). */
   g: Float32Array;
@@ -96,7 +103,27 @@ export interface ModelInputs {
    * climb-out corridors and its circuit (homeSiting.ts checked them on the noise ground), faded out over CAP_FADE.
    */
   cap: Float32Array;
+  /**
+   * Lowest each cell may stand, m (0: no limit): the rims of the noise ground's lowland hollows kept as lakes
+   * (keptHollows), at the noise ground, so the hollow still holds water on the model's ground.
+   */
+  sill: Float32Array;
+  /** How many of the noise ground's hollows are kept as lakes (keptHollows). */
+  lakes: number;
   home: { north: number; east: number; heading: number };
+}
+
+/**
+ * The wide orogen (out/tree/PLAN.md stage 2): the ranges' uplift spread from the ridged-noise belts into a mountain
+ * mass some 40-80 km across, so the hill country between neighbouring belts rises as mountains and intermontane
+ * valleys, the big rivers join inside the ranges and leave them through a few exits. The belts' uplift, blurred
+ * (Gaussian, `sigma` m), scaled so the blurred field's top `gain` share rises at the full rate; the belts themselves
+ * kept where they are higher (their crests stay the highest ground). Null: the narrow belts alone (a "Manawatu" seed:
+ * narrow ranges in wide hill country).
+ */
+export interface Orogen {
+  sigma: number;
+  gain: number;
 }
 
 /** The macro ground of a seeded world, as the terrain applies it (sampleErosion, macroOffset, erosionGullies). */
@@ -154,30 +181,38 @@ const VALLEY_R = 1;
  * (`u`) at a point. The home field (`home`, its site chosen on the noise ground) gets the routing mound (drainage.ts)
  * and is held (`hard`).
  */
-export function modelInputs(sample: (north: number, east: number, out: { h: number; u: number; g: number }) => void, home: { north: number; east: number; heading: number }): ModelInputs {
+export function modelInputs(sample: (north: number, east: number, out: ModelSample) => void, home: { north: number; east: number; heading: number }, orogen: Orogen | null = null, lakes = false): ModelInputs {
   const n = LATTICE_N;
   const origin = -DOMAIN_HALF;
   const N = n * n;
   const h0 = new Float32Array(N);
   const mound = new Float32Array(N);
   const u = new Float32Array(N);
+  const ur = new Float32Array(N);
+  const hu = new Float32Array(N);
+  const fade = new Float32Array(N);
   const g = new Float32Array(N);
   const fixed = new Uint8Array(N);
   const hard = new Float32Array(N);
   const cap = new Float32Array(N);
+  const sill = new Float32Array(N);
   const ch = Math.cos(home.heading);
   const sh = Math.sin(home.heading);
-  const s = { h: 0, u: 0, g: 1 };
+  const s: ModelSample = { h: 0, u: 0, g: 1, hill: 0, fade: 1 };
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
       const north = origin + i * DRAIN_CELL;
       const east = origin + j * DRAIN_CELL;
       const c = i * n + j;
+      s.hill = 0;
+      s.fade = 1;
       sample(north, east, s);
       const r = Math.hypot(north - home.north, east - home.east);
       if (r < HOME_RADIUS) mound[c] = HOME_MOUND * (1 - r / HOME_RADIUS);
       h0[c] = s.h + mound[c];
-      u[c] = Math.max(0, s.u);
+      ur[c] = Math.max(0, s.u);
+      hu[c] = Math.max(0, s.hill);
+      fade[c] = s.fade;
       g[c] = Math.min(1, Math.max(0, s.g));
       fixed[c] = s.h <= 0 || i === 0 || j === 0 || i === n - 1 || j === n - 1 ? 1 : 0;
       hard[c] = smoothstep(HOME_KEEP, HOME_FULL, r);
@@ -191,8 +226,153 @@ export function modelInputs(sample: (north: number, east: number, out: { h: numb
       cap[c] = 1 - smoothstep(CAP_FADE[0], CAP_FADE[1], Math.min(corridor, box));
     }
   }
-  return { n, h0, mound, u, g, fixed, hard, cap, home: { north: home.north, east: home.east, heading: home.heading } };
+  if (orogen) ur.set(orogenEnvelope(ur, n, orogen));
+  for (let c = 0; c < N; c++) u[c] = Math.max(0, (ur[c] + hu[c]) * fade[c]);
+  const kept = lakes ? keptHollows(h0, fixed, ur, n, home, cap, sill) : 0;
+  return { n, h0, mound, u, ur, g, fixed, hard, cap, sill, lakes: kept, home: { north: home.north, east: home.east, heading: home.heading } };
 }
+
+/** What modelInputs' `sample` writes at a lattice node. */
+export interface ModelSample {
+  /** The noise ground, m. */
+  h: number;
+  /** The ranges' uplift rate (before the orogen's envelope), and the hill country's, and their fade toward the coast
+   * (the rate is (envelope(u) + hill) x fade). */
+  u: number;
+  hill: number;
+  fade: number;
+  /** The share of the gentlest graded gradient that holds (ModelInputs.g). */
+  g: number;
+}
+
+/** The ranges' uplift share `r` (n x n) spread into the wide orogen (Orogen). */
+export function orogenEnvelope(r: Float32Array, n: number, o: Orogen): Float32Array {
+  const b = blur(r, n, o.sigma / DRAIN_CELL);
+  let top = 0;
+  for (let c = 0; c < b.length; c++) top = Math.max(top, b[c]);
+  const out = new Float32Array(r.length);
+  if (top <= 0) return r.slice();
+  for (let c = 0; c < r.length; c++) out[c] = Math.max(r[c], Math.min(1, (o.gain * b[c]) / top));
+  return out;
+}
+
+/** Separable Gaussian blur of an n x n lattice field, `sigma` in cells (weights renormalised at the edges). */
+function blur(v: Float32Array, n: number, sigma: number): Float32Array {
+  const R = Math.ceil(3 * sigma);
+  const w = new Float64Array(2 * R + 1);
+  for (let k = 0; k <= 2 * R; k++) w[k] = Math.exp(-((k - R) ** 2) / (2 * sigma * sigma));
+  const tmp = new Float32Array(n * n);
+  const out = new Float32Array(n * n);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      let s = 0;
+      let ws = 0;
+      for (let k = Math.max(-R, -j); k <= Math.min(R, n - 1 - j); k++) {
+        s += w[k + R] * v[i * n + j + k];
+        ws += w[k + R];
+      }
+      tmp[i * n + j] = s / ws;
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      let s = 0;
+      let ws = 0;
+      for (let k = Math.max(-R, -i); k <= Math.min(R, n - 1 - i); k++) {
+        s += w[k + R] * tmp[(i + k) * n + j];
+        ws += w[k + R];
+      }
+      out[i * n + j] = s / ws;
+    }
+  }
+  return out;
+}
+
+/**
+ * The lowland lakes (owner, 2026-11-08: they stay; the mountain ones may go until the ice stage). The steady state
+ * drains by construction, so it would fill every hollow of the noise ground. The noise ground's closed hollows that
+ * could hold a lake as drainage.ts judges one (at least LAKE_DEPTH_KEEP deep, LAKE_CELLS_KEEP cells) and lie off the
+ * ranges (the ranges' uplift share at the hollow's deepest cell, with the orogen's envelope, under LAKE_RANGE_U: hill
+ * country and plain) are kept: their cells may not rise over the noise ground (`cap`) and their rims may not fall
+ * under it (`sill`). The flood still routes through them to their spill, so a kept lake sits in the
+ * drainage tree as before, its inflows graded down to it and its outflow leaving over its sill. Returns the count.
+ */
+function keptHollows(h0: Float32Array, fixed: Uint8Array, ur: Float32Array, n: number, home: { north: number; east: number }, cap: Float32Array, sill: Float32Array): number {
+  const N = n * n;
+  const R = new SteadyRouter(n);
+  R.route(h0, fixed);
+  const filled = R.filledLevels;
+  const comp = new Int32Array(N).fill(-1);
+  const stack: number[] = [];
+  const origin = -DOMAIN_HALF;
+  let kept = 0;
+  for (let c0 = 0; c0 < N; c0++) {
+    if (comp[c0] >= 0 || fixed[c0] || filled[c0] - h0[c0] <= HOLLOW_KEEP_TOL) continue;
+    const cells: number[] = [];
+    comp[c0] = c0;
+    stack.push(c0);
+    let pit = c0;
+    let level = 0;
+    while (stack.length) {
+      const c = stack.pop() as number;
+      cells.push(c);
+      if (h0[c] < h0[pit]) pit = c;
+      level = Math.max(level, filled[c]);
+      const i = (c / n) | 0;
+      const j = c - i * n;
+      for (let k = 0; k < 8; k++) {
+        const ii = i + DI8[k];
+        const jj = j + DJ8[k];
+        if (ii < 0 || jj < 0 || ii >= n || jj >= n) continue;
+        const q = ii * n + jj;
+        if (comp[q] >= 0 || fixed[q] || filled[q] - h0[q] <= HOLLOW_KEEP_TOL) continue;
+        comp[q] = c0;
+        stack.push(q);
+      }
+    }
+    if (level - h0[pit] < LAKE_DEPTH_KEEP || cells.length < LAKE_CELLS_KEEP[0] || cells.length > LAKE_CELLS_KEEP[1] || ur[pit] >= LAKE_RANGE_U) continue;
+    let near = false;
+    for (const c of cells) if (Math.hypot(origin + Math.floor(c / n) * DRAIN_CELL - home.north, origin + (c % n) * DRAIN_CELL - home.east) < LAKE_HOME_CLEAR) near = true;
+    if (near) continue;
+    kept++;
+    for (const c of cells) cap[c] = 1;
+    // The rim, and the ring beyond it, may rise but not fall under the noise ground (the rim is raised toward the spill
+    // level by up to SILL_RAISE: the cell past the spill a low sill, not a dam): the terrain takes the model's change
+    // as a B-spline, which would carry the lowering of the graded ground outside into the rim and let the lake out.
+    let ring = cells;
+    for (let r = 0; r < SILL_RINGS; r++) {
+      const next: number[] = [];
+      for (const c of ring) {
+        const i = (c / n) | 0;
+        const j = c - i * n;
+        for (let k = 0; k < 8; k++) {
+          const ii = i + DI8[k];
+          const jj = j + DJ8[k];
+          if (ii < 0 || jj < 0 || ii >= n || jj >= n) continue;
+          const q = ii * n + jj;
+          const lo = r === 0 ? Math.max(h0[q], Math.min(level, h0[q] + SILL_RAISE)) : h0[q];
+          if (comp[q] === c0 || fixed[q] || sill[q] >= lo) continue;
+          sill[q] = lo;
+          next.push(q);
+        }
+      }
+      ring = next;
+    }
+  }
+  return kept;
+}
+/** Rings of cells round a kept lake that may not fall under the noise ground, and how far the rim is raised toward
+ * the spill level, m. */
+const SILL_RINGS = 2;
+const SILL_RAISE = 20;
+/** A noise hollow's cells: filled more than this, m (drainage.ts HOLLOW_TOL). */
+const HOLLOW_KEEP_TOL = 0.5;
+/** A kept hollow is at least this deep, m, and this many cells (drainage.ts LAKE_DEPTH, LAKE_CELLS; POND_MAX_CELLS). */
+const LAKE_DEPTH_KEEP = 15;
+const LAKE_CELLS_KEEP = [2, 120];
+/** Ranges' uplift share from which a hollow counts as mountain ground and is graded away (treeMetrics.ts field
+ * classes: the alpine uplift 0.25, here over its 1.15). */
+const LAKE_RANGE_U = 0.25 / 1.15;
 
 /** A key for the model's result: the inputs and the settings, hashed (FNV-1a over their bytes), with MODEL_VERSION. */
 export function modelKey(inp: ModelInputs, p: SteadyParams = STEADY): string {
@@ -207,6 +387,7 @@ export function modelKey(inp: ModelInputs, p: SteadyParams = STEADY): string {
   mixIn(inp.fixed);
   mixIn(inp.hard);
   mixIn(inp.cap);
+  mixIn(inp.sill);
   mixIn(new Float64Array([p.iterations, p.ridge, p.m, p.sc, p.grade, inp.home.north, inp.home.east, inp.home.heading]));
   return `${MODEL_VERSION}-${(h >>> 0).toString(16).padStart(8, '0')}`;
 }
@@ -217,7 +398,7 @@ export function modelKey(inp: ModelInputs, p: SteadyParams = STEADY): string {
  * of its noise height; under the home runway's corridors (`cap`) a cell rises no higher than its noise height.
  */
 export function steadyLattice(inp: ModelInputs, p: SteadyParams = STEADY): Float32Array {
-  const { n, h0, u, g, fixed, hard, cap } = inp;
+  const { n, h0, u, g, fixed, hard, cap, sill } = inp;
   const h = h0.slice();
   const R = new SteadyRouter(n);
   const L = DRAIN_CELL;
@@ -235,6 +416,8 @@ export function steadyLattice(inp: ModelInputs, p: SteadyParams = STEADY): Float
       let hs = Math.max(h[r], LAND_MIN) + Math.min(rise, p.sc * L * dist);
       // Under the home runway's protected surfaces the ground may fall but not rise.
       if (cap[c] > 0 && hs > h0[c]) hs -= cap[c] * (hs - h0[c]);
+      // A kept lake's rim stays at its spill level (keptHollows).
+      if (hs < sill[c]) hs = sill[c];
       const k0 = hard[c];
       h[c] = k0 >= 1 ? hs : h0[c] + k0 * (hs - h0[c]);
     }
@@ -250,7 +433,7 @@ export function steadyLattice(inp: ModelInputs, p: SteadyParams = STEADY): Float
 export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
   const n = inp.n;
   const origin = -DOMAIN_HALF;
-  const { h0, mound, fixed, hard, home } = inp;
+  const { h0, mound, fixed, hard, home, sill } = inp;
   const fadeAt = (north: number, east: number): number => smoothstep(HOME_KEEP, HOME_FULL, Math.hypot(north - home.north, east - home.east));
   const h = T.slice();
   const R = new SteadyRouter(n);
@@ -272,8 +455,8 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
     const ir = (r / n) | 0;
     const a = ir * n + (c - ic * n);
     const b = ic * n + (r - ir * n);
-    if (!fixed[a] && h[a] > mid) h[a] -= (h[a] - mid) * hard[a];
-    if (!fixed[b] && h[b] > mid) h[b] -= (h[b] - mid) * hard[b];
+    if (!fixed[a] && h[a] > mid) h[a] = Math.max(Math.min(h[a], sill[a]), h[a] - (h[a] - mid) * hard[a]);
+    if (!fixed[b] && h[b] > mid) h[b] = Math.max(Math.min(h[b], sill[b]), h[b] - (h[b] - mid) * hard[b]);
   }
   // The macro cells (what the drainage routes and the valleys are carved from), and the signed change as the terrain
   // interpolates it: there the edge cells take their inner neighbours' change, so the interpolation leaves the lattice
@@ -449,6 +632,8 @@ export interface ErosionSample {
   r: number;
   /** How much of the change is kept: none over the home field's pad. */
   keep: number;
+  /** How far outside the lattice the point lies, m (0 inside). */
+  o: number;
   north: number;
   east: number;
 }
@@ -494,6 +679,7 @@ export function sampleErosion(f: Pick<ErosionField, 'delta' | 'base' | 'carve' |
   out.w = 1 - (1 - out.f) * (1 - g);
   out.r = out.w > 0 ? bicubic(f.base, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true) : 0;
   out.keep = padKeep(f.home, north, east);
+  out.o = outside(north, east);
 }
 
 /** The lattice cell (n x n) holding (north, east), clamped. */
@@ -587,6 +773,7 @@ export function sampleErosionGrad(f: Pick<ErosionField, 'delta' | 'base' | 'carv
     g.rE = cubic.gx;
   }
   out.keep = padKeep(f.home, north, east);
+  out.o = outside(north, east);
 }
 
 /**
@@ -616,7 +803,13 @@ function latticeGrad(v: Float32Array, inLattice: boolean, ly: number, lx: number
  * floor the relief finer than the lattice taken away (the ground there is T's own).
  */
 export function macroOffset(s: ErosionSample, coarse: number): number {
-  return s.keep * coastKeep(coarse) * (s.d + s.c - s.w * (coarse - s.r));
+  return s.keep * coastKeep(coarse, s.o) * (s.d + s.c - s.w * (coarse - s.r));
+}
+
+/** How far (north, east) lies outside the lattice, m (0 inside). */
+function outside(north: number, east: number): number {
+  const span = (LATTICE_N - 1) * DRAIN_CELL;
+  return Math.max(DOMAIN_LO - north, north - DOMAIN_LO - span, DOMAIN_LO - east, east - DOMAIN_LO - span, 0);
 }
 
 /**
@@ -624,17 +817,23 @@ export function macroOffset(s: ErosionSample, coarse: number): number {
  * from COAST_KEEP[1] up, so the shore stays where the noise ground put it (the model's sea cells keep their depth, but
  * the interpolation would carry the raised land next to them out over the shallows). Its derivative into coastD.
  */
-function coastKeep(coarse: number): number {
-  const t = (coarse - COAST_KEEP[0]) / (COAST_KEEP[1] - COAST_KEEP[0]);
+function coastKeep(coarse: number, out: number): number {
+  // (Beyond the lattice no sea cell holds the change down by the shore, as the model's base level does inside: there
+  // it comes in over the first COAST_OUT m of the noise ground's rise instead of a cliff at the water's edge.)
+  const hi = COAST_KEEP[1] + (out > 0 ? COAST_OUT * smoothstep(0, COAST_OUT_FADE, out) : 0);
+  const t = (coarse - COAST_KEEP[0]) / (hi - COAST_KEEP[0]);
   if (t <= 0 || t >= 1) {
     coastD = 0;
     return t <= 0 ? 0 : 1;
   }
-  coastD = (6 * t * (1 - t)) / (COAST_KEEP[1] - COAST_KEEP[0]);
+  coastD = (6 * t * (1 - t)) / (hi - COAST_KEEP[0]);
   return t * t * (3 - 2 * t);
 }
 let coastD = 0;
 const COAST_KEEP = [-3, 1];
+/** Beyond the lattice the kept share rises over this much more of the noise ground's height, m, from this far out. */
+const COAST_OUT = 80;
+const COAST_OUT_FADE = 1500;
 
 /**
  * The gradient (per m, into `out`: dx east, dy north) of macroOffset at the point sampleErosionGrad sampled, where the
@@ -642,7 +841,7 @@ const COAST_KEEP = [-3, 1];
  */
 export function macroOffsetGrad(s: ErosionSample, g: ErosionGrad, coarse: number, cE: number, cN: number, out: { dx: number; dy: number }): void {
   const res = coarse - s.r;
-  const k = coastKeep(coarse);
+  const k = coastKeep(coarse, s.o);
   const off = s.d + s.c - s.w * res;
   out.dx = s.keep * (k * (g.dE + g.cE - g.wE * res - s.w * (cE - g.rE)) + coastD * cE * off);
   out.dy = s.keep * (k * (g.dN + g.cN - g.wN * res - s.w * (cN - g.rN)) + coastD * cN * off);
@@ -1029,6 +1228,10 @@ export class SteadyRouter {
   readonly area: Float32Array;
   readonly diag: Uint8Array;
   private readonly filled: Float32Array;
+  /** The filled surface of the last route (a hollow's cells at its spill level). */
+  get filledLevels(): Float32Array {
+    return this.filled;
+  }
   private readonly done: Uint8Array;
   private readonly pit: Int32Array;
   private readonly heap: Heap;

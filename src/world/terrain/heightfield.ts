@@ -12,14 +12,14 @@
 // Every function here is unbounded: any (north, east) gives a valid answer.
 
 import { onWorldSeed, setWorldSeed, worldSeed } from '../worldSeed';
-import { macroCacheBegin, macroCachedAt, macroCachedGradAt, macroCacheEnd, macroCacheRecord, setLayoutGround, type Macro, type MacroGrad } from './seededLayout';
+import { macroCacheBegin, macroCachedAt, macroCachedGradAt, macroCacheEnd, macroCacheRecord, seededOrogen, setLayoutGround, type Macro, type MacroGrad } from './seededLayout';
 import { clamp, type Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
 import { AIRPORT, onHomeAirport } from '../../core/world';
 import { breachWall } from './streams';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth, type Drainage } from './drainage';
-import { buildErosion, erosionGullies, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample } from './erosion';
+import { buildErosion, erosionGullies, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
 import { buildNetworkHydrology } from './riverNetwork';
 import { fbm, gnoise, gullies, gulliesFast, type Deriv } from './noise';
 import { era, isPresent } from '../era/eraState';
@@ -430,7 +430,7 @@ setLayoutGround((n, e) => seededNaturalHeight(n, e, true, false));
 
 /** The macro model (erosion.ts), null in seed 0's world. */
 let erosion: ErosionField | null = null;
-const erosionAt: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, north: 0, east: 0 };
+const erosionAt: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, north: 0, east: 0 };
 const erosionGrad: ErosionGrad = { dN: 0, dE: 0, cN: 0, cE: 0, fN: 0, fE: 0, wN: 0, wE: 0, rN: 0, rE: 0 };
 const cutGrad: Deriv = { dx: 0, dy: 0 };
 const EROSION_N = Math.round((2 * DOMAIN_HALF) / DRAIN_CELL) + 1;
@@ -461,12 +461,15 @@ function applyMacro(h: number, offset: number): number {
 
 /**
  * The uplift rate of the macro model at the macro fields `m` (erosion.ts steadyLattice: 1 gives the steady drop of
- * STEADY.ridge m over 1 km on a one-cell catchment): the ranges' (the alpine uplift, about 0-1.15) and a share for the
- * hill country by its relief amplitude (HILL_UPLIFT per m), faded out toward the coast.
+ * STEADY.ridge m over 1 km on a one-cell catchment), in its parts (erosion.ts ModelSample): the ranges' (the alpine
+ * uplift, about 0-1.15, over 1.15; the model spreads it into the seed's wide orogen, if it has one), a share for the
+ * hill country by its relief amplitude (HILL_UPLIFT per m), and their fade toward the coast.
  */
-function upliftRate(m: Macro): number {
+function upliftParts(m: Macro, out: ModelSample): void {
   const hillAmp = (90 + 260 * smooth(-1000, 7000, m.inland) + 480 * m.foothill) * m.hilly;
-  return (m.uplift / 1.15 + HILL_UPLIFT * hillAmp) * smooth(0, 15000, m.inland);
+  out.u = m.uplift / 1.15;
+  out.hill = HILL_UPLIFT * hillAmp;
+  out.fade = smooth(0, 15000, m.inland);
 }
 /**
  * How much of the model's gentlest graded gradient holds at the macro fields `m` (erosion.ts SteadyParams.grade):
@@ -488,7 +491,7 @@ export function debugMacro(north: number, east: number): { s: ErosionSample; coa
   const coarseRaw = seededNaturalHeight(north, east, false, false);
   const coarse = seededNaturalHeight(north, east, false, true);
   const ground = seededNaturalHeight(north, east, true, true);
-  const s: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, north: 0, east: 0 };
+  const s: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, north: 0, east: 0 };
   sampleErosion(erosion, north, east, s);
   return { s, coarseRaw, coarse, ground };
 }
@@ -652,6 +655,8 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
 let lakes: Lake[] = [];
 /** The last seeded world's drainage lattice (probes only: scripts/probes/treeMeasure.test.ts); null at seed 0. */
 export let seededDrainage: Drainage | null = null;
+/** The last seeded world's macro model inputs (probes only: the orogen's uplift, the kept lakes); null at seed 0. */
+export let seededInputs: ModelInputs | null = null;
 let presentHydro: Hydrology;
 let legacyHydro: Hydrology;
 // The generated airfields (airfields.ts, present day only), sited against the same natural terrain and water.
@@ -708,11 +713,12 @@ function buildWater(): void {
     macroCacheBegin(EROSION_N, -DOMAIN_HALF, DRAIN_CELL);
     const inputs = modelInputs((n, e, out) => {
       out.h = seededNaturalHeight(n, e, false, false, false);
-      out.u = upliftRate(macro);
+      upliftParts(macro, out);
       out.g = gradeShare(macro);
       macroCacheRecord(n, e);
-    }, { north: home.north, east: home.east, heading: AIRPORT.runway.heading });
+    }, { north: home.north, east: home.east, heading: AIRPORT.runway.heading }, seededOrogen(), true);
     macroCacheEnd();
+    seededInputs = inputs;
     // The model's cells: handed over for this seed (macroCache.ts: another thread or the cache worked them out), or
     // worked out here.
     const key = modelKey(inputs);
@@ -762,6 +768,7 @@ function buildWater(): void {
     lastModel = null;
     homeRecheck = null;
     seededDrainage = null;
+    seededInputs = null;
     lakes = buildLakes(naturalHeight);
     presentHydro = buildHydrology(naturalHeight, lakes);
     legacyHydro = buildLegacyHydrology(naturalHeight, lakes);
@@ -1240,15 +1247,23 @@ export function terrainNormal(north: number, east: number): Vec3 {
 /** Snow line elevation at a point, m; varies with position so the snow edge is irregular. */
 export function snowLine(north: number, east: number): number {
   if (isPresent()) {
-    return 2500 + snowShift + 180 * fbm(east / 3000 + 5.5, north / 3000 - 1.1, 3);
+    return 2500 + snowShift + seededSnow() + 180 * fbm(east / 3000 + 5.5, north / 3000 - 1.1, 3);
   }
   return snowLineBase() + 180 * fbm(east / 3000 + 5.5, north / 3000 - 1.1, 3);
 }
 
 /** Level of the snow line before its noise, m: 2500 plus the era's offset (the shader's threshold, its GLSL twin). */
 export function snowLineBase(): number {
-  return 2500 + era().terrain.snowLineOffset + snowShift;
+  return 2500 + era().terrain.snowLineOffset + snowShift + seededSnow();
 }
+
+/**
+ * A seeded world's snow line against seed 0's, m (0 at seed 0). The macro model over the wide orogen (erosion.ts
+ * STEADY) puts the highest summits at about 2300-2900 m, the bulk of the ranges' crests at 1800-2300 m: with the line
+ * here only the highest summits and ridges carry snow (out/f2/REPORT.md).
+ */
+const SEEDED_SNOW = -100;
+const seededSnow = (): number => (SEEDED ? SEEDED_SNOW : 0);
 
 /** Debug shift of the snow line, m (URL snowShift=; 0, the default, leaves every value as it was). */
 let snowShift = 0;
