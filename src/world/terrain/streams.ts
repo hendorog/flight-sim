@@ -244,7 +244,7 @@ export interface StreamReport {
  * Trace the streams of a seeded world. `ground` is the terrain they run on (detailed, with the rivers' valleys);
  * `rivers` the river network's channels (their levels final); `riverPools` flags the lake pools a river runs through.
  */
-export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: number, east: number) => number; rivers: ReadonlyArray<ChannelArrays>; riverPools: Uint8Array; minArea?: number }): { streams: StreamLine[]; report: StreamReport; headAt: Float64Array } {
+export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: number, east: number) => number; rivers: ReadonlyArray<ChannelArrays>; riverPools: Uint8Array; minArea?: number; pinned?: (north: number, east: number) => number }): { streams: StreamLine[]; report: StreamReport; headAt: Float64Array } {
   const t0 = performance.now();
   const { d, mask, rivers } = p;
   const minArea = p.minArea ?? STREAM_AREA;
@@ -570,15 +570,22 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     }
     if (pn.length < 2) return;
     // Smooth the raster's zigzags (the ends stay put), then resample at STREAM_SPACING; each sample keeps its
-    // fractional index into the points, for the level.
+    // fractional index into the points, for the level. Not where the ground pins the course to its raster points
+    // (`pinned`, 0-1: a seeded world's threshold hillslopes, hillslopes.ts, whose valleys' floors run from point to point
+    // between walls rising a raster step's threshold rise: smoothed off them, a stream would ride up a wall).
     let sn = pn.slice();
     let se = pe.slice();
+    const pin = p.pinned ? pn.map((v, i) => (p.pinned as (n: number, e: number) => number)(v, pe[i])) : null;
     for (let pass = 0; pass < 2; pass++) {
       const n2 = sn.slice();
       const e2 = se.slice();
       for (let i = 1; i < sn.length - 1; i++) {
         n2[i] = 0.25 * sn[i - 1] + 0.5 * sn[i] + 0.25 * sn[i + 1];
         e2[i] = 0.25 * se[i - 1] + 0.5 * se[i] + 0.25 * se[i + 1];
+        if (pin && pin[i] > 0) {
+          n2[i] += pin[i] * (sn[i] - n2[i]);
+          e2[i] += pin[i] * (se[i] - e2[i]);
+        }
       }
       sn = n2;
       se = e2;

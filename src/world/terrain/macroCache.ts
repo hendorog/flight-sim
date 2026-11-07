@@ -1,4 +1,5 @@
-// A seeded world's macro model cells (erosion.ts steadyLattice) for the main thread, before the Simulator builds the
+// A seeded world's macro model cells (erosion.ts steadyLattice) and its mountains' threshold hillslopes (hillslopes.ts)
+// for the main thread, before the Simulator builds the
 // world (main.ts): read from this browser's cache (IndexedDB, keyed by the seed and erosion.ts MODEL_VERSION), or
 // worked out once in one worker (macroWorker.ts) and cached, then handed to this thread's build
 // (heightfield.ts provideSeededModel); the terrain workers get them in their setup message (TerrainSystem.ts). The
@@ -45,7 +46,7 @@ export async function prepareSeededModel(seed: number, era: EraId, cache = true)
     if (model) {
       provideSeededModel(model);
       // (Stored as a copy: this thread's build keeps the cells.)
-      void writeCached({ seed: model.seed, key: model.key, lattice: model.lattice.slice() });
+      void writeCached(copyOf(model));
       cachedKey = model.key;
     }
     modelPrep = { seed, source: model ? 'worker' : 'failed', ms: performance.now() - t0 };
@@ -61,7 +62,13 @@ export function rememberSeededModel(): void {
   const m = seededModel();
   if (!m || !cacheOn || m.key === cachedKey) return;
   cachedKey = m.key;
-  void writeCached({ seed: m.seed, key: m.key, lattice: m.lattice.slice() });
+  void writeCached(copyOf(m));
+}
+
+/** A copy of the model to store (this thread's build keeps its own arrays). */
+function copyOf(m: SeededModel): SeededModel {
+  const s = m.slopes;
+  return { seed: m.seed, key: m.key, lattice: m.lattice.slice(), slopes: s ? { h: s.h.slice(), w: s.w.slice(), chan: s.chan.slice(), core: s.core.slice() } : null };
 }
 
 function computeInWorker(seed: number, era: EraId): Promise<SeededModel | null> {
@@ -85,6 +92,8 @@ interface Entry {
   seed: number;
   key: string;
   lattice: ArrayBuffer;
+  /** The threshold hillslopes' fine-grid fields (hillslopes.ts SlopeField), when the seed has them. */
+  slopes?: { h: ArrayBuffer; w: ArrayBuffer; chan: ArrayBuffer; core: ArrayBuffer };
 }
 
 function openDb(): Promise<IDBDatabase | null> {
@@ -115,7 +124,10 @@ async function readCached(seed: number): Promise<SeededModel | null> {
       req.onsuccess = () => {
         const e = req.result as Entry | undefined;
         db.close();
-        resolve(e && e.seed === seed && e.lattice instanceof ArrayBuffer ? { seed, key: e.key, lattice: new Float32Array(e.lattice) } : null);
+        if (!e || e.seed !== seed || !(e.lattice instanceof ArrayBuffer)) return resolve(null);
+        const s = e.slopes;
+        const slopes = s && s.h instanceof ArrayBuffer && s.w instanceof ArrayBuffer && s.chan instanceof ArrayBuffer && s.core instanceof ArrayBuffer ? { h: new Float32Array(s.h), w: new Uint8Array(s.w), chan: new Uint8Array(s.chan), core: new Uint8Array(s.core) } : null;
+        resolve({ seed, key: e.key, lattice: new Float32Array(e.lattice), slopes });
       };
       req.onerror = () => {
         db.close();
@@ -134,6 +146,7 @@ async function writeCached(m: SeededModel): Promise<void> {
   try {
     const tx = db.transaction(STORE, 'readwrite');
     const entry: Entry = { id: entryId(m.seed), seed: m.seed, key: m.key, lattice: m.lattice.buffer as ArrayBuffer };
+    if (m.slopes) entry.slopes = { h: m.slopes.h.buffer as ArrayBuffer, w: m.slopes.w.buffer as ArrayBuffer, chan: m.slopes.chan.buffer as ArrayBuffer, core: m.slopes.core.buffer as ArrayBuffer };
     tx.objectStore(STORE).put(entry);
     tx.oncomplete = () => db.close();
     tx.onerror = () => db.close();

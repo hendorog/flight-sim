@@ -227,7 +227,7 @@ export interface LevelStage {
  */
 export const levelProbe: { on?: (stage: string, li: number, line: LevelStage) => void } = {};
 /** Build a seeded world's hydrology from its drainage and lakes. */
-export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyDepth?: Float32Array, smoothGround: (north: number, east: number) => number = natural, markFloor?: (axes: Array<{ north: Float64Array; east: Float64Array; half: Float64Array }>) => void): Hydrology {
+export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyDepth?: Float32Array, smoothGround: (north: number, east: number) => number = natural, markFloor?: (axes: Array<{ north: Float64Array; east: Float64Array; half: Float64Array }>) => void, pinned?: (north: number, east: number) => number): Hydrology {
   const lines = d.lines;
   // How freely a course may wander off its lattice cells (1) or keeps to them (PINNED_WANDER): a valley of the macro
   // ground (erosion.ts, `valleyDepth` per cell, >= 0) is the river's own, and its floor lies along the lattice path; a
@@ -750,7 +750,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   };
   tPhase.push(performance.now());
   const route = (pn: number, pe: number): number => carvedGround(smoothGround(pn, pe), pn, pe);
-  const traced = traceStreams({ d, mask, route, rivers, riverPools });
+  const traced = traceStreams({ d, mask, route, rivers, riverPools, pinned });
   // A river whose head is in no lake begins where its water does: where the first stream (a feeder, streams.ts
   // feedHeads) or lattice tributary joins it, when that is within FEED_JOIN of the head - no trickle runs on above it.
   {

@@ -27,6 +27,7 @@
 // a channel that steps diagonally. The change may raise the ground as well as lower it; nothing clamps it at 0.
 
 import { DOMAIN_HALF, DRAIN_CELL, HOME_MOUND, HOME_RADIUS, LAKE_HOME_CLEAR, RIVER_AREA } from './drainage';
+import type { SlopeField } from './hillslopes';
 
 /** Settings of the steady-state model. */
 export interface SteadyParams {
@@ -53,7 +54,7 @@ export interface SteadyParams {
  */
 export const STEADY: SteadyParams = { iterations: 30, ridge: 400, m: 0.6, sc: 0.45, grade: 0.06 };
 /** Bump when the model or its inputs change meaning: part of the cache key (macroCache.ts). */
-export const MODEL_VERSION = 'ss2';
+export const MODEL_VERSION = 'ss3';
 
 /** Catchment, cells, from which a diagonal step of a channel lowers the cells beside it. */
 const CORNER_AREA = 10;
@@ -156,6 +157,11 @@ export interface ErosionField {
   lattice: Float32Array;
   /** How far each cell lies below the ground about it on T, m (>= 0): a river's own valley (riverNetwork.ts). */
   valley: Float32Array;
+  /** The mountains' threshold hillslopes on the fine grid (hillslopes.ts), once worked out (attachSlopes); null before
+   * and outside a seed's mountains. */
+  slopes: SlopeField | null;
+  /** Per lattice cell: whether any of the slopes' weight reaches the samples interpolated in it (a skip for the rest). */
+  slopeAny: Uint8Array | null;
 }
 
 /** Spacing of the fine grid the valleys are drawn on, m: a quarter of the lattice's. */
@@ -612,7 +618,7 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
       for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) carveAny[i * n + j] = 1;
     }
   }
-  return { delta: change, base, carve, carveAny, floor: floorMask, course: new Uint8Array(N * N), courseAny: new Uint8Array(n * n), home: { north: home.north, east: home.east }, lattice: eroded, valley: valleyDepth(eroded, n, fixed) };
+  return { delta: change, base, carve, carveAny, floor: floorMask, course: new Uint8Array(N * N), courseAny: new Uint8Array(n * n), home: { north: home.north, east: home.east }, lattice: eroded, valley: valleyDepth(eroded, n, fixed), slopes: null, slopeAny: null };
 }
 
 /** How far each cell lies below the mean of the macro cells within VALLEY_R of it (land only), m (>= 0). */
@@ -636,6 +642,31 @@ function valleyDepth(t: Float32Array, n: number, fixed: Uint8Array): Float32Arra
   return out;
 }
 
+/** The threshold hillslopes give way to a drawn river's own floor (hillslopes.ts riverCore) from the first of these to
+ * the second (its core, where its level is read: the ground there stays the model's). */
+const COURSE_SLOPES = [0.5, 0.95];
+/** ... and the gullies come back over the last of it (ErosionSample.mg). */
+const COURSE_GULLIES = [0.85, 0.95];
+
+/** Hand the field its threshold hillslopes (hillslopes.ts thresholdSlopes), with the skip per lattice cell. */
+export function attachSlopes(f: ErosionField, s: SlopeField): void {
+  const n = LATTICE_N;
+  const N = CUT_N;
+  const any = new Uint8Array(n * n);
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      if (s.w[y * N + x] === 0) continue;
+      const i0 = Math.max(0, Math.floor((y - 2) / FINE));
+      const i1 = Math.min(n - 1, Math.floor((y + 1) / FINE));
+      const j0 = Math.max(0, Math.floor((x - 2) / FINE));
+      const j1 = Math.min(n - 1, Math.floor((x + 1) / FINE));
+      for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) any[i * n + j] = 1;
+    }
+  }
+  f.slopes = s;
+  f.slopeAny = any;
+}
+
 /** The model at a point (sampleErosion), for macroOffset and erosionGullies. */
 export interface ErosionSample {
   /** The lattice's change, interpolated (B-spline), m. */
@@ -652,6 +683,15 @@ export interface ErosionSample {
   keep: number;
   /** How far outside the lattice the point lies, m (0 inside). */
   o: number;
+  /** The threshold hillslopes (hillslopes.ts): how far the ground takes them, [0, 1] (0: none here), the ground they
+   * built (Catmull-Rom), m, and how far the point lies on one of their channels' floors, [0, 1]. */
+  m: number;
+  hs: number;
+  ch: number;
+  /** How far the gullies give way to the threshold hillslopes' valleys, [0, 1]: the weight, off only on a drawn river's
+   * core (where the ground stays the model's, gullies and all), so they do not come back in the band where the ground
+   * blends from the slopes to the river's floor. */
+  mg: number;
   north: number;
   east: number;
 }
@@ -684,7 +724,7 @@ function residualFade(x: number): number {
 }
 
 /** The model at (north, east), into `out`. */
-export function sampleErosion(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'course' | 'courseAny' | 'home' | 'valley'>, north: number, east: number, out: ErosionSample): void {
+export function sampleErosion(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'course' | 'courseAny' | 'home' | 'valley' | 'slopes' | 'slopeAny'>, north: number, east: number, out: ErosionSample): void {
   out.north = north;
   out.east = east;
   out.d = bicubic(f.delta, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true);
@@ -699,6 +739,34 @@ export function sampleErosion(f: Pick<ErosionField, 'delta' | 'base' | 'carve' |
   out.r = out.w > 0 ? bicubic(f.base, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true) : 0;
   out.keep = padKeep(f.home, north, east);
   out.o = outside(north, east);
+  out.m = out.hs = out.ch = out.mg = 0;
+  const sl = f.slopes;
+  if (sl && inside && (f.slopeAny as Uint8Array)[cellAt(north, east)]) {
+    const kr = catmullRomU8(sl.core, CUT_N, fy, fx) / 255;
+    const m0 = Math.min(1, Math.max(0, catmullRomU8(sl.w, CUT_N, fy, fx) / 255));
+    out.mg = m0 * (1 - smoothstep(COURSE_GULLIES[0], COURSE_GULLIES[1], kr)) * out.keep;
+    const m = m0 * (1 - smoothstep(COURSE_SLOPES[0], COURSE_SLOPES[1], kr));
+    if (m > 1e-4) {
+      out.m = Math.min(1, m) * out.keep;
+      out.hs = catmullRom(sl.h, CUT_N, fy, fx);
+      out.ch = Math.min(1, Math.max(0, catmullRomU8(sl.chan, CUT_N, fy, fx) / 255));
+      if (out.ch > 0) out.hs += out.ch * (bilinear(sl.h, CUT_N, fy, fx) - out.hs);
+    }
+  }
+}
+
+/**
+ * Bilinear interpolation of a fine-grid field at (fy, fx) in cells (inside it). Along the threshold hillslopes'
+ * channels the ground takes it over Catmull-Rom's: a channel's floor is a narrow trench between walls a node high, and
+ * Catmull-Rom's negative weights on the walls ripple its floor by +-10-20 m between the nodes (closed pits).
+ */
+function bilinear(v: Float32Array, n: number, fy: number, fx: number): number {
+  const i = Math.floor(fy);
+  const j = Math.floor(fx);
+  const ty = fy - i;
+  const tx = fx - j;
+  const b = i * n + j;
+  return (1 - ty) * ((1 - tx) * v[b] + tx * v[b + 1]) + ty * ((1 - tx) * v[b + n] + tx * v[b + n + 1]);
 }
 
 /** The lattice cell (n x n) holding (north, east), clamped. */
@@ -730,6 +798,11 @@ export interface ErosionGrad {
   wE: number;
   rN: number;
   rE: number;
+  /** Of the hillslopes' weight and ground (B-spline gradients, as the carve's). */
+  mN: number;
+  mE: number;
+  hN: number;
+  hE: number;
 }
 const cubic = { v: 0, gy: 0, gx: 0 };
 
@@ -738,7 +811,7 @@ const cubic = { v: 0, gy: 0, gx: 0 };
  * (macroOffsetGrad). Values as sampleErosion's; gradients the B-spline's (Catmull-Rom's gradient is only C0, and the
  * gullies turned and held by it crease the ground along every grid line). Off the grids the gradients are taken as 0.
  */
-export function sampleErosionGrad(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'course' | 'courseAny' | 'home' | 'valley'>, north: number, east: number, out: ErosionSample, g: ErosionGrad): void {
+export function sampleErosionGrad(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'course' | 'courseAny' | 'home' | 'valley' | 'slopes' | 'slopeAny'>, north: number, east: number, out: ErosionSample, g: ErosionGrad): void {
   out.north = north;
   out.east = east;
   const ly = (north - DOMAIN_LO) / DRAIN_CELL;
@@ -807,6 +880,46 @@ export function sampleErosionGrad(f: Pick<ErosionField, 'delta' | 'base' | 'carv
   }
   out.keep = padKeep(f.home, north, east);
   out.o = outside(north, east);
+  out.m = out.hs = out.ch = out.mg = 0;
+  g.mN = g.mE = g.hN = g.hE = 0;
+  const sl = f.slopes;
+  if (sl && inside && (f.slopeAny as Uint8Array)[cellAt(north, east)]) {
+    const m0 = Math.min(1, Math.max(0, catmullRomU8(sl.w, CUT_N, fy, fx) / 255));
+    const kr = catmullRomU8(sl.core, CUT_N, fy, fx) / 255;
+    out.mg = m0 * (1 - smoothstep(COURSE_GULLIES[0], COURSE_GULLIES[1], kr)) * out.keep;
+    const kc = 1 - smoothstep(COURSE_SLOPES[0], COURSE_SLOPES[1], kr);
+    const m = m0 * kc;
+    if (m > 1e-4) {
+      out.m = Math.min(1, m) * out.keep;
+      if (m < 1) {
+        let gN = 0;
+        let gE = 0;
+        if (m0 < 1) {
+          cubicGradU8(sl.w, CUT_N, fy, fx);
+          gN = cubic.gy / (255 * CUT_CELL);
+          gE = cubic.gx / (255 * CUT_CELL);
+        }
+        // (With the drawn river's floor's fade: d(1 - smoothstep)/dk times its mark's gradient.)
+        const t = (kr - COURSE_SLOPES[0]) / (COURSE_SLOPES[1] - COURSE_SLOPES[0]);
+        let krN = 0;
+        let krE = 0;
+        if (t > 0 && t < 1) {
+          cubicGradU8(sl.core, CUT_N, fy, fx);
+          const dk = -(6 * t * (1 - t)) / (COURSE_SLOPES[1] - COURSE_SLOPES[0]);
+          krN = (dk * cubic.gy) / (255 * CUT_CELL);
+          krE = (dk * cubic.gx) / (255 * CUT_CELL);
+        }
+        g.mN = out.keep * (gN * kc + m0 * krN);
+        g.mE = out.keep * (gE * kc + m0 * krE);
+      }
+      out.hs = catmullRom(sl.h, CUT_N, fy, fx);
+      cubicGrad(sl.h, CUT_N, fy, fx, true);
+      g.hN = cubic.gy / CUT_CELL;
+      g.hE = cubic.gx / CUT_CELL;
+      out.ch = Math.min(1, Math.max(0, catmullRomU8(sl.chan, CUT_N, fy, fx) / 255));
+      if (out.ch > 0) out.hs += out.ch * (bilinear(sl.h, CUT_N, fy, fx) - out.hs);
+    }
+  }
 }
 
 /**
@@ -1131,7 +1244,7 @@ function copyEdges(v: Float32Array, m: number): void {
 }
 
 /** The lattice field `v` (n x n) on the fine grid: the same B-spline as bicubic(..., approx), separable. */
-function upsample(v: Float32Array, n: number): Float32Array {
+export function upsample(v: Float32Array, n: number): Float32Array {
   const N = (n - 1) * FINE + 1;
   const W = new Float64Array(FINE * 4);
   for (let k = 0; k < FINE; k++) {

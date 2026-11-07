@@ -19,8 +19,9 @@ import { AIRPORT, onHomeAirport } from '../../core/world';
 import { breachWall } from './streams';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth, type Drainage } from './drainage';
-import { buildErosion, CUT_CELL as CUT_CELL_M, erosionGullies, markCourse, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
+import { attachSlopes, buildErosion, CUT_CELL as CUT_CELL_M, CUT_N, erosionGullies, upsample, markCourse, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
 import { buildNetworkHydrology } from './riverNetwork';
+import { riverCore, slopeKey, slopeParams, thresholdSlopes, type SlopeField } from './hillslopes';
 import { fbm, gnoise, gullies, gulliesFast, type Deriv } from './noise';
 import { era, isPresent } from '../era/eraState';
 import { volcanoBound, volcanoHeight, volcanoMerge } from './volcano';
@@ -430,8 +431,8 @@ setLayoutGround((n, e) => seededNaturalHeight(n, e, true, false));
 
 /** The macro model (erosion.ts), null in seed 0's world. */
 let erosion: ErosionField | null = null;
-const erosionAt: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, north: 0, east: 0 };
-const erosionGrad: ErosionGrad = { dN: 0, dE: 0, cN: 0, cE: 0, fN: 0, fE: 0, wN: 0, wE: 0, rN: 0, rE: 0 };
+const erosionAt: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, m: 0, hs: 0, ch: 0, mg: 0, north: 0, east: 0 };
+const erosionGrad: ErosionGrad = { dN: 0, dE: 0, cN: 0, cE: 0, fN: 0, fE: 0, wN: 0, wE: 0, rN: 0, rE: 0, mN: 0, mE: 0, hN: 0, hE: 0 };
 const cutGrad: Deriv = { dx: 0, dy: 0 };
 const EROSION_N = Math.round((2 * DOMAIN_HALF) / DRAIN_CELL) + 1;
 
@@ -491,7 +492,7 @@ export function debugMacro(north: number, east: number): { s: ErosionSample; coa
   const coarseRaw = seededNaturalHeight(north, east, false, false);
   const coarse = seededNaturalHeight(north, east, false, true);
   const ground = seededNaturalHeight(north, east, true, true);
-  const s: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, north: 0, east: 0 };
+  const s: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, m: 0, hs: 0, ch: 0, mg: 0, north: 0, east: 0 };
   sampleErosion(erosion, north, east, s);
   return { s, coarseRaw, coarse, ground };
 }
@@ -564,7 +565,8 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
     // Over a lake's bed and shore (drainage.ts LakeMask) none of the small-scale relief either, where it could reach
     // down to the water (the lake is flooded on the ground without it): only on ground standing within the relief's
     // reach of the lake's level, so a slope rising from the water keeps its rock and hummocks.
-    const gullyKeep = (1 - shore) * (cut ? erosionGullies(erosionAt) : 1);
+    // (And along the threshold hillslopes' channels, hillslopes.ts: their floors keep falling.)
+    const gullyKeep = (1 - shore) * (cut ? erosionGullies(erosionAt) * (1 - erosionAt.mg * erosionAt.ch) : 1);
     let lakeW = eroded && lakeSeed === worldSeed() && lakeSmooth ? lakeSmooth.smooth(north, east) : 0;
     if (lakeW > 0) {
       const hc = cut ? applyMacro(coarse, macroOffset(erosionAt, coarse)) : coarse;
@@ -580,6 +582,13 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
       macroOffsetGrad(erosionAt, erosionGrad, coarse, cE, cN, cutGrad);
       bE += cutGrad.dx;
       bN += cutGrad.dy;
+      // The threshold hillslopes' ground (hillslopes.ts), blended in by its weight m: (1 - m) B + m H + grad m (H - B).
+      const m = erosionAt.m;
+      if (m > 0) {
+        const diff = erosionAt.hs - applyMacro(coarse, macroOffset(erosionAt, coarse));
+        bE += m * (erosionGrad.hE - bE) + erosionGrad.mE * diff;
+        bN += m * (erosionGrad.hN - bN) + erosionGrad.mN * diff;
+      }
     }
     fall = Math.sqrt(bE * bE + bN * bN);
     gullyW = keep;
@@ -603,8 +612,20 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
       // The finer octaves at the troughs' depth, and on a spur only as far as its rise is the troughs' (steep ground).
       const fineK = kCap * (1 - (spur * kSpur) / (kCap + kSpur + 1e-9));
       const g0 = 0.5 * gully0;
-      relief += kCap * g0 + fineK * (gullySum - g0) + kSpur * up * gate;
-      fineGully = fineK * (gullySum - gullyCoarse);
+      const mm = cut ? erosionAt.mg : 0;
+      if (mm > 0) {
+        // In the mountains the threshold hillslopes' channels are the valleys (hillslopes.ts): the gullies the streams
+        // route over (the first STREAM_GULLY_OCTAVES) keep SlopeParams.gully of their relief there, the finer ones (the
+        // rills' scale) SlopeParams.fine.
+        const kc = 1 - mm * (1 - slopeGully);
+        const kf = 1 - mm * (1 - slopeFine);
+        const fineG = fineK * (gullySum - gullyCoarse);
+        relief += kc * (kCap * g0 + fineK * (gullyCoarse - g0) + kSpur * up * gate) + kf * fineG;
+        fineGully = kf * fineG;
+      } else {
+        relief += kCap * g0 + fineK * (gullySum - g0) + kSpur * up * gate;
+        fineGully = fineK * (gullySum - gullyCoarse);
+      }
       gullyProbe.g = gullySum;
       gullyProbe.c0 = gully0 / (A0 + 1e-9);
       gullyProbe.A0 = A0;
@@ -616,8 +637,13 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
     }
   }
   let h = base + relief;
-  // The macro model's ground (erosion.ts), C1-smooth: the gullies ride on it.
-  if (cut) h = applyMacro(h, macroOffset(erosionAt, coarse));
+  // The macro model's ground (erosion.ts), C1-smooth: the gullies ride on it. In the mountains it gives way to the
+  // threshold hillslopes' ground (hillslopes.ts) by their weight.
+  if (cut) {
+    let off = macroOffset(erosionAt, coarse);
+    if (erosionAt.m > 0) off += erosionAt.m * (erosionAt.hs - applyMacro(coarse, off));
+    h = applyMacro(h, off);
+  }
 
   // The era's volcano over the eroded ground (the erosion pass works on the ground without it, `volcano` false).
   const V = volcano ? era().terrain.volcano : undefined;
@@ -634,7 +660,7 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
   }
   const h0 = h;
   // (Held to the slope and faded into the gully troughs: see SMALL_FALL.)
-  const floor = 1 - gullyW * (1 - smooth(FLOOR_FADE[0], FLOOR_FADE[1], gullySum)) * (1 - smooth(FLOOR_SLOPE, 2 * FLOOR_SLOPE, fall));
+  const floor = (1 - gullyW * (1 - smooth(FLOOR_FADE[0], FLOOR_FADE[1], gullySum)) * (1 - smooth(FLOOR_SLOPE, 2 * FLOOR_SLOPE, fall))) * (cut ? 1 - erosionAt.mg * erosionAt.ch : 1);
   const rough = softMin(calm * floor * (1.2 + 0.004 * clamp(h, 0, 3000)), SMALL_FALL * fall);
   const rugged = softMin(calm * floor * clamp(amplitude / 1500, 0, 1) * (0.4 + 0.6 * smooth(0.1, 0.5, Math.sqrt(gE * gE + gN * gN))), RUGGED_FALL * fall);
   gullyProbe.fall = fall;
@@ -668,6 +694,8 @@ export interface SeededModel {
   seed: number;
   key: string;
   lattice: Float32Array;
+  /** The mountains' threshold hillslopes on the fine grid (hillslopes.ts), worked out from the cells. */
+  slopes?: SlopeField | null;
 }
 /** The model cells handed over for the next build (macroCache.ts, a terrain worker's setup), if any. */
 let providedModel: SeededModel | null = null;
@@ -675,10 +703,14 @@ let providedModel: SeededModel | null = null;
 let lastModel: SeededModel | null = null;
 /** How long the last seeded build spent in the model, ms (0 when it was handed over). */
 export let modelMs = 0;
-/** While set, a seeded build stops once the model cells are worked out (computeSeededModel: the model worker). */
+/** While set, a seeded build stops once the model cells and the threshold hillslopes are worked out (computeSeededModel:
+ * the model worker). */
 let modelOnly = false;
+/** Thrown out of the river network's build to stop there (modelOnly). */
+const MODEL_DONE = { done: true };
 /**
- * Work out a seed's model cells and nothing else of its world (macroWorker.ts: one worker does this for the main
+ * Work out a seed's model cells and its mountains' threshold hillslopes (they need the rivers' axes laid out, so the
+ * drainage is built as far as that) and nothing else of its world (macroWorker.ts: one worker does this for the main
  * thread and the terrain workers). Leaves this thread's world half built: for a thread of its own.
  */
 export function computeSeededModel(seed: number): SeededModel | null {
@@ -721,15 +753,18 @@ function buildWater(): void {
     seededInputs = inputs;
     // The model's cells: handed over for this seed (macroCache.ts: another thread or the cache worked them out), or
     // worked out here.
-    const key = modelKey(inputs);
-    const given = providedModel && providedModel.seed === worldSeed() && providedModel.key === key ? providedModel.lattice : null;
+    const sp = slopeParams();
+    slopeGully = sp.gully;
+    slopeFine = sp.fine;
+    const key = `${modelKey(inputs)}-${slopeKey(sp)}`;
+    const handed = providedModel && providedModel.seed === worldSeed() && providedModel.key === key ? providedModel : null;
+    const given = handed ? handed.lattice : null;
     const t0 = performance.now();
     const T = given ?? steadyLattice(inputs);
     modelMs = given ? 0 : performance.now() - t0;
-    lastModel = { seed: worldSeed(), key, lattice: T };
-    if (modelOnly) return;
     const eroded = buildErosion(inputs, T);
     erosion = eroded;
+    lastModel = { seed: worldSeed(), key, lattice: T, slopes: null };
     // The macro cells the drainage routes over (erosion.ts), with the cushion above the sea and the era's volcano.
     const lat = eroded.lattice;
     const V = era().terrain.volcano;
@@ -756,7 +791,23 @@ function buildWater(): void {
     // levels are read off the ground: not by a lake (its basin and shore were flooded on the ground without the mark).
     const R = CUT_CELL_M;
     const byLake = (n: number, e: number): number => (mask.smooth(n, e) > 0 || mask.smooth(n + R, e) > 0 || mask.smooth(n - R, e) > 0 || mask.smooth(n, e + R) > 0 || mask.smooth(n, e - R) > 0 ? 0 : 1);
-    presentHydro = buildNetworkHydrology(naturalHeight, drainage, mask, eroded.valley, naturalHeightSmooth, (axes) => markCourse(eroded, axes, byLake));
+    // Then the mountains' threshold hillslopes (hillslopes.ts), on that ground with the rivers' floors held (handed over
+    // with the cells, or worked out here: the model worker stops there): so the rivers' levels, read next, are those of
+    // their own floors, and the streams are traced down the slopes' valleys.
+    try {
+      presentHydro = buildNetworkHydrology(naturalHeight, drainage, mask, eroded.valley, naturalHeightSmooth, (axes) => {
+        markCourse(eroded, axes, byLake);
+        const t1 = performance.now();
+        const slopes = (handed && handed.slopes) || mountainSlopes(inputs, sp, axes);
+        if (!(handed && handed.slopes)) modelMs += performance.now() - t1;
+        attachSlopes(eroded, slopes);
+        lastModel = { seed: worldSeed(), key, lattice: T, slopes };
+        if (modelOnly) throw MODEL_DONE;
+      }, slopePinned);
+    } catch (e) {
+      if (e === MODEL_DONE) return;
+      throw e;
+    }
     legacyHydro = presentHydro;
     // The home field was sited on the noise ground and held during the model (erosion.ts HOME_KEEP): checked once more
     // on the finished ground (the model may have raised the approach or the circuit).
@@ -784,6 +835,43 @@ buildWater();
 onWorldSeed(buildWater);
 /** The water of the current era. */
 const current = (): Hydrology => (isPresent() ? presentHydro : legacyHydro);
+
+/**
+ * The threshold-hillslope pass (hillslopes.ts) over a seeded world's mountains: its weight from the orogen's mountain
+ * mask (the ranges' uplift share with the envelope, erosion.ts ModelInputs.ur, SlopeParams.onset to full), none over
+ * the home field's held ground and its protected surfaces; the drawn rivers' own floors (riverCore, from their axes)
+ * held; on the ground the model built, with the rivers' floors marked (markCourse).
+ */
+/** How far a stream's raster course is pinned to its points (streams.ts traceStreams): on the threshold hillslopes'
+ * channels' floors (hillslopes.ts), by their weight. */
+const pinAt: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, m: 0, hs: 0, ch: 0, mg: 0, north: 0, east: 0 };
+function slopePinned(north: number, east: number): number {
+  if (!erosion || !erosion.slopes) return 0;
+  sampleErosion(erosion, north, east, pinAt);
+  return Math.min(1, pinAt.mg * pinAt.ch * 2);
+}
+/** riverNetwork.ts floorHalf's margin for the fine grid (FLOOR_GRID), taken off its half-widths for the rivers' cores. */
+const FLOOR_GRID_MARGIN = 250;
+/** The gullies' share of their relief in the threshold hillslopes' mountains (hillslopes.ts SlopeParams.gully), for the
+ * current world. */
+let slopeGully = 1;
+let slopeFine = 1;
+function mountainSlopes(inputs: ModelInputs, sp: ReturnType<typeof slopeParams>, axes: ReadonlyArray<{ north: ArrayLike<number>; east: ArrayLike<number>; half: ArrayLike<number> }>): SlopeField {
+  const ur = upsample(inputs.ur, inputs.n);
+  const hard = upsample(inputs.hard, inputs.n);
+  const cap = upsample(inputs.cap, inputs.n);
+  const w = new Float32Array(ur.length);
+  for (let q = 0; q < w.length; q++) {
+    const t = Math.min(1, Math.max(0, (ur[q] - sp.onset) / (sp.full - sp.onset)));
+    if (t <= 0) continue;
+    w[q] = t * t * (3 - 2 * t) * Math.min(1, Math.max(0, hard[q])) * (1 - Math.min(1, Math.max(0, cap[q])));
+  }
+  const course = Math.round(255 * sp.courseHold);
+  // The rivers' own floors: the axis and its floodplain or the 80 m either side its level is read from (the marks'
+  // half less their fine-grid margin, riverNetwork.ts floorHalf).
+  const core = riverCore(CUT_N, CUT_CELL_M, axes.map((a) => ({ north: a.north, east: a.east, half: Array.from(a.half, (h) => Math.max(0, h - FLOOR_GRID_MARGIN)) })));
+  return thresholdSlopes(CUT_N, CUT_CELL_M, w, (q) => core[q] >= course, (n, e) => seededNaturalHeight(n, e, false, true, false), core, sp);
+}
 /** Rivers and lakes of the current era (read at call time, like era()). */
 export const hydrology: Readonly<Hydrology> = {
   get lakes() { return current().lakes; },
