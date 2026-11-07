@@ -368,6 +368,10 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const lj = sampleAt(p.s, p.level, at);
       for (let i = 0; i < count; i++) level[i] = Math.max(level[i], lj);
       level[count - 1] = lj;
+    } else if (d.height[L.cells[L.cells.length - 1]] <= 0 && !wet[count - 1]) {
+      // A river reaching the sea ends at the sea's level (its mouth's ground can stand a few metres over it where the
+      // shore lies a little seaward of the outlet cell).
+      level[count - 1] = 0;
     }
     capFall(pre[li]);
     const halfWidth = new Float64Array(count);
