@@ -6,6 +6,7 @@
 //   TREE_SEEDS=1,42,777777 TREE_OUT=out/tree npx vitest run --config scripts/probes/vitest.config.ts scripts/probes/treeMeasure.test.ts --silent=false
 import { it } from 'vitest';
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, type Drainage } from '../../src/world/terrain/drainage';
+import * as hf from '../../src/world/terrain/heightfield';
 import { hydrology, modelMs, naturalHeightRaw, seededDrainage, seededModel } from '../../src/world/terrain/heightfield';
 import { setWorldSeed } from '../../src/world/worldSeed';
 import { AIRPORT } from '../../src/core/world';
@@ -183,6 +184,14 @@ it('tree measure', () => {
     lines.push(sB.text, sA.text);
     lines.push(measureTree(`  [relief classes] lattice before erosion`, treeOf(dBefore), reliefClasses(n, raw), isSeaB).text);
     lines.push(measureTree(`  [relief classes] lattice after erosion`, treeOf(dAfter), reliefClasses(n, lat), isSeaA).text);
+    // (Stage 2: the model's own orogen classes: mountain where the ranges' uplift share with the wide orogen's envelope
+    // is at least 0.3, as the spike's "variant's uplift classes"; hill and plain by relief.)
+    const inp = (hf as unknown as { seededInputs?: { ur: Float32Array } | null }).seededInputs;
+    if (inp) {
+      const ro = reliefClasses(n, lat);
+      for (let c = 0; c < n * n; c++) if (lat[c] > 0) ro[c] = inp.ur[c] >= 0.3 ? CLASS_MTN : ro[c] === CLASS_MTN ? 2 : ro[c];
+      lines.push(measureTree(`  [orogen classes] lattice after erosion`, treeOf(dAfter), ro, isSeaA).text);
+    }
     // Same receivers? (the share of land cells whose receiver differs before/after)
     let diff = 0, land = 0;
     for (let c = 0; c < n * n; c++) if (lat[c] > 0) (land++, dBefore.receiver[c] !== dAfter.receiver[c] && diff++);
