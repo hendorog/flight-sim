@@ -1584,6 +1584,59 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     }
     report.continued = conts.length;
   }
+  /** Whether a straight reach from stream st's end to (tn, te) crosses its own course. */
+  const crossesOwn = (st: StreamLine, tn: number, te: number): boolean => {
+    const m0 = st.north.length - 1;
+    const ax = st.east[m0], ay = st.north[m0];
+    for (let i = 0; i + 2 < m0; i++) {
+      const cx = st.east[i], cy = st.north[i], dx = st.east[i + 1], dy = st.north[i + 1];
+      if (Math.max(cx, dx) < Math.min(ax, te) - 1 || Math.min(cx, dx) > Math.max(ax, te) + 1 || Math.max(cy, dy) < Math.min(ay, tn) - 1 || Math.min(cy, dy) > Math.max(ay, tn) + 1) continue;
+      const d1 = (te - ax) * (cy - ay) - (tn - ay) * (cx - ax);
+      const d2 = (te - ax) * (dy - ay) - (tn - ay) * (dx - ax);
+      const d3 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx);
+      const d4 = (dx - cx) * (tn - cy) - (dy - cy) * (te - cx);
+      if (d1 * d2 < 0 && d3 * d4 < 0) return true;
+    }
+    return false;
+  };
+  /** Run stream st on in a straight reach to (tn, te): its water follows the routing ground down under it (never rising,
+   * never over the ground), to `end` at most at the far end. */
+  const appendTo = (st: StreamLine, tn: number, te: number, end: number): void => {
+    const m = st.north.length;
+    const n0 = st.north[m - 1], e0 = st.east[m - 1], s0 = st.s[m - 1], a0 = st.area[m - 1], h0 = st.halfWidth[m - 1];
+    const dist = Math.hypot(tn - n0, te - e0);
+    const add = Math.max(1, Math.ceil(dist / STREAM_SPACING));
+    const N2 = m + add;
+    const grow = (a: Float64Array): Float64Array => {
+      const out = new Float64Array(N2);
+      out.set(a);
+      return out;
+    };
+    st.north = grow(st.north);
+    st.east = grow(st.east);
+    st.level = grow(st.level);
+    st.s = grow(st.s);
+    st.area = grow(st.area);
+    st.halfWidth = grow(st.halfWidth);
+    st.breach = grow(st.breach);
+    st.cut = grow(st.cut);
+    let lv = st.level[m - 1];
+    for (let q = 1; q <= add; q++) {
+      const t = q / add;
+      const i = m - 1 + q;
+      st.north[i] = n0 + (tn - n0) * t;
+      st.east[i] = e0 + (te - e0) * t;
+      const g = p.route(st.north[i], st.east[i]);
+      lv = Math.min(lv, g - STREAM_DEPTH);
+      if (q === add) lv = Math.min(lv, end);
+      st.level[i] = lv;
+      st.cut[i] = Math.max(0, g - STREAM_DEPTH - lv);
+      st.breach[i] = breachOfCut(st.cut[i]);
+      st.s[i] = s0 + dist * t;
+      st.area[i] = a0;
+      st.halfWidth[i] = h0;
+    }
+  };
   /** Stream j, ending at raster point k0, runs on to the nearest other line's sample within JOIN_REACH raster steps
    * (its course straight there, its water no higher than at its end): whether it found one. */
   const joinBeside = (j: number, k0: number): boolean => {
@@ -1627,26 +1680,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     if (best < 0) return false;
     const L = lineAt(occLine(best));
     const idx = occIdx(best);
-    const m = st.north.length;
-    const tn = L.north[idx];
-    const te = L.east[idx];
-    const dist = Math.hypot(tn - st.north[m - 1], te - st.east[m - 1]);
-    const add = Math.max(1, Math.ceil(dist / STREAM_SPACING));
-    const grow = (a: Float64Array, f: (t: number) => number): Float64Array => {
-      const out = new Float64Array(m + add);
-      out.set(a);
-      for (let q = 1; q <= add; q++) out[m - 1 + q] = f(q / add);
-      return out;
-    };
-    const n0 = st.north[m - 1], e0 = st.east[m - 1], lv = st.level[m - 1], s0 = st.s[m - 1], a0 = st.area[m - 1];
-    st.north = grow(st.north, (t) => n0 + (tn - n0) * t);
-    st.east = grow(st.east, (t) => e0 + (te - e0) * t);
-    st.level = grow(st.level, () => Math.min(lv, L.level[idx]));
-    st.s = grow(st.s, (t) => s0 + dist * t);
-    st.area = grow(st.area, () => a0);
-    st.halfWidth = grow(st.halfWidth, () => st.halfWidth[m - 1]);
-    st.breach = grow(st.breach, () => 0);
-    st.cut = grow(st.cut, () => 0);
+    appendTo(st, L.north[idx], L.east[idx], L.level[idx]);
     st.end = 'channel';
     st.joins = occLine(best);
     st.joinS = L.s[idx];
@@ -1769,8 +1803,28 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       const id = mask.addPond(pts, gs, level, sill);
       ponds.push(id, pts.length);
       st.end = 'lake';
-      // (Its water at the pond's, or under it where it came down into it.)
-      st.level[m] = Math.min(st.level[m], level);
+      // (Into the pond's water: on to its nearest point where the stream's end stands over it.)
+      const inPond = mask.at(st.north[m], st.east[m]) > -Infinity;
+      (report.pondWhy ??= {})[inPond ? 'endIn' : 'endOut'] = (report.pondWhy[inPond ? 'endIn' : 'endOut'] ?? 0) + 1;
+      if (!inPond) {
+        let done = false;
+        const order = pts.map((q) => ({ q, d: Math.hypot(ORIGIN + Math.floor(q / R) * LAKE_RASTER - st.north[m], ORIGIN + (q % R) * LAKE_RASTER - st.east[m]) })).sort((a, b) => a.d - b.d || a.q - b.q);
+        for (const { q } of order) {
+          const tn = ORIGIN + Math.floor(q / R) * LAKE_RASTER;
+          const te = ORIGIN + (q % R) * LAKE_RASTER;
+          if (crossesOwn(st, tn, te)) continue;
+          appendTo(st, tn, te, level);
+          done = true;
+          break;
+        }
+        if (!done) {
+          // (Every way into it crosses its own course: it stays a sink beside the pond.)
+          (report.pondWhy ??= {}).allCross = (report.pondWhy.allCross ?? 0) + 1;
+          st.end = 'sink';
+        }
+      }
+      const me = st.north.length - 1;
+      st.level[me] = Math.min(st.level[me], level);
       // The outlet, from the pond's lowest way out.
       const out = outletPath(id);
       if (!out) continue;
