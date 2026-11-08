@@ -2,6 +2,12 @@
 // (no marking textures), so they are sharp at 2 m. Every marking is box-filtered over the pixel footprint in the
 // local (u, v) plane, which removes aliasing and moire at grazing angles and at 3 km+.
 //
+// The footprint a marking is filtered over is the one ACROSS that marking: a pixel seen at a grazing angle spans
+// many metres along the view and centimetres across it. Axis-aligned bands use the footprint along u or v (w.x,
+// w.y); lines given by a distance function (taxiway centrelines, lead-on lines, designation digits, anchor rings)
+// use the footprint along their own normal, across(n). Averaging the two axes instead spread a 15 cm line looked
+// along over metres, so distant lines broadened and blurred.
+//
 // Shader inputs: vec2 p = (u, v) local runway coordinates in metres (see layout.ts).
 // The layout constants are baked into the generated source as literals.
 
@@ -58,6 +64,15 @@ float pulses(float x, float P, float d, float w) {
 // A line of half-width hw at unsigned distance d, filtered.
 float line(float d, float hw, float w) { return band(d, -hw, hw, w); }
 
+// Screen derivatives of the local position (metres per pixel), set by the material before the surface is shaded.
+vec2 gDpdx, gDpdy;
+// Pixel footprint in metres along the unit direction n of the local plane.
+float across(vec2 n) { return max(length(vec2(dot(gDpdx, n), dot(gDpdy, n))), 1e-4); }
+// A distance-function line: dn = (distance, unit normal), filtered over the footprint across it.
+float lineN(vec3 dn, float hw) { return line(dn.x, hw, across(dn.yz)); }
+// The nearer of two (distance, normal) results.
+vec3 nearer(vec3 a, vec3 b) { return b.x < a.x ? b : a; }
+
 float rectSD(vec2 p, vec2 c, vec2 h) {
   vec2 d = abs(p - c) - h;
   return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
@@ -66,17 +81,27 @@ float sminP(float a, float b, float k) {
   float h = max(k - abs(a - b), 0.0) / k;
   return min(a, b) - h * h * k * 0.25;
 }
-float segDist(vec2 p, vec2 a, vec2 b) {
+// Distance to a segment and the unit direction it grows in (across the segment, radial past its ends).
+vec3 segDN(vec2 p, vec2 a, vec2 b) {
   vec2 pa = p - a, ba = b - a;
   float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
-  return length(pa - ba * h);
+  vec2 q = pa - ba * h;
+  float d = length(q);
+  return vec3(d, d > 1e-5 ? q / d : normalize(vec2(-ba.y, ba.x)));
 }
-// Distance to the circular arc from angle a0 to a1 (a0 < a1, counter-clockwise), centre c, radius r.
-float arcDist(vec2 p, vec2 c, float r, float a0, float a1) {
+// Distance to the circular arc from angle a0 to a1 (a0 < a1, counter-clockwise), centre c, radius r, and the unit
+// direction it grows in (radial along the arc, from the nearer end past it).
+vec3 arcDN(vec2 p, vec2 c, float r, float a0, float a1) {
   vec2 q = p - c;
   float a = a0 + mod(atan(q.y, q.x) - a0, 6.2831853);
-  if (a <= a1) return abs(length(q) - r);
-  return min(length(q - r * vec2(cos(a0), sin(a0))), length(q - r * vec2(cos(a1), sin(a1))));
+  if (a <= a1) {
+    float l = length(q);
+    return vec3(abs(l - r), l > 1e-5 ? q / l : vec2(1.0, 0.0));
+  }
+  vec2 e0 = q - r * vec2(cos(a0), sin(a0)), e1 = q - r * vec2(cos(a1), sin(a1));
+  vec2 e = dot(e0, e0) < dot(e1, e1) ? e0 : e1;
+  float d = length(e);
+  return vec3(d, d > 1e-5 ? e / d : vec2(1.0, 0.0));
 }
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -120,25 +145,29 @@ function digitGlsl(): string {
   const r = xa;
   const e2 = [r * Math.cos(-0.5), ya - r + r * Math.sin(-0.5)];
   return /* glsl */ `
-// FAA runway designation digits (AC 150/5340-1 fig. A-4 proportions): distance from q to the stroke centreline.
-// q is in metres, origin at the glyph centre, +y away from the threshold.
-float digitDist(int n, vec2 q) {
+// FAA runway designation digits (AC 150/5340-1 fig. A-4 proportions): distance from q to the stroke centreline,
+// and the unit direction it grows in (in q's frame). q is in metres, origin at the glyph centre, +y away from the
+// threshold.
+vec3 digitDN(int n, vec2 q) {
   const float XA = ${f(xa)}, YA = ${f(ya)};
-  if (n == 0) return abs(segDist(q, vec2(0.0, -(YA - XA)), vec2(0.0, YA - XA)) - XA);
-  if (n == 7) return min(segDist(q, vec2(-XA, YA), vec2(XA, YA)), segDist(q, vec2(XA, YA), vec2(-0.3 * XA, -YA)));
+  if (n == 0) {
+    vec3 s = segDN(q, vec2(0.0, -(YA - XA)), vec2(0.0, YA - XA));
+    return vec3(abs(s.x - XA), s.yz);
+  }
+  if (n == 7) return nearer(segDN(q, vec2(-XA, YA), vec2(XA, YA)), segDN(q, vec2(XA, YA), vec2(-0.3 * XA, -YA)));
   if (n == 2) {
-    float d = arcDist(q, vec2(0.0, YA - XA), XA, -0.5, 2.95);
-    d = min(d, segDist(q, ${v2(e2[0], e2[1])}, vec2(-XA, -YA)));
-    return min(d, segDist(q, vec2(-XA, -YA), vec2(XA, -YA)));
+    vec3 d = arcDN(q, vec2(0.0, YA - XA), XA, -0.5, 2.95);
+    d = nearer(d, segDN(q, ${v2(e2[0], e2[1])}, vec2(-XA, -YA)));
+    return nearer(d, segDN(q, vec2(-XA, -YA), vec2(XA, -YA)));
   }
   // 5
   const float YM = ${f(ym)};
-  float d = segDist(q, vec2(XA, YA), vec2(-XA, YA));
-  d = min(d, segDist(q, vec2(-XA, YA), vec2(-XA, YM)));
-  d = min(d, segDist(q, vec2(-XA, YM), vec2(0.0, YM)));
-  d = min(d, arcDist(q, vec2(0.0, YM - XA), XA, 0.0, 1.5708));
-  d = min(d, segDist(q, vec2(XA, YM - XA), vec2(XA, -YA + XA)));
-  return min(d, arcDist(q, vec2(0.0, -YA + XA), XA, -2.75, 0.0));
+  vec3 d = segDN(q, vec2(XA, YA), vec2(-XA, YA));
+  d = nearer(d, segDN(q, vec2(-XA, YA), vec2(-XA, YM)));
+  d = nearer(d, segDN(q, vec2(-XA, YM), vec2(0.0, YM)));
+  d = nearer(d, arcDN(q, vec2(0.0, YM - XA), XA, 0.0, 1.5708));
+  d = nearer(d, segDN(q, vec2(XA, YM - XA), vec2(XA, -YA + XA)));
+  return nearer(d, arcDN(q, vec2(0.0, -YA + XA), XA, -2.75, 0.0));
 }
 `;
 }
@@ -158,13 +187,13 @@ function leadOnGlsl(): string {
     for (const s of dirs) {
       const cu = a + s * R, cv = -off - R;
       const [a0, a1] = s > 0 ? [Math.PI / 2, Math.PI] : [0, Math.PI / 2];
-      lines.push(`d = min(d, arcDist(p, ${v2(cu, cv)}, ${f(R)}, ${f(a0)}, ${f(a1)}));`);
-      lines.push(`d = min(d, segDist(p, ${v2(cu, -off)}, ${v2(cu + s * 200 * 0.3048, -off)}));`);
+      lines.push(`d = nearer(d, arcDN(p, ${v2(cu, cv)}, ${f(R)}, ${f(a0)}, ${f(a1)}));`);
+      lines.push(`d = nearer(d, segDN(p, ${v2(cu, -off)}, ${v2(cu + s * 200 * 0.3048, -off)}));`);
     }
   }
   return /* glsl */ `
-float leadOnDist(vec2 p) {
-  float d = 1e6;
+vec3 leadOnDN(vec2 p) {
+  vec3 d = vec3(1e6, 1.0, 0.0);
   ${lines.join('\n  ')}
   return d;
 }
@@ -219,8 +248,9 @@ float runwayPaint(vec2 p, vec2 w) {
       bool left = x < 0.0;
       int digit = endSign < 0.0 ? (left ? 0 : 7) : (left ? 2 : 5);
       vec2 q = vec2(x - (left ? ${f(-digitCx)} : ${f(digitCx)}), s - ${f(d.start + d.height / 2)});
-      float sd = digitDist(digit, q) - ${f(d.stroke / 2)};
-      paint = max(paint, clamp(0.5 - sd / (0.5 * (w.x + w.y)), 0.0, 1.0));
+      vec3 dn = digitDN(digit, q);
+      // q = (x, s) = (-endSign * v, HL - endSign * u): back to (u, v) for the footprint.
+      paint = max(paint, line(dn.x, ${f(d.stroke / 2)}, across(-endSign * dn.zy)));
     }
   }
   return paint;
@@ -283,7 +313,7 @@ Pave runwaySurface(vec2 p, vec2 w) {
   float wheelPath = lateral * tdz;
   paint *= mix(mix(0.86, 1.0, wear), mix(0.45, 1.0, wear), wheelPath) * (1.0 - 0.8 * rubber);
   // Yellow lead-on lines from the connectors (only on the taxiway side of the centreline).
-  float yellow = p.y < 0.0 && p.y > -16.0 ? line(leadOnDist(p), 0.075, 0.5 * (w.x + w.y)) * mix(0.6, 1.0, wear) : 0.0;
+  float yellow = p.y < 0.0 && p.y > -16.0 ? lineN(leadOnDN(p), 0.075) * mix(0.6, 1.0, wear) : 0.0;
   vec3 col = vec3(1.02, 1.0, 0.97) * albedo;
   col = mix(col, vec3(${f(RUNWAY_PAINT_ALBEDO)}, ${f(RUNWAY_PAINT_ALBEDO)}, ${f(RUNWAY_PAINT_ALBEDO * 0.97)}), paint);
   col = mix(col, vec3(0.70, 0.47, 0.05), yellow);
@@ -313,11 +343,11 @@ export function taxiwayGlsl(): string {
     segs.push([t.a.u, t.a.v, b.u, b.v]);
   }
   segs.push([APRON_RECT.u0 + 8, APRON_TAXILANE_V, APRON_RECT.u1 - 8, APRON_TAXILANE_V]);
-  const clLines = segs.map((s) => `d = min(d, segDist(p, ${v2(s[0], s[1])}, ${v2(s[2], s[3])}));`);
+  const clLines = segs.map((s) => `d = nearer(d, segDN(p, ${v2(s[0], s[1])}, ${v2(s[2], s[3])}));`);
   for (const a of CENTRELINE_ARCS) {
     // quarter toward the junction corner: direction (-su, -sv) from the centre
     const mid = Math.atan2(-a.sv, -a.su);
-    clLines.push(`d = min(d, arcDist(p, ${v2(a.cu, a.cv)}, ${f(a.r)}, ${f(mid - Math.PI / 4)}, ${f(mid + Math.PI / 4)}));`);
+    clLines.push(`d = nearer(d, arcDN(p, ${v2(a.cu, a.cv)}, ${f(a.r)}, ${f(mid - Math.PI / 4)}, ${f(mid + Math.PI / 4)}));`);
   }
 
   const holdUs = RUNWAY_CONNECTORS.map((c) => TAXIWAYS.find((t) => t.name === c.name)!.a.u);
@@ -346,8 +376,8 @@ float pavedSD(vec2 p) {
   return d;
 }
 float apronSD(vec2 p) { return ${rectCall(APRON_RECT)}; }
-float centrelineDist(vec2 p) {
-  float d = 1e6;
+vec3 centrelineDN(vec2 p) {
+  vec3 d = vec3(1e6, 1.0, 0.0);
   ${clLines.join('\n  ')}
   return d;
 }
@@ -359,8 +389,11 @@ vec3 tieDown(vec2 p, vec2 c, float facing, vec2 w) {
   vec2 q = vec2(p.x - c.x, (p.y - c.y) * facing);
   float yellow = band(q.x, -0.075, 0.075, w.x) * band(q.y, -5.5, 2.5, w.y);
   yellow = max(yellow, band(q.y, -0.075, 0.075, w.y) * band(abs(q.x), 0.8, 5.0, w.x));
-  float ring = min(min(length(q - vec2(-4.4, -0.4)), length(q - vec2(4.4, -0.4))), length(q - vec2(0.0, -5.2)));
-  float anchor = band(ring, -0.16, 0.16, 0.5 * (w.x + w.y));
+  vec2 r0 = q - vec2(-4.4, -0.4), r1 = q - vec2(4.4, -0.4), r2 = q - vec2(0.0, -5.2);
+  vec2 rq = dot(r0, r0) < dot(r1, r1) ? r0 : r1;
+  rq = dot(rq, rq) < dot(r2, r2) ? rq : r2;
+  float ring = length(rq);
+  float anchor = band(ring, -0.16, 0.16, across(ring > 1e-5 ? vec2(rq.x, rq.y * facing) / ring : vec2(1.0, 0.0)));
   // Engine oil and fuel stains under the nose, blotchy.
   float oil = smoothstep(1.4, 0.2, length((q - vec2(0.0, 1.6)) * vec2(1.0, 0.7)) + 0.6 * texture(tNoise, p / 3.0).a);
   // Smaller drips under the wheels' parking positions and rust bleeding from the anchor rings.
@@ -370,9 +403,10 @@ vec3 tieDown(vec2 p, vec2 c, float facing, vec2 w) {
 }
 
 Pave taxiwaySurface(vec2 p, vec2 w) {
-  float fw = 0.5 * (w.x + w.y);
   float sd = pavedSD(p);
-  float alpha = clamp(0.5 - sd / fw, 0.0, 1.0);
+  // Footprint across the pavement edge (sd is a distance with unit gradient, so this is across(its normal)).
+  float fe = max(length(vec2(dFdx(sd), dFdy(sd))), 1e-4);
+  float alpha = clamp(0.5 - sd / fe, 0.0, 1.0);
   float asd = apronSD(p);
   bool apron = asd < 0.0;
   vec4 mid = texture(tNoise, p / 90.0);
@@ -425,13 +459,13 @@ Pave taxiwaySurface(vec2 p, vec2 w) {
   vec2 slope = tex.ba * 2.0 - 1.0;
 
   // Yellow markings.
-  float cd = centrelineDist(p);
-  float yellow = line(cd, 0.075, fw);
-  float black = apron ? line(cd, 0.225, fw) : 0.0;  // black outline for contrast on concrete
+  vec3 cd = centrelineDN(p);
+  float yellow = lineN(cd, 0.075);
+  float black = apron ? lineN(cd, 0.225) : 0.0;  // black outline for contrast on concrete
   if (!apron && asd > 2.0) {
     // Taxiway edge marking: two continuous 6 in lines, 6 in apart, just inside the pavement edge.
     float e = -sd;
-    yellow = max(yellow, band(e, 0.10, 0.25, fw) + band(e, 0.40, 0.55, fw));
+    yellow = max(yellow, band(e, 0.10, 0.25, fe) + band(e, 0.40, 0.55, fe));
   }
   if (p.y > ${f(HOLD_LINE_V - 3)} && p.y < ${f(HOLD_LINE_V + 1)}) {
     ${holdLines}
