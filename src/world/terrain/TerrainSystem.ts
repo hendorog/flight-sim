@@ -25,7 +25,7 @@ import { RillSystem } from './RillSystem';
 import { rillsOn } from './rillShader';
 import { setTownSite, townSite } from './townMask';
 import { era, isPresent } from '../era/eraState';
-import { createFallGeometries, createRiverGeometry, createRiverNetworkGeometries, createWaterGeometry, createWaterMaterial, type WaterUniforms } from './water';
+import { createFallGeometries, createRiverGeometry, createRiverNetworkGeometries, createWaterGeometry, createWaterMaterial, SMALL_RIBBON_RANGE, type SmallRibbonChunk, type WaterUniforms } from './water';
 import { WorkerPool } from './workerPool';
 
 interface QualityPreset {
@@ -81,6 +81,11 @@ export class TerrainSystem implements Subsystem {
   private riverMaterial!: THREE.MeshStandardMaterial;
   private river!: THREE.Mesh;
   private readonly riverNetwork: THREE.Mesh[] = [];
+  /** A seeded world's narrow streams' ribbon chunks (water.ts SMALL_RIBBON_HW), and the mesh of each built near the
+   * viewer (null: not built). */
+  private readonly smallRibbons: SmallRibbonChunk[] = [];
+  private readonly smallMeshes: Array<THREE.Mesh | null> = [];
+  private smallFrame = 0;
   /** A seeded world's falls (curtains and pool foam, then spray) and their materials (water.ts createFallGeometries). */
   private readonly falls: THREE.Mesh[] = [];
   private readonly fallMaterials: THREE.Material[] = [];
@@ -172,7 +177,7 @@ export class TerrainSystem implements Subsystem {
     this.river.name = 'river';
     this.waterGroup.add(this.river);
     // A seeded world's other rivers (riverNetwork.ts), in chunks the renderer can cull.
-    for (const g of createRiverNetworkGeometries()) {
+    for (const g of createRiverNetworkGeometries(this.smallRibbons)) {
       const m = new THREE.Mesh(g, this.riverMaterial);
       m.name = 'river-network';
       this.riverNetwork.push(m);
@@ -246,10 +251,47 @@ export class TerrainSystem implements Subsystem {
     this.vegetation?.update(dt, ctx);
     this.boulders?.update(ctx.camera);
     this.rills?.update(ctx.camera);
+    this.updateSmallRibbons(ctx.camera);
     this.grass?.update(dt, ctx.camera);
     if (!isPresent()) {
       updateEraUniforms(dt, ctx.sky);
       for (const l of this.eraLayers) l.update(ctx, ctx.camera, dt);
+    }
+  }
+
+  /** Build the narrow streams' ribbon chunks within SMALL_RIBBON_RANGE of the viewer (two a frame at most, nearest
+   * first) and drop those beyond it by 2 km more; looked at every eighth frame. */
+  private updateSmallRibbons(camera: THREE.Camera): void {
+    if (!this.smallRibbons.length || (this.smallFrame++ & 7) !== 0) return;
+    const e = camera.position.x;
+    const n = -camera.position.z;
+    const want: Array<{ i: number; d: number }> = [];
+    for (let i = 0; i < this.smallRibbons.length; i++) {
+      const c = this.smallRibbons[i];
+      const dn = Math.max(c.minN - n, 0, n - c.maxN);
+      const de = Math.max(c.minE - e, 0, e - c.maxE);
+      const d = Math.hypot(dn, de);
+      const m = this.smallMeshes[i];
+      if (m && d > SMALL_RIBBON_RANGE + 2000) {
+        this.waterGroup.remove(m);
+        m.geometry.dispose();
+        this.smallMeshes[i] = null;
+      } else if (m === null || m === undefined) {
+        if (d < SMALL_RIBBON_RANGE) want.push({ i, d });
+      }
+    }
+    want.sort((a, b) => a.d - b.d);
+    for (const { i } of want.slice(0, 2)) {
+      const g = this.smallRibbons[i].build();
+      if (!g) {
+        // (Nothing to draw: never asked again.)
+        this.smallMeshes[i] = new THREE.Mesh();
+        continue;
+      }
+      const m = new THREE.Mesh(g, this.riverMaterial);
+      m.name = 'river-network-small';
+      this.smallMeshes[i] = m;
+      this.waterGroup.add(m);
     }
   }
 
@@ -271,6 +313,9 @@ export class TerrainSystem implements Subsystem {
     this.river.geometry.dispose();
     for (const m of this.riverNetwork) m.geometry.dispose();
     this.riverNetwork.length = 0;
+    for (const m of this.smallMeshes) m?.geometry.dispose();
+    this.smallMeshes.length = 0;
+    this.smallRibbons.length = 0;
     for (const m of this.falls) m.geometry.dispose();
     this.falls.length = 0;
     for (const m of this.fallMaterials) m.dispose();

@@ -52,7 +52,7 @@ export const RILL_LOOK_CAP = 2;
  * chain's (gullies.ts) within this of its cell, m, where that is more. */
 const CHAIN_REACH = 90;
 /** Catchment from which a rill carries water to be seen (thinner ones are just the damp bed in its notch), km². */
-export const RILL_WET_AREA = 0.12;
+export const RILL_WET_AREA = 0.06;
 
 /** Cells per patch side. */
 const CORE = RILL_PATCH / RILL_CELL;
@@ -61,7 +61,7 @@ const CORE = RILL_PATCH / RILL_CELL;
  * flow's margin) around it measures the same. */
 const AREA_R = 44;
 /** A pit spills to the first lower cell a flood from it reaches within SPILL_R cells rising at most SPILL_D m. */
-const SPILL_R = 6;
+const SPILL_R = 10;
 const SPILL_D = 2;
 /** A line goes on this many cells below the last cell that starts one (its catchment near it big and converging
  * enough), narrowing out: a rill running out onto an even slope or a fan fades there rather than running on as one of
@@ -774,6 +774,15 @@ export function rasteriseRills(pi: number, pj: number, segs: ReadonlyArray<RillS
 
 /** Texel k's centre east of a patch's west edge, m (k = 0 is the apron). */
 export const rillTexelCentre = (k: number): number => (k - 0.5) * RILL_TEXEL;
+
+/** A patch's rill lines and its traced raster (probes: scripts/probes/gullyGate.test.ts), as buildRillPatch traces them. */
+export function rillPatchLines(req: RillPatchRequest): { graph: RillGraph; segs: RillSegment[] } {
+  const w = rillWindow(req.pi, req.pj);
+  const a = HALO - SEG_M;
+  const b = HALO + CORE + SEG_M + 1;
+  const graph = traceRillGraph(w.gx0, w.gy0, w.n, w.n, a, a, b, b);
+  return { graph, segs: rillSegments(graph, a, a, b, b) };
+}
 
 /** Build one patch (in a terrain worker). `lo` and `hi` widen the window (cells, west and south, east and north) for the
  * tests: the texels must not change. */

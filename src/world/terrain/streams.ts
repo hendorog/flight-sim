@@ -75,7 +75,8 @@ const SINK_CLEAR = 200;
 const CHAIN_LOWER = 40;
 /** A chain come onto a river's floor (gullies.ts GullyNet.core) crosses it to the river's nearest sample within
  * FLOOR_CROSS m, where the ground on the way (looked at every FLOOR_STEP m) rises no more than FLOOR_RISE m over the
- * chain's there. The rivers' samples are indexed about every RIVER_INDEX_STEP m in RIVER_INDEX_CELL m cells. */
+ * chain's there, and the water there lies no more than FLOOR_DROP m under the chain's ground (a floor, not a valley
+ * below a wall). The rivers' samples are indexed about every RIVER_INDEX_STEP m in RIVER_INDEX_CELL m cells. */
 const FLOOR_CROSS = 900;
 /** A chain beside a chain stream's course where the ground across differs by no more than this, m, joins it there. */
 const FLOOR_FLAT = 12;
@@ -84,6 +85,7 @@ const FLOOR_FLAT = 12;
 const V_SIDE = 15;
 const FLOOR_STEP = 60;
 const FLOOR_RISE = 3;
+const FLOOR_DROP = 20;
 const RIVER_INDEX_STEP = 60;
 const RIVER_INDEX_CELL = 500;
 /** A stream ending in a hollow narrows over this much of its end, m, to this fraction of its width. */
@@ -1196,6 +1198,8 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     });
     const ord = cheads.map((_, i) => i).sort((a, b) => len[b] - len[a] || cheads[a] - cheads[b]);
     chainStats.heads = cheads.length;
+    /** The chain being walked (besideChain, crossTo). */
+    let chainPath: number[] = [];
     // The rivers' samples about every RIVER_INDEX_STEP m, by RIVER_INDEX_CELL cell: a chain come onto a river's floor
     // (the ground the slopes held for it, beside its core) crosses the floor to it.
     const rIdx = new Map<number, number[]>();
@@ -1214,6 +1218,16 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     }
     /** The river a chain at raster point k crosses its floor to: its nearest sample within FLOOR_CROSS (the way there
      * never rising over the chain's ground at k, and its water no higher than the chain's can reach), or null. */
+    /** Whether the water `mouth` a chain at the end of `path` would join backs up its last reach with no water standing
+     * more than BACKUP_FILL over the ground (canReach's rule for the chain's own course). */
+    const backsUp = (path: number[], mouth: number): boolean => {
+      for (let i = path.length - 1; i >= 0; i--) {
+        const g = G(path[i]) - STREAM_DEPTH;
+        if (g >= mouth) return true;
+        if (g < mouth - BACKUP_FILL) return false;
+      }
+      return false;
+    };
     const besideChain = (k: number, low: number): End | null => {
       const ki = Math.floor(k / R);
       const kj = k % R;
@@ -1225,7 +1239,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         const st = streams[occLine(o) - nR];
         if (st.chainS < 0 || Math.abs(G(nb) - g0) > FLOOR_FLAT) continue;
         const j = occIdx(o);
-        if (st.level[j] > low + JOIN_TOL) continue;
+        if (st.level[j] > low + JOIN_TOL || st.level[j] < g0 - FLOOR_DROP || !backsUp(chainPath, st.level[j])) continue;
         return { kind: 'channel', line: occLine(o), idx: j, pool: -1, ok: true };
       }
       return null;
@@ -1287,12 +1301,17 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
           bi = i;
         }
       }
-      if (r.level[bi] > low + JOIN_TOL) return null;
+      const mouth = r.level[bi];
       const g0 = G(k);
+      // (A floor: the water there lies no more than FLOOR_DROP under the chain's ground - not a valley below, down a wall.)
+      if (mouth > low + JOIN_TOL || mouth < g0 - FLOOR_DROP || !backsUp(chainPath, mouth)) return null;
       const L = Math.sqrt(best);
+      // (The way across: never rising over the chain's ground, nor so low that the water backing up from the line it
+      // joins would stand over it.)
       for (let t = FLOOR_STEP; t < L - r.halfWidth[bi]; t += FLOOR_STEP) {
         const f = t / L;
-        if (p.route(kn + (r.north[bi] - kn) * f, ke + (r.east[bi] - ke) * f) > g0 + FLOOR_RISE) return null;
+        const g = p.route(kn + (r.north[bi] - kn) * f, ke + (r.east[bi] - ke) * f);
+        if (g > g0 + FLOOR_RISE || g - STREAM_DEPTH < mouth - BACKUP_FILL) return null;
       }
       return { kind: 'channel', line: bl, idx: bi, pool: -1, ok: true };
     };
@@ -1304,6 +1323,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       }
       // The chain down to the first point a line holds, a lake, the sea; or the pass's last node (the trace goes on).
       const path = [q];
+      chainPath = path;
       const pathA = [gn.area[q]];
       let low = G(q) - STREAM_DEPTH;
       let cross: End | null = null;

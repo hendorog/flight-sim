@@ -914,6 +914,47 @@ function curtainAt(r: RibbonLine, i: number): boolean {
   return drop >= 1 && run < 1.5 * drop;
 }
 const RIBBON_ACROSS = [-1.2, -0.55, 0, 0.55, 1.2];
+/** A stream's ribbon (kind 1) drops a row its neighbours' rows draw within these: its water within ROW_LEVEL m of the
+ * level between them, its centre within ROW_SIDE of its half-width (at least ROW_SIDE_MIN m) of the line between
+ * them; rows at most ROW_RUN m apart. Its fall lips, the row below each and where its pitches start or end are kept.
+ * (A steep stream's course is sampled every few metres to follow the ground: thousands of km of ribbon rows.) */
+const ROW_LEVEL = 0.25;
+const ROW_SIDE = 0.2;
+const ROW_SIDE_MIN = 0.3;
+const ROW_RUN = 60;
+
+/** The rows of samples [from, to) a stream's ribbon draws (every one for any other line). */
+function ribbonKeep(r: RibbonLine, from: number, to: number, flowing: boolean): number[] {
+  const out: number[] = [];
+  if (!(flowing && r.kind === 1)) {
+    for (let i = from; i < to; i++) out.push(i);
+    return out;
+  }
+  const must = (k: number): boolean => r.regime![k] === REGIME.fall || (k > 0 && r.regime![k - 1] === REGIME.fall) || (!!r.pitchOn && k > 0 && (r.pitchOn[k] > 0) !== (r.pitchOn[k - 1] > 0));
+  let i = from;
+  out.push(i);
+  while (i < to - 1) {
+    let j = i + 1;
+    // The furthest row j whose rows between lie close to the line from i to j.
+    for (let c = i + 2; c < to && r.s[c] - r.s[i] <= ROW_RUN; c++) {
+      if (must(c - 1)) break;
+      let ok = true;
+      const dn = r.north[c] - r.north[i];
+      const de = r.east[c] - r.east[i];
+      const L = Math.hypot(dn, de) || 1e-9;
+      for (let k = i + 1; k < c && ok; k++) {
+        const t = (r.s[k] - r.s[i]) / Math.max(1e-9, r.s[c] - r.s[i]);
+        if (Math.abs(r.level[k] - (r.level[i] + (r.level[c] - r.level[i]) * t)) > ROW_LEVEL) ok = false;
+        else if (Math.abs(((r.north[k] - r.north[i]) * de - (r.east[k] - r.east[i]) * dn) / L) > Math.max(ROW_SIDE_MIN, ROW_SIDE * r.halfWidth[k])) ok = false;
+      }
+      if (!ok) break;
+      j = c;
+    }
+    out.push(j);
+    i = j;
+  }
+  return out;
+}
 
 /** Append the ribbon of samples [from, to) of a river line (it stops at the coast); returns the index after the last row. */
 function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, flow = false): number {
@@ -929,9 +970,15 @@ function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, fl
   const inLake: boolean[] = [];
   const first = pos.length / 3;
   let rows = 0;
+  const keep = ribbonKeep(r, from, to, flowing);
   let i = from;
-  for (; i < to; i++) {
-    if (r.level[i] < 0.3) break;
+  let atCoast = false;
+  for (let ki = 0; ki < keep.length; ki++) {
+    i = keep[ki];
+    if (r.level[i] < 0.3) {
+      atCoast = true;
+      break;
+    }
     const i0 = Math.max(0, i - 1);
     const i1 = Math.min(count - 1, i + 1);
     const tn = r.north[i1] - r.north[i0];
@@ -980,7 +1027,7 @@ function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, fl
       idx.push(a, c, a + 1, a + 1, c, c + 1);
     }
   }
-  return i;
+  return atCoast ? i : to;
 }
 
 function riverGeometryOf(b: RiverBuffers): THREE.BufferGeometry {
@@ -1007,15 +1054,33 @@ const RIVER_CHUNK = 10000;
 /** Rows per ribbon piece (pieces overlap by one row so they join). */
 const RIVER_PIECE = 240;
 
+/** A stream's ribbon piece whose water is never this wide (half-width, m: about 15 km² of catchment, streams.ts
+ * channelHalfWidth) is drawn only within SMALL_RIBBON_RANGE m of the viewer (TerrainSystem builds its chunk there and
+ * drops it beyond): a narrower stream is under two pixels further off, and a seeded world's mountains hold thousands
+ * of km of them (gullies.ts chains). Rivers and wider streams are always drawn. */
+export const SMALL_RIBBON_HW = 4;
+export const SMALL_RIBBON_RANGE = 9000;
+
+/** A chunk of narrow stream ribbon pieces, built on demand (its pieces' samples' bounds, m). */
+export interface SmallRibbonChunk {
+  minN: number;
+  maxN: number;
+  minE: number;
+  maxE: number;
+  build(): THREE.BufferGeometry | null;
+}
+
 /**
  * A seeded world's river network (hydrology.rivers) as ribbon chunks: each line cut into pieces, each piece put in
- * the chunk of its first sample. Empty when the world has no network (seed 0: createRiverGeometry).
+ * the chunk of its first sample. Empty when the world has no network (seed 0: createRiverGeometry). With `small`,
+ * the narrow streams' pieces (SMALL_RIBBON_HW) go there instead, chunk by chunk, to be built near the viewer.
  */
-export function createRiverNetworkGeometries(): THREE.BufferGeometry[] {
+export function createRiverNetworkGeometries(small?: SmallRibbonChunk[]): THREE.BufferGeometry[] {
   const rivers = hydrology.rivers;
   if (!rivers) return [];
   const flow = waterFlows();
   const chunks = new Map<string, RiverBuffers>();
+  const smallPieces = new Map<string, { pieces: Array<[RibbonLine, number, number]>; minN: number; maxN: number; minE: number; maxE: number }>();
   const lakes = hydrology.lakes;
   // Where a river runs through a lake the lake's water covers it: no ribbon there (it would lie in the lake's plane).
   const mask = hydrology.lakeMask;
@@ -1045,12 +1110,43 @@ export function createRiverNetworkGeometries(): THREE.BufferGeometry[] {
           break;
         }
         const key = `${Math.floor(r.north[piece] / RIVER_CHUNK)},${Math.floor(r.east[piece] / RIVER_CHUNK)}`;
+        const end = Math.min(to, piece + RIVER_PIECE + 1);
+        if (small && (r as RibbonLine).kind === 1) {
+          let wide = false;
+          for (let i = piece; i < end && !wide; i++) if (r.halfWidth[i] >= SMALL_RIBBON_HW || r.level[i] < 0.3) wide = true;
+          if (!wide) {
+            let c = smallPieces.get(key);
+            if (!c) smallPieces.set(key, (c = { pieces: [], minN: Infinity, maxN: -Infinity, minE: Infinity, maxE: -Infinity }));
+            c.pieces.push([r as RibbonLine, piece, end]);
+            for (let i = piece; i < end; i++) {
+              c.minN = Math.min(c.minN, r.north[i]);
+              c.maxN = Math.max(c.maxN, r.north[i]);
+              c.minE = Math.min(c.minE, r.east[i]);
+              c.maxE = Math.max(c.maxE, r.east[i]);
+            }
+            continue;
+          }
+        }
         let b = chunks.get(key);
         if (!b) chunks.set(key, (b = riverBuffers()));
-        const end = Math.min(to, piece + RIVER_PIECE + 1);
         if (ribbonRows(r, piece, end, b, flow) < end) coast = true;
       }
       if (coast) break;
+    }
+  }
+  if (small) {
+    for (const c of smallPieces.values()) {
+      small.push({
+        minN: c.minN,
+        maxN: c.maxN,
+        minE: c.minE,
+        maxE: c.maxE,
+        build: () => {
+          const b = riverBuffers();
+          for (const [r, from, end] of c.pieces) ribbonRows(r, from, end, b, flow);
+          return b.idx.length > 0 ? riverGeometryOf(b) : null;
+        },
+      });
     }
   }
   return [...chunks.values()].filter((b) => b.idx.length > 0).map(riverGeometryOf);
