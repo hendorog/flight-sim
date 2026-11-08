@@ -192,6 +192,8 @@ export interface ShapeInput {
   outlet: boolean;
   /** High in the ranges (the alpine uplift there), for a hanging valley's lip. */
   alpine: (north: number, east: number) => boolean;
+  /** The steepest its last reach comes down to its mouth, m/m (shapeLines' `confluence` when absent). */
+  confluence?: number;
 }
 
 export interface ShapeReport {
@@ -303,7 +305,7 @@ export function shapeLines(lines: ShapeInput[], faults: FaultIndex | null, confl
     if (mouth > -Infinity) {
       const m = a.s.length;
       for (let i = m - 2; i > lastLip; i--) {
-        const cap = mouth + confluence * (a.s[m - 1] - a.s[i]);
+        const cap = mouth + (L.confluence ?? confluence) * (a.s[m - 1] - a.s[i]);
         if (a.level[i] <= cap) break;
         a.level[i] = cap;
       }

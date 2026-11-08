@@ -58,6 +58,8 @@ const HEAD_TAPER = 1500;
 const JOIN_PULL = 1000;
 /** A line's last reach falls at most this steeply into the water it joins (m/m): a cascade, no fall at the confluence. */
 const CONFLUENCE_GRADIENT = 0.3;
+/** ... a gully chain's stream (gullies.ts) as steep as the threshold slopes it comes down (hillslopes.ts SLOPES.sc). */
+const CHAIN_CONFLUENCE = 0.75;
 /** A hanging valley's lip lies where the alpine uplift (seededLayout.ts) is over this: high in the ranges. */
 const HANG_UPLIFT = 0.25;
 /** Catchment (km²) above which a river meanders on low ground, and the valley gradient below which it does. */
@@ -947,6 +949,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     lipsOf[li] = [];
   }
   const allLines = [...rivers, ...streamLines];
+  /** Whether line li is a gully chain's stream (streams.ts, gullies.ts). */
+  const isChain = (li: number): boolean => li >= nR && traced.streams[li - nR].chainS >= 0;
   const joinsOf = (li: number): number => (li < nR ? lines[li].joins : streamJoins[li - nR]);
   const joinSOf = (li: number): number => {
     if (li >= nR) return traced.streams[li - nR].joinS;
@@ -1021,7 +1025,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       joinS: joinsOf(li) >= 0 ? joinSOf(li) : 0,
       wet,
       outlet: li >= nR && traced.streams[li - nR].pool >= 0,
-      alpine,
+      // (A gully chain's stream, gullies.ts, comes down the threshold slopes' V's, graded to its receiver: no hanging
+      // valley's fall, and its last reach as steep as those slopes.)
+      ...(isChain(li) ? { alpine: () => false, confluence: CHAIN_CONFLUENCE } : { alpine }),
     }));
     const shaped = shapeLines(inputs, faultIndex, CONFLUENCE_GRADIENT);
     for (let li = 0; li < allLines.length; li++) {
@@ -1070,7 +1076,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         if (mouth < c.level[m - 1]) {
           c.level[m - 1] = mouth;
           for (let i = m - 2; i >= 0; i--) {
-            const cap = mouth + CONFLUENCE_GRADIENT * (c.s[m - 1] - c.s[i]);
+            const cap = mouth + (isChain(li) ? CHAIN_CONFLUENCE : CONFLUENCE_GRADIENT) * (c.s[m - 1] - c.s[i]);
             if (c.level[i] <= cap) break;
             c.level[i] = cap;
           }

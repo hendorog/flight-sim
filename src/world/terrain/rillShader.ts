@@ -15,8 +15,8 @@ import { BED_A, BED_B, WATER_A0, WATER_SHARE0 } from './streams';
 import { RIVER_AREA } from './drainage';
 
 /** Water this wide (m) opens the canopy over a painted stream's bed and carries it through the fields: from the first,
- * fully from the second (A about 0.5 and 3 km², streams.ts channelHalfWidth). */
-export const RILL_OPEN = [1.2, 3.2];
+ * fully from the second (A about 0.15 and 1.2 km², streams.ts channelHalfWidth). */
+export const RILL_OPEN = [0.6, 2.0];
 /** Patches held around the viewer: SLOTS_SIDE² texture layers. */
 export const RILL_SLOTS_SIDE = 6;
 export const RILL_SLOTS = RILL_SLOTS_SIDE * RILL_SLOTS_SIDE;

@@ -32,13 +32,17 @@ it('fs views', () => {
     const R = hydrology.rivers!;
     // Tributary junctions: a stream 3 km or longer, 15-80 km² at its mouth, joining a river in the mountains.
     const cand: Array<{ li: number; A: number }> = [];
+    const gn0 = gullyNet()!;
     R.forEach((r, li) => {
       if (r.kind !== 1 || (r.joins ?? -1) < 0 || R[r.joins!].kind !== 0 || r.end !== 'channel') return;
+      // (A chain stream: its head on a chain node of the slopes' routing, gullies.ts, at the hand-off.)
+      const hq = Math.round((r.north[0] - gn0.origin) / gn0.cell) * gn0.n + Math.round((r.east[0] - gn0.origin) / gn0.cell);
+      if (!gn0.dir[hq] || r.area![0] > 6) return;
       const A = r.area![r.area!.length - 1], L = r.s[r.s.length - 1];
       if (A < 15 || A > 80 || L < 3000) return;
       const m = r.north.length - 1;
       const d = debugMacro(r.north[m], r.east[m]);
-      if (!d || d.s.mw < 0.5) return;
+      if (!d || d.s.mw < 0.9) return;
       cand.push({ li, A });
     });
     cand.sort((a, b) => Math.abs(a.A - 30) - Math.abs(b.A - 30));
