@@ -98,6 +98,9 @@ export interface SlopeField {
   /** The pass's own routing (its last, over the ground it built): at each node it built, 1 + the index into DI8/DJ8 of
    * its receiver's direction; 0 at every other node. The streams follow it (gullies.ts). Absent from old caches. */
   dir?: Uint8Array;
+  /** ... and the catchment it summed down that routing at each node it built, km² (0 elsewhere). Not cached
+   * (gullies.ts sums it again from `dir` when absent). */
+  area?: Float32Array;
 }
 
 /** Neighbour offsets of SlopeField.dir (code 1 + k): rows (north) then columns (east). */
@@ -648,5 +651,5 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, h
   slopeStats.corners = corners;
   slopeStats.msSample = t1 - t0;
   slopeStats.msPass = performance.now() - t1;
-  return { h: H, w: w8, chan, core, dir };
+  return { h: H, w: w8, chan, core, dir, area };
 }

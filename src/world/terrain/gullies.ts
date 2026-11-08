@@ -55,8 +55,14 @@ export function gullyNetOf(sl: SlopeField | null | undefined): GullyNet | null {
   const n = Math.round(Math.sqrt(sl.h.length));
   const N = n * n;
   const dir = sl.dir;
-  const area = new Float32Array(N);
   const cellKm2 = (LAKE_RASTER / 1000) ** 2;
+  // (The pass summed it already when it built the field here; a field from the cache sums it again.)
+  if (sl.area && sl.area.length === N) {
+    lastSlopes = sl;
+    lastNet = { n, cell: LAKE_RASTER, origin: -DOMAIN_HALF, dir, area: sl.area, core: sl.core, h: sl.h };
+    return lastNet;
+  }
+  const area = new Float32Array(N);
   // Donor counts, then a queue from the nodes no node drains to (Kahn): every node's catchment before its receiver's.
   const indeg = new Uint8Array(N);
   let built = 0;
