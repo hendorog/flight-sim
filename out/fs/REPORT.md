@@ -361,3 +361,68 @@ A valley farm without clipped hedges:
   - `out/fs/final/` (the 5 km² hand-off's battery and hedge census);
   - `out/fs/run1/`, `out/fs/try/`, `out/fs/logs/`.
 - **Source copy:** `out/fs/base` (f3 `95cb0f7`).
+
+## Fix after hand-back: the valley streams f3 traced keep their courses (`1d3a956`, `42fb077`, last)
+
+**Cause.** The chain streams had taken over the mountains' lattice headwaters. `traceStreams` skipped every lattice head
+inside the pass, so streams such as seed 42's line 517 were never traced. Line 517 is the winding 80 km² stream with
+wooded banks down s42-valley1's floor. Instead, a straight raster chain stream ran 180 m off its line, beside the floor.
+
+**Fix.**
+- **Order.**
+  - The outlets, the lattice headwaters and the rivers' head feeders are traced first, exactly as in f3.
+  - The gully chains are traced after them, and join them: at their course, beside them on a level floor, or across
+    the floor to them.
+- **Catchment.** A chain joining a lattice stream raises that stream's catchment to the chain's below the junction. It
+  is not added to it, because the lattice catchment holds those slopes already.
+- **River heads.** A chain joining a river near its head counts in the river's head trim, as the feeders do.
+- **Steep water.** The width law made these restored streams wider at small catchments: half-width 2.9 m against
+  1.6 m at 8.6 km². On steep faces their water then stood up to 100 m over the dry ground beside them.
+  - A stream's water now narrows to 0.45 of its width as the reach's gradient goes from 0.05 to 0.2, as a step-pool
+    cascade's does among its boulders.
+  - The narrowing fades out over the last 150 m into the stream's mouth.
+  - The painted streams are not narrowed on steep ground.
+
+**Survey** (`out/fs/tools2/moved.py`; dumps from probe `lineDump`). It counts the f3 rivers and streams of 10 km² or
+more with 0.5 km or more of their course over 150 m from any fs line:
+
+| | seed 1 | seed 42 | seed 777777 |
+|---|---|---|---|
+| f3 lines ≥ 10 km² (km) | 990 (6859) | 1019 (6619) | 1019 (7465) |
+| before the fix: moved (vanished), km off | 140 (38), 235 km | 140 (37), 209 km | 157 (43), 224 km |
+| after: moved (vanished), km off | 1 (0), 0.9 km | 0 | 1 (1), 1.0 km |
+
+Before the fix, the worst five on each seed were all lattice streams of 49-89 km², 4.3-9.9 km off. On seed 42 they
+were lines 588 (-37073,-29302), 473, 517 (the s42-valley1 stream), 589 and 457. After the fix two cases are left:
+- **seed 1, river 241:** 0.9 km of its head, which a chain now joins further up (at 2796,136772);
+- **seed 777777, stream 1140:** 1 km. f3 ran it straight down across a hillside; fs takes its water down the valley
+  floor and the wall's gullies (`s777777-survey1140`).
+
+**Gates after the fix** (`out/fs/final6`). With f3's streams back, the f3 numbers come back too: final3's lower counts
+came from the streams it had dropped.
+
+| gate | f3 | final3 (hand-back) | now |
+|---|---|---|---|
+| river over a dry bank > 10 m; worst | 1692 / 1824 / 1605; 123.8 / 67.5 / 111.7 m | 1181 / 1459 / 1018; 123.8 / 73.9 / 45.9 m | 1695 / 1823 / 1613; 123.8 / 70.0 / 111.3 m |
+| water over ground > 10 m | 4 / 69 / 35 | 7 / 55 / 20 | 6 / 58 / 35 |
+| steps > 50 m; > 100 m | 38 / 13 / 43; 0 / 0 / 1 | 39 / 14 / 42; 0 / 0 / 0 | 38 / 13 / 43; 0 / 0 / 1 (f3's 110 m step at 21500,-144000) |
+| unfed river heads; dry heads with no feeder | 19 / 20 / 15; 13 / 12 / 12 | 15 / 19 / 12; 10 / 13 / 10 | 19 / 20 / 16; 10 / 12 / 10 |
+| traced streams reaching water | 96.5 / 94.3 / 94.6 % | 95.6 / 94.5 / 95.1 % | 95.9 / 95.0 / 95.1 % (1732 / 1766 / 1841 streams) |
+| cut V's ≥ 0.25 km² with water | | 97.8 / 94.9 / 97.7 % | 97.8 / 94.9 / 98.1 % |
+| riverZero, lakes, homeCheck, edges, NaN | | | unchanged |
+| seed-42 box: slope p50 / 1 km relief / b / pits | 30.9 / 594 / 1.24 / 1.92 | 31.0 / 594 / 1.18 / 1.86 | 31.0 / 594 / 1.20 / 1.83 |
+| suite | | 743 / 745 | 743 / 745: the same two time budgets (landmarks 5.40 s); both 41 / 41 at the long timeout |
+| world build, seed 42 (node) | 3.33-3.40 s | 3.61-3.66 s | 3.78 s |
+
+**Pictures** (`out/fs/shots/`, `-fs2` against `-f3`):
+- **s42-valley1-coord** (the coordinator's view): the winding stream with wooded banks is back down the floor, and
+  the left wall's chain streams join it.
+  - `seed=42&camPos=-11700,-40700,1000&camLook=-12718,-41720,600`
+- **s42-valley1:** the same, from the report's camera.
+- **s42-survey588:** the worst case before the fix. It now looks as in f3: a stream along the valley's left side,
+  with a stony river.
+  - `seed=42&camPos=-38300,-29302,1150&camLook=-37073,-29302,644`
+- **s777777-survey1140:** the one case left.
+  - `seed=777777&camPos=22500,-31189,1350&camLook=23700,-31189,774`
+
+The pictures were shot on port 5205 because the coordinator's fs server held 5204. 5205 is stopped.
