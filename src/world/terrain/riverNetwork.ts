@@ -63,6 +63,8 @@ const CHAIN_CONFLUENCE = 0.75;
 /** A stream's water narrows to this share of its width down a reach of gradient (m/m) from the first to the second. */
 const STEEP_SLOT = 0.45;
 const STEEP_NARROW = [0.05, 0.2];
+/** ... not over its last this much, m (into its mouth). */
+const STEEP_MOUTH = 150;
 /** A hanging valley's lip lies where the alpine uplift (seededLayout.ts) is over this: high in the ranges. */
 const HANG_UPLIFT = 0.25;
 /** Catchment (km²) above which a river meanders on low ground, and the valley gradient below which it does. */
@@ -1114,7 +1116,10 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   for (let li = nR; li < allLines.length; li++) {
     const hw = allLines[li].halfWidth;
     const g = flows[li].gradient;
-    for (let i = 0; i < hw.length; i++) hw[i] = Math.max(0.4, hw[i] * (1 - (1 - STEEP_SLOT) * smooth(STEEP_NARROW[0], STEEP_NARROW[1], g[i])));
+    // (Not into its mouth: it meets the water it joins at its own width, never narrower than its head.)
+    const sEnd = allLines[li].s[hw.length - 1];
+    const s = allLines[li].s;
+    for (let i = 0; i < hw.length; i++) hw[i] = Math.max(0.4, hw[i] * (1 - (1 - STEEP_SLOT) * smooth(STEEP_NARROW[0], STEEP_NARROW[1], g[i]) * (1 - smooth(sEnd - STEEP_MOUTH, sEnd, s[i]))));
   }
   // The stones on each bed (falls.ts bedGrain).
   const feetOf: Array<Array<{ index: number; height: number }>> = allLines.map(() => []);

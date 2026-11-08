@@ -1414,6 +1414,9 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     chainStats.samples0 = report.samples - chainStats.samples0;
   }
   report.chains = chainStats;
+  // (Where a river's water starts: a chain may join it above its first feeder - riverNetwork.ts trims the river's head
+  // to the first junction.)
+  for (const st of streams) if (st.chainS >= 0 && st.joins >= 0 && st.joins < nR) headFrom[st.joins] = Math.min(headFrom[st.joins], st.joinS);
 
   report.tracePhases.push(performance.now() - t0);
   // --- Catchment summed down the network: each stream's own (its source and what it gathers), plus every stream
