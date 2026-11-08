@@ -1211,11 +1211,21 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
   for (let c = 0; c < N; c++) if (d.area[c] >= minArea && d.area[c] < RIVER_AREA && !hasDonor[c] && d.receiver[c] >= 0) heads.push(c);
   heads.sort((a, b) => d.area[b] - d.area[a] || a - b);
   report.heads = heads.length;
-  // --- The gully chains (gullies.ts, a seeded world's mountains): every chain of the threshold hillslopes' own routing
-  // from where its catchment reaches chainArea() (above that the ground shader paints it, rills.ts) is a stream down
-  // its chain, sized by the chain's catchment, on to where another line, a lake or the sea takes it (or, where the
-  // pass ends, on down the ground as any trace). The longest chains first: a valley's trunk is one line, each side
-  // gully's stream joins it.
+  for (const c of heads) {
+    const k = Math.floor(c / n) * PER_CELL * R + (c % n) * PER_CELL;
+    const ki = Math.floor(k / R);
+    const kj = k % R;
+    if (occ[k] !== 0 || mask.poolAt(ki, kj) >= 0 || byHome(k) || G(k) <= 0.5) continue;
+    const t = trace([k], -1, G(k));
+    build(t.path, t.end, null, d.area[c], -1);
+  }
+  feedHeads();
+  // --- The gully chains (gullies.ts, a seeded world's mountains), after every other stream (the outlets, the lattice's
+  // headwaters and the rivers' head feeders are traced first, exactly as without them, so they keep their courses):
+  // every chain of the threshold hillslopes' own routing from where its catchment reaches chainArea() (below that the
+  // ground shader paints it, rills.ts) is a stream down its chain, sized by the chain's catchment, on to where another
+  // line, a lake or the sea takes it (or, where the pass ends, on down the ground as any trace). The longest chains
+  // first: a valley's trunk is one line, each side gully's stream joins it.
   const gn = gullyNet();
   const chainStats = { heads: 0, traced: 0, km: 0, skipped: 0, crossed: 0, ms: 0, msTrace: 0, msBuild: 0, samples0: report.samples };
   if (gn && gn.n === R) {
@@ -1280,7 +1290,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         const o = occ[nb];
         if (o === 0 || occLine(o) < nR) continue;
         const st = streams[occLine(o) - nR];
-        if (st.chainS < 0 || Math.abs(G(nb) - g0) > FLOOR_FLAT) continue;
+        if (Math.abs(G(nb) - g0) > FLOOR_FLAT) continue;
         const j = occIdx(o);
         if (st.level[j] > low + JOIN_TOL || st.level[j] < g0 - FLOOR_DROP || !backsUp(chainPath, st.level[j])) continue;
         return { kind: 'channel', line: occLine(o), idx: j, pool: -1, ok: true };
@@ -1404,17 +1414,6 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     chainStats.samples0 = report.samples - chainStats.samples0;
   }
   report.chains = chainStats;
-  for (const c of heads) {
-    const k = Math.floor(c / n) * PER_CELL * R + (c % n) * PER_CELL;
-    const ki = Math.floor(k / R);
-    const kj = k % R;
-    if (occ[k] !== 0 || mask.poolAt(ki, kj) >= 0 || byHome(k) || G(k) <= 0.5) continue;
-    // (In the mountains the chains have it: gullies.ts.)
-    if (gn && gn.dir[k]) continue;
-    const t = trace([k], -1, G(k));
-    build(t.path, t.end, null, d.area[c], -1);
-  }
-  feedHeads();
 
   report.tracePhases.push(performance.now() - t0);
   // --- Catchment summed down the network: each stream's own (its source and what it gathers), plus every stream
@@ -1426,6 +1425,12 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       const add = st.area[st.area.length - 1];
       // (Joining a chain stream on its chain: the chain's catchment holds its water already, and so does the rest.)
       if (P.chainS >= 0 && st.joinS <= P.chainS + 1e-6) continue;
+      // (A chain joining a lattice stream: that stream's catchment is the lattice's, which holds the slopes about it
+      // already (with LATERAL_GAIN): it is never narrower than the chain below the junction, not summed with it.)
+      if (st.chainS >= 0 && P.chainS < 0) {
+        for (let i = 0; i < P.s.length; i++) if (P.s[i] >= st.joinS - 1e-6) P.area[i] = Math.max(P.area[i], add);
+        continue;
+      }
       for (let i = 0; i < P.s.length; i++) if (P.s[i] >= st.joinS - 1e-6) P.area[i] += add;
     }
   }
