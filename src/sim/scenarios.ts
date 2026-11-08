@@ -256,15 +256,24 @@ export function buildScenario(id: ScenarioId, env: Environment, def: ScenarioAir
       // airfield passing 2.6 km to the right after ~2.5 min. Terrain within 5 NM of the track stays below
       // 630 m (at least 2400 ft of clearance) for the first 55 km (over 15 minutes at 110 KIAS); the same
       // start heading 015 (as before) meets 1400 m ridges 17.5 km out.
-      const heading = 100 * DEG;
-      const ic: InitialConditions = { position: { x: 4000, y: -8000, z: -alt }, heading, airspeed: kiasToTas(sc.cruiseKias, alt, env), onGround: false, engineRunning: true };
+      let heading = 100 * DEG;
+      let pos = { x: 4000, y: -8000, z: -alt };
+      // Dev: ?scenario=cruise&at=north,east,agl[,heading]: start over that point (NED metres), agl metres above the
+      // ground there, heading degrees true (default 100). For flying a terrain spot found with camPos.
+      const atArg = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('at') : null;
+      const atV = atArg?.split(',').map(Number) ?? [];
+      if (atV.length >= 3 && atV.slice(0, 3).every(Number.isFinite)) {
+        if (Number.isFinite(atV[3])) heading = wrapTwoPi(atV[3] * DEG);
+        pos = { x: atV[0], y: atV[1], z: -(terrainHeight(atV[0], atV[1]) + atV[2]) };
+      }
+      const ic: InitialConditions = { position: pos, heading, airspeed: kiasToTas(sc.cruiseKias, -pos.z, env), onGround: false, engineRunning: true };
       if (retractable) ic.gearDown = false;
       return {
         id,
         title: `Cruise at ${sc.cruiseAltFt} ft along the Alps`,
         ic,
         controls: presets.airborne,
-        autoflight: { kind: 'hold', heading, altitude: alt, kias: sc.cruiseKias },
+        autoflight: { kind: 'hold', heading, altitude: -pos.z, kias: sc.cruiseKias },
       };
     }
     case 'safari': {
