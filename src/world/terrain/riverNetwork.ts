@@ -942,21 +942,6 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // Its end at the water of the line it joins (final: that line came first).
     if (st.joins >= 0) st.level[st.level.length - 1] = Math.min(st.level[st.level.length - 1], levelOn(lineOf(st.joins), st.joinS));
     for (let i = 1; i < st.level.length; i++) st.level[i] = Math.min(st.level[i], st.level[i - 1]);
-    // A stream not leaving a lake runs as high as the ground it was traced over lets it (the running minimum of that
-    // ground, less its depth: never rising downstream, never over the ground): between the raster points its level was
-    // laid in a straight line, which runs tens of metres under a convex face or a spur's nose. Where it still runs well
-    // under the ground (a sill it wears through) its notch is a bed's width (below), not a broad floor.
-    if (st.pool < 0) {
-      const m = st.level.length;
-      let run = Infinity;
-      for (let i = 0; i < m - 1; i++) {
-        const top = st.level[i] + st.cut[i];
-        run = Math.min(run, top);
-        if (run > st.level[i]) st.level[i] = run;
-        st.cut[i] = Math.max(0, top - st.level[i]);
-        st.breach[i] = breachOfCut(st.cut[i]);
-      }
-    }
     const keep = new Uint8Array(st.level.length);
     // (An outlet's first samples keep its lake's level.)
     for (let i = 0; i < st.held - 1; i++) keep[i] = 1;

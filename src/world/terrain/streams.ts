@@ -78,6 +78,10 @@ const CHAIN_LOWER = 40;
 const CHAIN_CLIMB = 80;
 /** A stream ending in a hollow joins the nearest water lying under its own within this many raster steps (trace). */
 const CONNECT_R = 12;
+/** A continuation (a stream that ended in a hollow running on) climbs a sill up to CONT_CLIMB m, or joins water under
+ * its own within CONT_CONNECT_R raster steps. */
+const CONT_CLIMB = 200;
+const CONT_CONNECT_R = 24;
 /** A trace in a hollow on the threshold hillslopes follows their routing down at most this many raster steps. */
 const PASS_WALK = 400;
 /** A chain stream's samples between two of its points take the points' ground where the routing ground there is the
@@ -401,7 +405,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
    * Steepest descent from raster point `start`, never into `own` pool. Returns the course (raster indices, start
    * first) and what it reached. (report.floods counts the climbs over a pit's sill.)
    */
-  const trace = (prefix: number[], own: number, level: number, checkFirst = false, climb = CLIMB_HEIGHT, wayOut = false): { path: number[]; end: End } => {
+  const trace = (prefix: number[], own: number, level: number, checkFirst = false, climb = CLIMB_HEIGHT, wayOut = false, notLine = -1, connectR = CONNECT_R): { path: number[]; end: End } => {
     const st = ++stamp;
     const path = prefix.slice();
     path.forEach((k, i) => {
@@ -457,7 +461,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     }
     const reached = (k: number): End | null => {
       const o = occ[k];
-      if (o !== 0) {
+      if (o !== 0 && occLine(o) !== notLine) {
         const j = joinAt(o);
         return j >= 0 ? { kind: 'channel', line: occLine(o), idx: j, pool: -1, ok: true } : { kind: 'sink', line: occLine(o), idx: occIdx(o), pool: -1 };
       }
@@ -480,13 +484,30 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       const pool = mask.poolAt(Math.floor(k / R), k % R);
       return pool >= 0 && pool !== own && !mask.pools[pool].drained && !canReach(mask.pools[pool].level);
     };
-    const blocked = (k: number): boolean => visit.get(k) === st || (own >= 0 && mask.poolAt(Math.floor(k / R), k % R) === own) || byHome(k) || crosses(cur, k) || byHigherLake(k) || higherWater(k);
+    const blocked = (k: number): boolean => (notLine >= 0 && occ[k] !== 0 && occLine(occ[k]) === notLine && k !== path[0]) || visit.get(k) === st || (own >= 0 && mask.poolAt(Math.floor(k / R), k % R) === own) || byHome(k) || crosses(cur, k) || byHigherLake(k) || higherWater(k);
     // The direction of the last step (index into RING), -1 before the first.
     let dir = -1;
     for (let step = 0; step < MAX_STEPS; step++) {
       if (step > 0 || checkFirst) {
         const e = reached(cur);
         if (e) return { path, end: e };
+      }
+      // (A way-out trace - a chain's, a continuation's - joins water it can reach lying beside it, on a neighbouring
+      // raster point: it does not run on beside it.)
+      if (wayOut && step > 0) {
+        const ci = Math.floor(cur / R);
+        const cj = cur % R;
+        for (let a = 0; a < 8; a++) {
+          const q = (ci + DI[a]) * R + cj + DJ[a];
+          const o = occ[q];
+          if (o === 0 || visit.get(q) === st || occLine(o) === notLine) continue;
+          const j = joinAt(o);
+          if (j < 0) continue;
+          visit.set(q, st);
+          visitAt.set(q, path.length);
+          path.push(q);
+          return { path, end: { kind: 'channel', line: occLine(o), idx: j, pool: -1, ok: true } };
+        }
       }
       const ri = Math.floor(cur / R);
       const rj = cur % R;
@@ -561,8 +582,9 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
             // (A sill higher than that, or no way on: it joins the nearest water lying under its own within
             // CONNECT_R raster steps, worn through in a notch of its bed's width; else it ends in the hollow, its
             // water seeping away.)
-            const c = wayOut ? connect(cur, runMin - STREAM_DEPTH, own) : null;
-            if (c) {
+            const c = wayOut ? connect(cur, runMin - STREAM_DEPTH, own, notLine, connectR) : null;
+            // (Not back across its own course.)
+            if (c && !c.steps.some((k, i) => i < c.steps.length - 1 && (visit.get(k) === st || crosses(i === 0 ? cur : c.steps[i - 1], k)))) {
               for (const k of c.steps) {
                 visit.set(k, st);
                 visitAt.set(k, path.length);
@@ -596,19 +618,19 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
   /** From raster point k, the nearest line's water within CONNECT_R steps lying at or under `level` (not across a
    * lake, the home field, or another line's water on the way): the raster points of a straight way to it, and the end
    * there. Null when there is none. */
-  const connect = (k: number, level: number, own: number): { steps: number[]; end: End } | null => {
+  const connect = (k: number, level: number, own: number, notLine = -1, CR = CONNECT_R): { steps: number[]; end: End } | null => {
     const ki = Math.floor(k / R);
     const kj = k % R;
     let best: { d: number; q: number } | null = null;
-    for (let a = -CONNECT_R; a <= CONNECT_R; a++)
-      for (let b = -CONNECT_R; b <= CONNECT_R; b++) {
+    for (let a = -CR; a <= CR; a++)
+      for (let b = -CR; b <= CR; b++) {
         const qi = ki + a;
         const qj = kj + b;
         if (qi < 1 || qj < 1 || qi >= R - 1 || qj >= R - 1) continue;
         const o = occ[qi * R + qj];
-        if (o === 0 || lineAt(occLine(o)).level[occIdx(o)] > level) continue;
+        if (o === 0 || occLine(o) === notLine || lineAt(occLine(o)).level[occIdx(o)] > level) continue;
         const d = Math.hypot(a, b);
-        if (d <= CONNECT_R && (!best || d < best.d)) best = { d, q: qi * R + qj };
+        if (d <= CR && (!best || d < best.d)) best = { d, q: qi * R + qj };
       }
     if (!best) return null;
     const qi = Math.floor(best.q / R);
@@ -617,7 +639,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     const steps: number[] = [];
     for (let t = 1; t <= n; t++) {
       const q = Math.round(ki + ((qi - ki) * t) / n) * R + Math.round(kj + ((qj - kj) * t) / n);
-      if (t < n && (occ[q] !== 0 || byHome(q) || (mask.poolAt(Math.floor(q / R), q % R) >= 0 && mask.poolAt(Math.floor(q / R), q % R) !== own))) return null;
+      if (t < n && ((occ[q] !== 0 && occLine(occ[q]) !== notLine) || byHome(q) || (mask.poolAt(Math.floor(q / R), q % R) >= 0 && mask.poolAt(Math.floor(q / R), q % R) !== own))) return null;
       steps.push(q);
     }
     const o = occ[best.q];
@@ -1527,14 +1549,17 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       // (From the raster point at its last point: a stream that sank short of water standing over its own was cut back.)
       const m = st.north.length - 1;
       const k0 = Math.round((st.north[m] - ORIGIN) / LAKE_RASTER) * R + Math.round((st.east[m] - ORIGIN) / LAKE_RASTER);
-      const t = trace([k0], -1, lvl + STREAM_DEPTH, false, CHAIN_CLIMB, true);
+      const t = trace([k0], -1, lvl + STREAM_DEPTH, false, CONT_CLIMB, true, nR + j, CONT_CONNECT_R);
       if (t.end.kind === 'sink' || t.end.kind === 'stuck' || t.path.length < 2) continue;
       const before = streams.length;
       const a0 = st.area[st.area.length - 1];
       build(t.path, t.end, null, a0, -1, a0, null, { north: st.north[m], east: st.east[m] });
       if (streams.length === before) continue;
-      if (streams[before].end === 'sink') {
-        // (It sank again: not kept, nor its marks.)
+      // (Nor where the water it joins runs back into its stream: no loop.)
+      let loop = false;
+      for (let L = streams[before].joins, g = 0; L >= nR && g < 200; L = streams[L - nR].joins, g++) if (L === nR + j) loop = true;
+      if (streams[before].end === 'sink' || loop) {
+        // (It sank again, or would loop: not kept, nor its marks.)
         streams.pop();
         for (let q = 0; q < occ.length; q++) if (occ[q] !== 0 && occLine(occ[q]) === nR + before) occ[q] = 0;
         report.traced--;
@@ -1619,7 +1644,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
  */
 function untangleCourse(n: number[], e: number[], lv: number[], gr: number[], ar?: number[]): void {
   const CELL = 100;
-  for (let pass = 0; pass < 8; pass++) {
+  for (let pass = 0; pass < 64; pass++) {
     const grid = new Map<number, number[]>();
     const key = (a: number, b: number): number => (Math.floor(a / CELL) + 32768) * 65536 + (Math.floor(b / CELL) + 32768);
     for (let i = 0; i < n.length - 1; i++) {
