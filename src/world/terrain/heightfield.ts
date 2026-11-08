@@ -487,6 +487,13 @@ const GRADE_COAST = 0.5;
  * erosion.ts STEADY). */
 const HILL_UPLIFT = 0.5 / 830;
 
+/** Probes: the model's valley depth (erosion.ts ErosionField.valley) at the lattice cell nearest a point. */
+export function debugValley(north: number, east: number): number {
+  if (!erosion) return 0;
+  const i = Math.round((north + DOMAIN_HALF) / DRAIN_CELL);
+  const j = Math.round((east + DOMAIN_HALF) / DRAIN_CELL);
+  return erosion.valley[i * EROSION_N + j];
+}
 /** Probes: the macro model's parts at a point of the current seeded world (null at seed 0): the change, carve, valley
  * floor weight and noise lattice B-spline (erosion.ts ErosionSample), and the grounds with and without the offset. */
 export function debugMacro(north: number, east: number): { s: ErosionSample; coarseRaw: number; coarse: number; ground: number } | null {

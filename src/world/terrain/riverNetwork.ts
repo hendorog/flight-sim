@@ -30,6 +30,8 @@ const WANDER_SHORT = 350;
  * m, a course wanders this fraction of WANDER, WANDER_SHORT and the jitter (all of them shallower than PIN_CUT[0]). */
 const PINNED_WANDER = 0.15;
 const PIN_CUT = [20, 80];
+/** A river meanders less in a valley this deep on the macro ground, m, and not at all from the second (a gorge). */
+const GORGE_CUT = [100, 180];
 /** Past a lake's outlet the river keeps the lake's level over this stretch, m (while its banks stand over it). */
 const OUTLET_RUN = 800;
 /** A pond whose water stands this far above the river running into it is drained (see the levels below), m. */
@@ -289,6 +291,14 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   // course wandering a kilometre off it would ride up the valley side (its level held far under the ground there,
   // its meanders swinging back down onto a floor below its water).
   const free = (c: number): number => (valleyDepth ? 1 - (1 - PINNED_WANDER) * smooth(PIN_CUT[0], PIN_CUT[1], valleyDepth[c]) : 1);
+  /** The macro ground's valley depth at the lattice cell nearest a point, m (0 without it). */
+  const half = ((d.n - 1) * DRAIN_CELL) / 2;
+  const valleyAt = (north: number, east: number): number => {
+    if (!valleyDepth) return 0;
+    const ci = Math.min(d.n - 1, Math.max(0, Math.round((north + half) / DRAIN_CELL)));
+    const cj = Math.min(d.n - 1, Math.max(0, Math.round((east + half) / DRAIN_CELL)));
+    return valleyDepth[ci * d.n + cj];
+  };
   // --- Lattice courses: jittered (the same jitter for a cell shared by two lines) and smoothed; a tributary's last
   // point is put back on its parent's smoothed course.
   const jitter = (c: number, k: number): number => ((hash2i(c, 0x51ed + k) & 0xffff) / 65536 - 0.5) * DRAIN_CELL * 0.55;
@@ -518,7 +528,10 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const nearField = smooth(3000, 6000, runwayDistance(north[i], east[i]));
       // None across a lake (its water hides the course; the loops would only cost time).
       const mFree = (1 - wet[i]) * lowland * big * tail * clampUnit(0.8 + 0.4 * gnoise(s[i] / 5200 + li * 7.31, 2.7 + li));
-      const m = mFree * nearField;
+      // None where the river runs confined in a deep valley of the macro ground (a gorge, or a narrow mountain valley:
+      // erosion.ts valley): there its loops would swing off its floor into the walls, and an entrenched river keeps to
+      // its floor. (The floodplain keeps the free meanders' width, as by the home field.)
+      const m = mFree * nearField * (1 - smooth(GORGE_CUT[0], GORGE_CUT[1], valleyAt(north[i], east[i])));
       meander[i] = m;
       // Meander wavelength about 18 channel widths (the long end of Leopold & Wolman's range: broad loops, as seed 0's
       // river has), varied along the river.
@@ -533,6 +546,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // The floodplain's width changes only gradually along the river: inside a bend the nearest axis point jumps from
     // one stretch to another, and two different widths there would leave a step in the valley wall.
     smoothAlong(floodplain, Math.ceil(1500 / AXIS_SPACING), 3);
+    // The belt stays inside the smoothed floodplain (less the channel and its bank): where it narrowed, a loop would
+    // swing off the floor into the valley's wall.
+    for (let i = 0; i < count; i++) belt[i] = Math.max(0, Math.min(belt[i], floodplain[i] - halfWidth[i] - CHANNEL_BANK));
     axes.push({ north, east, s, area, level, halfWidth, belt, meander, wavelength, floodplain, influence, ground: pre[li].ground, gapR: new Float64Array(count), gapL: new Float64Array(count) });
   }
 

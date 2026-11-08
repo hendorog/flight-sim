@@ -56,7 +56,7 @@ export interface StructParams {
 }
 
 export const STRUCT: StructParams = {
-  kAmp: 0.75,
+  kAmp: 0,
   kWave: 9000,
   kSoft: 0.25,
   kWob: 1.2,
