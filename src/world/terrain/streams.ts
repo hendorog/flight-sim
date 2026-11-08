@@ -80,7 +80,7 @@ const CHAIN_CLIMB = 80;
 const CONNECT_R = 12;
 /** A continuation (a stream that ended in a hollow running on) climbs a sill up to CONT_CLIMB m, or joins water under
  * its own within CONT_CONNECT_R raster steps. */
-const CONT_CLIMB = 200;
+const CONT_CLIMB = 80;
 const CONT_CONNECT_R = 24;
 /** A trace in a hollow on the threshold hillslopes follows their routing down at most this many raster steps. */
 const PASS_WALK = 400;
@@ -1553,7 +1553,8 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       if (t.end.kind === 'sink' || t.end.kind === 'stuck' || t.path.length < 2) continue;
       const before = streams.length;
       const a0 = st.area[st.area.length - 1];
-      build(t.path, t.end, null, a0, -1, a0, null, { north: st.north[m], east: st.east[m] });
+      // (From its stream's last point and water: a continuation never stands over the water it carries on.)
+      build(t.path, t.end, { north: st.north[m], east: st.east[m], level: lvl }, a0, -1, a0);
       if (streams.length === before) continue;
       // (Nor where the water it joins runs back into its stream: no loop.)
       let loop = false;
