@@ -15,6 +15,7 @@
 // Also the channels' beds: the grain of the stones on the bed at every sample (RiverLine.grain), from boulders by the
 // heads and on the steep pitches to gravel on the calm lowland reaches.
 
+import { bedWidth } from './streams';
 import type { Fall, FallCause } from './streams';
 import { FALL_RUN } from './streams';
 import type { FaultIndex } from './faults';
@@ -35,6 +36,8 @@ const GORGE_GRADIENT_MIN = 0.004;
 const GORGE_MAX = 1500;
 /** A fall needs this much channel either side of it, m (not at a confluence or a source). */
 const FALL_CLEAR = 120;
+/** A channel's stones are at most this share of its bed's width (bedGrain). */
+const GRAIN_BED = 0.25;
 /** A hanging valley's wall falls at least HANG_WALL (an outlet's OUTLET_WALL) m/m over 40-400 m, at least HANG_MIN
  * (OUTLET_FALL_MIN) m high: its fall is that drop, at most HANG_MAX m. */
 const HANG_WALL = 0.3;
@@ -356,6 +359,9 @@ export function bedGrain(c: { s: Float64Array; north: Float64Array; east: Float6
   }
   // Below a fall (its foot and the next samples): the blocks it has broken off, bigger under a taller fall.
   for (const f of feet) for (let j = f.index + 1; j < Math.min(n, f.index + 4); j++) g[j] = Math.max(g[j], 1.5 + 2.5 * smoothStep01(5, 60, f.height));
+  // (A channel's stones are a share of its bed at most (streams.ts bedWidth): a small torrent's boulders are its own
+  // size, not a big river's, so its bed reads as narrow as it is from the air.)
+  for (let i = 0; i < n; i++) g[i] = Math.min(g[i], Math.max(0.002, GRAIN_BED * bedWidth(area[i])));
   return g;
 }
 /** bedGrain's stones: by the heads GRAIN_HEAD + GRAIN_FLOOR m, falling off over GRAIN_DECAY km to GRAIN_FLOOR; a calm

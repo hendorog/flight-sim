@@ -375,6 +375,9 @@ function withIce(shader: { vertexShader: string; fragmentShader: string }, river
 // plunge pool, and a puff of spray over it. The ice (withIce) is spliced after this code, so frozen water stays ice.
 
 /** Steepness (RiverLine.steepness) below which a reach is drawn as placid water, unchanged. */
+/** Far away a stream's white water counts WHITE_SMALL of itself at a half-width of WHITE_HW[0] m, all from WHITE_HW[1]. */
+const WHITE_SMALL = 0.35;
+const WHITE_HW = [1.5, 6.0];
 const FLOW_FROM = 0.2;
 /** Top of the speed range the ribbon's aFlow bytes hold, m/s (streams.ts flowOf clamps to 6). */
 const FLOW_SPEED_MAX = 6;
@@ -597,6 +600,10 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
   // (A pitch's fine tearing is lost in a pixel sooner: its mean cover from a footprint of a metre, torn white over
   // dark water, so greyer than its thickest foam.)
   fWhite = mix(fWhite, 0.8 * fCoverFar, fOn * smoothstep(0.2, 1.0, footprint));
+  // (Far away a small stream's white is a thread among its stones and banks, not a white band: its share of the pixel's
+  // white scales with the water's width - a torrent of 1-2 m reads grey, a river of 12 m or more full white - so the
+  // size of the water shows from the air, catchment by catchment.)
+  fWhite *= mix(1.0, mix(${WHITE_SMALL.toFixed(2)}, 1.0, smoothstep(${WHITE_HW[0].toFixed(1)}, ${WHITE_HW[1].toFixed(1)}, fW)), smoothstep(0.3, 1.2, footprint));
   // The stones (channelStones.ts; vegetation/boulders.ts draws their rocks): chFoam about each, the fine lattice's
   // and the very large blocks'.
   float fRock = 0.0;

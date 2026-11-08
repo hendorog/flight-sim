@@ -33,7 +33,7 @@ import { riverStrip, TREE_LINE_ASPECT, treeLineBase } from './biome';
 import { GALLERY_FAR } from './riparian';
 import { ERA_GROUND, PALETTES, type EraGroundPalette } from './eraPalette';
 import { hydrology, snowLineBase } from './heightfield';
-import { BEDROCK_GLSL, GALLERY_ROCK_THIN, ROCK_EDGE_GLSL } from './bedrock';
+import { BEDROCK_GLSL, GALLERY_ROCK_THIN, ROCK_EDGE_GLSL, ROCK_HW, ROCK_SMALL } from './bedrock';
 import { era, isPresent } from '../era/eraState';
 import { ASH_REACH, VOLCANO_GLSL, VOLCANO_LAVA_GLSL, VOLCANO_LAVA_HEAD_GLSL, VOLCANO_PALETTE } from './volcano';
 import { ERA_TERRAIN_UNIFORMS_GLSL, ERA_UNIFORMS } from './eraUniforms';
@@ -740,7 +740,11 @@ float fineN = 0.0;
 if ((tUpN > 0.55 && tUpN < 0.9) || (tBio.x > 0.1 && tBio.x < 0.7)) fineN = (texture(tNoise, rot2(tXZ, 5.3) * (1.0 / 13.0)).g - 0.5) * 2.5;
 float rockW = smoothstep(mix(0.70, 0.76, highZone) + rockShift, mix(0.60, 0.63, highZone) + rockShift, tUpN + 0.1 * fineN);
 rockW = max(rockW, smoothstep(snowLine - 200.0, snowLine + 150.0, tH + 120.0 * sB.g) * smoothstep(0.93 + rockShift, 0.84 + rockShift, tUp + 0.03 * sC.g));
-${E(VOLCANO_WEIGHTS)}// Scree: debris fans in the hollows below the rock on high ground, a fringe of broken rock around the
+${flowText(`// (A small stream's notch: its walls are steep only because it is cut a few metres into the slope, not rock faces:
+// they keep the slope's cover, so a torrent of a metre reads as the thin line it is, not as a pale strip of rock as
+// wide as the triangles across its notch. Out to its bed's edge and a little beyond (bedrock.ts ROCK_HW).)
+if (vRiver.y > 0.2 && vRiver.y < ${ROCK_HW[1].toFixed(1)}) rockW *= mix(1.0, smoothstep(${ROCK_HW[0].toFixed(1)}, ${ROCK_HW[1].toFixed(1)}, vRiver.y), 1.0 - smoothstep(1.2 * vRiver.y + 2.0, 1.2 * vRiver.y + 8.0, abs(vRiver.x)));
+`)}${E(VOLCANO_WEIGHTS)}// Scree: debris fans in the hollows below the rock on high ground, a fringe of broken rock around the
 // outcrops, and stony patches in the thin alpine turf.
 float screeW = (1.0 - rockW) * smoothstep(0.9, 0.8, tUp + 0.04 * sC.a) * alpine * smoothstep(0.1, 0.5, concave + 0.3 * sC.b);
 screeW = max(screeW, smoothstep(0.05, 0.45, rockW) * (1.0 - smoothstep(0.55, 0.9, rockW)) * (0.4 + 0.6 * alpine));
@@ -912,7 +916,9 @@ if (vRiver.y > 0.5 && vFlow > 0.3) {
   if (rEdgeR < reach * 1.5) {
     // A ragged edge (bedrock.ts rockAtPoint, which the tree placement reads too): the rock gives way to soil in tongues
     // and bays; the water's spray darkens it near the edge.
-    tRock = bedRock(vFlow) * rockEdgeCover(rockReachAt(vRiver.y, vec2(tXZ.x, -tXZ.y)), rEdgeR);
+    // (A small torrent's bed is a thin grey line among the slope's cover, a big one's a broad scoured strip: the rock's
+    // strength grows with the water's width, bedrock.ts ROCK_HW.)
+    tRock = bedRock(vFlow) * rockEdgeCover(rockReachAt(vRiver.y, vec2(tXZ.x, -tXZ.y)), rEdgeR) * mix(${ROCK_SMALL.toFixed(2)}, 1.0, smoothstep(${ROCK_HW[0].toFixed(1)}, ${ROCK_HW[1].toFixed(1)}, vRiver.y));
     tRockWet = 1.0 - smoothstep(-0.5, 0.45 * reach + 0.8, rEdgeR + 0.15 * reach * sD.r);
   }
 }
@@ -924,8 +930,13 @@ if (vRiver.y > 0.5 && vFlow > 0.3) {
     float rN = 2.0 * sD.r + 1.2 * sC.g;
     tRiverBed = 1.0 - smoothstep(-rFw, rFw, rEdge + 0.5 * sD.b);
     tRiverBank = 1.0 - smoothstep(bankW - rFw, bankW + 1.5 + rFw, rEdge - rN);
-    float strip = 1.0 - smoothstep(${riverStrip().toFixed(1)}, ${(riverStrip() + 16).toFixed(1)}, rEdge + 5.0 * sC.g + 3.0 * sD.a);
-    farmW *= 1.0 - strip;
+${flowText(`    // (A small stream's gravel bed and bank are a thin thread among the slope's cover, not a pale strip: their tint
+    // grows with the water's width, bedrock.ts ROCK_HW, so a torrent reads fainter than a river from the air.)
+    float smallBed = mix(${ROCK_SMALL.toFixed(2)}, 1.0, smoothstep(${ROCK_HW[0].toFixed(1)}, ${ROCK_HW[1].toFixed(1)}, vRiver.y));
+    tRiverBed *= smallBed;
+    tRiverBank *= smallBed;
+`)}    float strip = 1.0 - smoothstep(${riverStrip().toFixed(1)}, ${(riverStrip() + 16).toFixed(1)}, rEdge + 5.0 * sC.g + 3.0 * sD.a);
+${flowText('    strip *= smallBed;\n')}    farmW *= 1.0 - strip;
 ${presentText(`    // The wooded bank (riparian.ts GALLERY_FAR; placement.ts plants it): as its trees thin out with distance the
     // canopy shell stands in for them, so the river keeps its dark green margins from the air.
     float gallery = (1.0 - smoothstep(${(GALLERY_FAR - 6).toFixed(1)}, ${(GALLERY_FAR + 4).toFixed(1)}, rEdge + 5.0 * sC.g)) * smoothstep(0.0, 2.0, rEdge);
@@ -933,7 +944,7 @@ ${presentText(`    // The wooded bank (riparian.ts GALLERY_FAR; placement.ts pla
     farmW *= 1.0 - gallery;
 `)}    // Rough bankside vegetation: tussocky, olive and dark, with pale reed beds at the water's edge.
     float reeds = (1.0 - smoothstep(bankW + 1.0, bankW + 6.0, rEdge + 2.0 * sD.g)) * smoothstep(0.45, 0.6, nC.r);
-    vec3 rough = mix(${P.bankRoughA}, ${P.bankRoughB}, smoothstep(0.3, 0.7, nD.g)) * (0.85 + 0.3 * sD.b);
+${flowText('    reeds *= smallBed;\n')}    vec3 rough = mix(${P.bankRoughA}, ${P.bankRoughB}, smoothstep(0.3, 0.7, nD.g)) * (0.85 + 0.3 * sD.b);
     rough = mix(rough, ${P.reeds}, reeds * 0.7);
 ${presentText(`    // Under and between the bank trees the ground is overgrown: bramble, nettle and young growth, dark and lush.
     rough = mix(rough, vec3(0.026, 0.05, 0.016) * (0.8 + 0.4 * nD.g), 0.85 * (1.0 - 0.6 * reeds));

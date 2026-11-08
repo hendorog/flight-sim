@@ -24,6 +24,9 @@ export const ROCK_STEEP_HI = 0.78;
 export const ROCK_REACH_BASE = 0.6;
 export const ROCK_REACH_PER_WIDTH = 1.0;
 export const ROCK_REACH_MAX = 16;
+/** The ground shader's bare rock counts ROCK_SMALL of itself beside water ROCK_HW[0] m half-wide, all from ROCK_HW[1]. */
+export const ROCK_SMALL = 0.15;
+export const ROCK_HW = [1.5, 6.0];
 /** Share of the trees left out where the bank is fully bare rock (placement.ts); fewer as the rock gives way to soil. */
 export const ROCK_TREE_THIN = 0.85;
 /**
