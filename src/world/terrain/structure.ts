@@ -56,12 +56,12 @@ export interface StructParams {
 }
 
 export const STRUCT: StructParams = {
-  kAmp: 0,
+  kAmp: 1,
   kWave: 9000,
   kSoft: 0.25,
   kWob: 1.2,
-  kPatch: 0.6,
-  kStart: 100,
+  kPatch: 0.4,
+  kStart: 0,
   faultU: 0.3,
   faultReach: 12000,
   blockRate: 0.6,
@@ -73,7 +73,7 @@ export const STRUCT: StructParams = {
   blockIter: 0,
   blockShare: 1,
   blockSpan: 0,
-  blockGorge: 2,
+  blockGorge: 1,
 };
 
 let override: Partial<StructParams> | null = null;
@@ -176,6 +176,13 @@ export function buildStructure(n: number, origin: number, ur: Float32Array, fade
   const block = new Float32Array(N);
   const mtn = new Uint8Array(N);
   for (let c = 0; c < N; c++) mtn[c] = ur[c] >= MTN_U ? 1 : 0;
+  // (None of it toward the lattice's edge, as the block (BLOCK_EDGE): the model's change carries on past the edge.)
+  const edgeW = new Float32Array(N);
+  for (let c = 0; c < N; c++) {
+    const i = Math.floor(c / n);
+    const j = c % n;
+    edgeW[c] = smooth(BLOCK_EDGE[0], BLOCK_EDGE[1], DRAIN_CELL * Math.min(i, j, n - 1 - i, n - 1 - j));
+  }
   const ox = (salt % 997) * 1.37;
   const oy = (salt % 991) * 2.11;
 
@@ -186,7 +193,7 @@ export function buildStructure(n: number, origin: number, ur: Float32Array, fade
     for (let c = 0; c < N; c++) off[c] = mtn[c] ? 0 : 1;
     const din = boxBlur(distance(off, n), n, 2, 2, 60000);
     for (let c = 0; c < N; c++) {
-      const w = smooth(MTN_U, MTN_U + 0.15, ur[c]);
+      const w = smooth(MTN_U, MTN_U + 0.15, ur[c]) * edgeW[c];
       if (w <= 0) continue;
       const north = origin + Math.floor(c / n) * DRAIN_CELL;
       const east = origin + (c % n) * DRAIN_CELL;
@@ -246,7 +253,7 @@ export function buildStructure(n: number, origin: number, ur: Float32Array, fade
           // Past the trace's tips the step fades with the distance (the end segment's clamp leaves best growing).
           const step = (th / tmax) * (1 - smooth(0.4 * p.faultReach, p.faultReach, best)) * (tAlong ? 1 : 1 - smooth(0, 3000, best));
           const c = i * n + j;
-          fault[c] = Math.max(fault[c], 1 + p.faultU * step * smooth(0.1, 0.25, ur[c]));
+          fault[c] = Math.max(fault[c], 1 + p.faultU * step * smooth(0.1, 0.25, ur[c]) * edgeW[c]);
         }
       }
     }
