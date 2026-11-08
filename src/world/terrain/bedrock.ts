@@ -18,10 +18,11 @@ export const ROCK_STEEP_LO = 0.5;
 export const ROCK_STEEP_HI = 0.78;
 /**
  * The rock reaches this far beyond the water's edge: a base plus a multiple of the half-width, capped, m - the scoured
- * bank the floods keep bare; its ragged edge (rockAtPoint) takes it RAG_MIN to RAG_MIN + 1 times as far.
+ * bank the floods keep bare, out to about the bed's edge (streams.ts bedWidth: a stream's water fills about half its
+ * bed); its ragged edge (rockAtPoint) takes it RAG_MIN to RAG_MIN + 1 times as far.
  */
-export const ROCK_REACH_BASE = 3;
-export const ROCK_REACH_PER_WIDTH = 0.9;
+export const ROCK_REACH_BASE = 0.6;
+export const ROCK_REACH_PER_WIDTH = 1.0;
 export const ROCK_REACH_MAX = 16;
 /** Share of the trees left out where the bank is fully bare rock (placement.ts); fewer as the rock gives way to soil. */
 export const ROCK_TREE_THIN = 0.85;

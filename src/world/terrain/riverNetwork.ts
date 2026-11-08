@@ -62,6 +62,10 @@ const CONFLUENCE_GRADIENT = 0.3;
 const CHAIN_CONFLUENCE = 0.75;
 /** A stream's water narrows to this share of its width down a reach of gradient (m/m) from the first to the second. */
 const STEEP_SLOT = 0.45;
+/** A stream's water is raised towards the drawn ground where it runs more than RAISE_CUT m under the ground it was
+ * traced on, to RAISE_DEPTH under the natural ground at most. */
+const RAISE_CUT = 2;
+const RAISE_DEPTH = 1.2;
 const STEEP_NARROW = [0.05, 0.2];
 /** ... not over its last this much, m (into its mouth). */
 const STEEP_MOUTH = 150;
@@ -942,6 +946,25 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // Its end at the water of the line it joins (final: that line came first).
     if (st.joins >= 0) st.level[st.level.length - 1] = Math.min(st.level[st.level.length - 1], levelOn(lineOf(st.joins), st.joinS));
     for (let i = 1; i < st.level.length; i++) st.level[i] = Math.min(st.level[i], st.level[i - 1]);
+    // A stream not leaving a lake runs as high as the drawn ground lets it: where its water runs well under the ground
+    // it was traced on (its level a straight line between the raster points, under a convex face or a spur's nose),
+    // it is raised to the running minimum of the natural ground there (looked at only there), never over it and never
+    // rising downstream. What cut is left is a sill it wears through, in a notch of its bed's width (below).
+    if (st.pool < 0) {
+      const m = st.level.length;
+      let run = Infinity;
+      for (let i = 0; i < m - 1; i++) {
+        let top = st.level[i];
+        if (st.cut[i] > RAISE_CUT) top = Math.min(st.level[i] + st.cut[i], natural(st.north[i], st.east[i]) - RAISE_DEPTH);
+        run = Math.min(run, top);
+        if (run > st.level[i]) {
+          const raise = run - st.level[i];
+          st.level[i] = run;
+          st.cut[i] = Math.max(0, st.cut[i] - raise);
+          st.breach[i] = breachOfCut(st.cut[i]);
+        }
+      }
+    }
     const keep = new Uint8Array(st.level.length);
     // (An outlet's first samples keep its lake's level.)
     for (let i = 0; i < st.held - 1; i++) keep[i] = 1;

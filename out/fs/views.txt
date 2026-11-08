@@ -40,3 +40,8 @@ s42-handoff-A5 seed=42&camPos=-27250,-15750,1560&camLook=-27250,-15250,1360
 s42-valley1-coord seed=42&camPos=-11700,-40700,1000&camLook=-12718,-41720,600
 s42-survey588 seed=42&camPos=-38300,-29302,1150&camLook=-37073,-29302,644
 s777777-survey1140 seed=777777&camPos=22500,-31189,1350&camLook=23700,-31189,774
+owner-view seed=42&camPos=-11500,-40200,900&camLook=-13500,-42300,550
+s42-junction-1789 seed=42&camPos=-64811,-231,640&camLook=-64469,-469,402
+s777777-junction-1172 seed=777777&camPos=69659,-9059,372&camLook=69031,-8844,133
+owner-box seed=42&camPos=-12900,-43000,1050&camLook=-14100,-41900,700
+face-close seed=42&camPos=-13300,-41700,1150&camLook=-14150,-41300,1050
