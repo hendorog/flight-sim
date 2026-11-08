@@ -37,7 +37,8 @@ Nothing merged or pushed. "f3" below is `95cb0f7`; a copy is in `out/fs/base` fo
   - **Poplar belts** are always rows of trees, never walls.
   - **Seed 0 is unchanged**, and has many clipped walls off its plains (decision 8).
 - **Gates.** Against f3:
-  - **Better:** water over ground, river over a dry bank, steps over 100 m (now 0 on every seed).
+  - **Better:** river over a dry bank, steps over 100 m (now 0 on every seed), water over ground on seeds 42 and
+    777777 (+3 on seed 1).
   - **Same:** riverZero, lakes, homeCheck, edges.
   - **Within noise:** steps over 50 m, +1 on seeds 1 and 42.
   - **Short of the aims:** traced streams reaching water on seed 42 (94.5 %), painted wet lines reaching the network
@@ -45,7 +46,7 @@ Nothing merged or pushed. "f3" below is `95cb0f7`; a copy is in `out/fs/base` fo
   - **One suite test over its time budget** (decision 1): `landmarks` determinism, 5.2 s against its 5.0 s limit. f3
     ran it in 4.90 s.
 - **Cost.**
-  - **Frame time:** +0.1-0.35 ms per frame (GPU p50 +0.2-0.4 ms in a mountain valley, +0.2 ms at 1500 m) on this Radeon 8060S at 1600×900; GPU memory +5 MB ribbons always drawn, +20 MB painted-stream textures.
+  - **Frame time:** +0.1-0.4 ms per frame (GPU p50 +0.3-0.5 ms in a mountain valley at cockpit height, +0.15-0.2 ms at 1500 m) on this Radeon 8060S at 1600×900; GPU memory +5 MB ribbons always drawn, +20 MB painted-stream textures.
   - **World build:** +0.25-0.3 s per seeded world per thread (3.33-3.40 → 3.61-3.66 s for seed 42 in node).
   - **Model cache:** +1.6 MB.
 
@@ -177,7 +178,7 @@ Nothing merged or pushed. "f3" below is `95cb0f7`; a copy is in `out/fs/base` fo
 
 Logs:
 - fs: `out/fs/final3`, on code `1ac7bce`. It holds the f3 battery `gates.sh`, plus `gullyGate.log`, `gullyNet.log`,
-  `suite.log`, and `hedgeWalls.log` (from `out/fs/final`; hedges unchanged since).
+  `suite.log`, and `hedgeWalls.log` (copied from `out/fs/final`; the hedge code is unchanged since).
 - f3: `~/github/fs-exp/foundation3/out/f3/final`.
 
 | gate | f3 | fs | aim | |
@@ -268,18 +269,19 @@ Before (f3) and after (fs), cockpit height and 1500 m:
   - **fs:** a stream down the floor with a winding side stream joining from the left, and short side-gully streams on
     the right wall.
   - `seed=42&camPos=-27500,-19000,1681&camLook=-27250,-17500,1177`
-- **s42-junction3** (`-f3`, `-fs`): a farmed mountain valley with its river.
-  - **fs adds:** a side stream crossing the fields to the river, and a stream in the forest at the lower right.
+- **s42-junction3** (`-f3`, `-fs`): a farmed mountain valley with its river. With the 10 km² hand-off the two look
+  almost the same from here: the side streams are painted and too thin to show at this distance.
   - `seed=42&camPos=-43818,33504,967&camLook=-45951,32578,513`
-- **s42-junction3-hi** (`-f3`, `-fs`): the same valley from about 1500 m. fs adds a straight side-valley stream into
-  the main valley and a few thin lines on the forest. The forested walls' gullies stay all but invisible (decision 2).
+- **s42-junction3-hi** (`-f3`, `-fs`): the same valley from about 1500 m.
+  - **fs adds:** a straight side-valley stream into the main valley (right of centre) and a few thin lines on the
+    forest.
+  - The forested walls' gullies stay all but invisible (decision 2).
   - `seed=42&camPos=-42517,34592,1997&camLook=-45912,33016,497`
-- **s777777-junction2** (`-f3`, `-fs`): a forested mountain valley with a stony river.
-  - Almost the same in both; fs's tributary comes in along a straight raster line at the top.
+- **s777777-junction2** (`-f3`, `-fs`): a forested mountain valley with a stony river. Almost the same in both.
   - The walls' gully streams do not show from here (decision 2).
   - `seed=777777&camPos=18016,-40886,1293&camLook=15555,-41232,964`
 - **s777777-junction2-hi** (`-f3`, `-fs`): from about 1500 m.
-  - The fs streams on the floors run in straight lines with right-angle bends (decision 6).
+  - The fs side-valley streams on the right run in straight lines with right-angle bends (decision 6).
   - `seed=777777&camPos=19616,-40246,2451&camLook=16006,-41028,951`
 
 A junction close up (fs):
@@ -292,11 +294,12 @@ A junction close up (fs):
 
 The size progression along one path, from a gully head to the sea (seed 42, fs):
 
-- **s42-path-A0.4:** gully heads under the tops; a thin painted line down the V.
+- **s42-path-A0.4:** looking up at the gully heads under the tops; a thin dark line down the forested V floor.
   - `seed=42&camPos=-27250,-15000,1687&camLook=-27250,-14000,1703`
 - **s42-path-A1.5:** the same line widening down a forested V, with short side lines joining.
   - `seed=42&camPos=-27250,-15500,1738&camLook=-27250,-14500,1451`
-- **s42-path-A5:** a painted stream down the V floor.
+- **s42-path-A5:** the painted stream, now with its pale stony bed, straight down the V floor, with short side-gully
+  streams joining from both walls.
   - `seed=42&camPos=-27250,-16250,1674&camLook=-27250,-15250,1361`
 - **s42-handoff:** the 10 km² switch from 500 m up: one straight line down the V, with side-gully streams joining. No
   break shows at the switch from here.
@@ -304,8 +307,8 @@ The size progression along one path, from a gully head to the sea (seed 42, fs):
   - `s42-handoff-A5` is a close view of the old 5 km² switch: there the traced stream's pale banks are wider than the
     painted bed (decision 5).
 - **s42-path-A10:** see above.
-- **s42-path-A20:** the valley stream, straight down a floor with right-angle bends (the raster, decision 6), and side
-  streams.
+- **s42-path-A20:** a Y junction of two traced streams in V valleys, running straight down their floors with sharp
+  bends (the raster, decision 6). A painted side stream runs down the left wall.
   - `seed=42&camPos=-28823,-20573,1933&camLook=-27750,-19400,1057`
 - **s42-path-A200:** a river in a farmed valley with its tributaries.
   - `seed=42&camPos=-36731,-31303,1010&camLook=-37836,-30172,612`
@@ -320,11 +323,12 @@ A valley farm without clipped hedges:
 
 - **s42-valley1** (`-f3`, `-fs`):
   - **f3:** dark rectangular hedge walls on the valley farms.
-  - **fs:** none; poplar belts stand as rows of trees. The floor's streams cross the fields to the stream.
+  - **fs:** no walls; the belts stand as rows of trees. Chain streams come down the left wall and cross the fields to
+    the valley's stream.
   - `seed=42&camPos=-10956,-39960,1199&camLook=-12718,-41720,682`
 - **s777777-strike40** (`-f3`, `-fs`):
-  - **f3:** long dark walls.
-  - **fs:** rows of trees along the field edges instead.
+  - **f3:** three long dark clipped walls on the left of the river.
+  - **fs:** none; the belts there are rows of trees.
   - `seed=777777&camPos=-11336,62004,715&camLook=-14132,61714,265`
 
 ## Left
