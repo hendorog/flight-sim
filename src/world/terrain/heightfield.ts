@@ -20,7 +20,7 @@ import { breachWall } from './streams';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth, type Drainage } from './drainage';
 import { attachSlopes, buildErosion, CUT_CELL as CUT_CELL_M, CUT_N, erosionGullies, upsample, markCourse, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
-import { buildNetworkHydrology, valleyInfluence } from './riverNetwork';
+import { buildNetworkHydrology, valleyInfluence, wallLift, wallStart } from './riverNetwork';
 import { riverCore, slopeKey, slopeParams, thresholdSlopes, type SlopeField } from './hillslopes';
 import { fbm, gnoise, gullies, gulliesFast, type Deriv } from './noise';
 import { era, isPresent } from '../era/eraState';
@@ -431,7 +431,7 @@ setLayoutGround((n, e) => seededNaturalHeight(n, e, true, false));
 
 /** The macro model (erosion.ts), null in seed 0's world. */
 let erosion: ErosionField | null = null;
-const erosionAt: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, m: 0, hs: 0, ch: 0, mg: 0, north: 0, east: 0 };
+const erosionAt: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, m: 0, hs: 0, ch: 0, mg: 0, mw: 0, north: 0, east: 0 };
 const erosionGrad: ErosionGrad = { dN: 0, dE: 0, cN: 0, cE: 0, fN: 0, fE: 0, wN: 0, wE: 0, rN: 0, rE: 0, mN: 0, mE: 0, hN: 0, hE: 0 };
 const cutGrad: Deriv = { dx: 0, dy: 0 };
 const EROSION_N = Math.round((2 * DOMAIN_HALF) / DRAIN_CELL) + 1;
@@ -492,7 +492,7 @@ export function debugMacro(north: number, east: number): { s: ErosionSample; coa
   const coarseRaw = seededNaturalHeight(north, east, false, false);
   const coarse = seededNaturalHeight(north, east, false, true);
   const ground = seededNaturalHeight(north, east, true, true);
-  const s: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, m: 0, hs: 0, ch: 0, mg: 0, north: 0, east: 0 };
+  const s: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, m: 0, hs: 0, ch: 0, mg: 0, mw: 0, north: 0, east: 0 };
   sampleErosion(erosion, north, east, s);
   return { s, coarseRaw, coarse, ground };
 }
@@ -504,9 +504,13 @@ export const naturalHeightSmooth = (north: number, east: number): number => seed
 /** The small-scale relief seededNaturalHeight last added (its ledges and knobs), m: carveNetwork takes it away along a
  * stream (streams.ts routes and levels them on the ground without it). */
 let lastSmall = 0;
+/** How far the ground seededNaturalHeight last worked out stands as the threshold hillslopes' walls (erosion.ts
+ * ErosionSample.mw; 0 off them): carveNetwork only lowers such walls (riverNetwork.ts wallLift). */
+let lastWall = 0;
 
 function seededNaturalHeight(north: number, east: number, detail = true, eroded = true, volcano = true, small = true): number {
   lastSmall = 0;
+  lastWall = 0;
   let fineGully = 0;
   if (detail) macroCachedGradAt(north, east, macro, macroGrad);
   else macroCachedAt(north, east, macro);
@@ -551,6 +555,7 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
   if (cut) {
     if (detail) sampleErosionGrad(cut, north, east, erosionAt, erosionGrad);
     else sampleErosion(cut, north, east, erosionAt);
+    lastWall = erosionAt.mw;
   }
   /** The slope of the eroded macro ground, m/m (the gullies and small-scale relief are held to it), and how much of
    * the gullies the point keeps (the small-scale relief fades into their troughs as far). */
@@ -803,7 +808,7 @@ function buildWater(): void {
         attachSlopes(eroded, slopes);
         lastModel = { seed: worldSeed(), key, lattice: T, slopes };
         if (modelOnly) throw MODEL_DONE;
-      }, slopePinned);
+      }, slopePinned, slopeWall);
     } catch (e) {
       if (e === MODEL_DONE) return;
       throw e;
@@ -844,11 +849,17 @@ const current = (): Hydrology => (isPresent() ? presentHydro : legacyHydro);
  */
 /** How far a stream's raster course is pinned to its points (streams.ts traceStreams): on the threshold hillslopes'
  * channels' floors (hillslopes.ts), by their weight. */
-const pinAt: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, m: 0, hs: 0, ch: 0, mg: 0, north: 0, east: 0 };
+const pinAt: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, m: 0, hs: 0, ch: 0, mg: 0, mw: 0, north: 0, east: 0 };
 function slopePinned(north: number, east: number): number {
   if (!erosion || !erosion.slopes) return 0;
   sampleErosion(erosion, north, east, pinAt);
   return Math.min(1, pinAt.mg * pinAt.ch * 2);
+}
+/** How far the ground stands as the threshold hillslopes' walls (lastWall), for riverNetwork.ts's carve. */
+function slopeWall(north: number, east: number): number {
+  if (!erosion || !erosion.slopes) return 0;
+  sampleErosion(erosion, north, east, pinAt);
+  return pinAt.mw;
 }
 /** The threshold hillslopes come in from the fine grid's edge between these distances, m: the model's change carries on
  * past the lattice's edge and fades out (erosion.ts OUTSIDE_FADE), the slopes not (the terrain reads none of the grid
@@ -992,6 +1003,18 @@ function breachProfile(d: number, breach: number): number {
   if (d < breach) return BREACH_FLOOR + BREACH_RISE * (d / breach) * (d / breach);
   return BREACH_FLOOR + BREACH_RISE + breachWall(d - breach);
 }
+/**
+ * A breach's carve target where the ground about it stands as the threshold hillslopes' walls (weight w, lastWall):
+ * the walls only lowered by the breach's cut, tapering out by the start of its fade (0.8 of its reach). Its own walls
+ * (breachWall, at most 45 degrees) climb out of a cut through a rim on level ground; against a 36 degree slope they
+ * never meet it within the reach, and the fade there left a step tens of metres high.
+ */
+function breachLift(target: number, h: number, d: number, reach: number, cut: number, w: number): number {
+  if (!(w > 0)) return target;
+  const r = 1 - Math.min(1, d / (0.8 * reach));
+  const tw = h - cut * r * r;
+  return tw > target ? target + w * (tw - target) : target;
+}
 
 /** The meandering river: its valley, oxbow lakes and channel cut into the terrain height h; fills out's river fields. */
 function carveRiver(north: number, east: number, h: number, out: TerrainSample): number {
@@ -1040,6 +1063,8 @@ function carveRiver(north: number, east: number, h: number, out: TerrainSample):
   return h;
 }
 
+/** The threshold hillslopes' wall weight at the point sampleTerrain is working on (lastWall). */
+let lastWallAt = 0;
 /** Smallest warped lake radius at the point sampleTerrain is working on (< 1 under a lake's water). */
 let lakeCover = Infinity;
 /** The seeded world's lake over the sample point (LakeMask): its level (-Infinity: none) and edge field. */
@@ -1051,6 +1076,7 @@ const channelNear: ChannelNear[] = [];
 /** A seeded world's river network (riverNetwork.ts): every valley and channel near the point cut into h, as carveRiver cuts its one river. */
 function carveNetwork(north: number, east: number, h: number, out: TerrainSample): number {
   const net = presentHydro.network as NonNullable<Hydrology['network']>;
+  const wallHere = lastWallAt;
   // Along a stream (streams.ts) the ground is its smooth course, without the small-scale relief's knobs and ledges:
   // the stream's water follows that ground down (it took them away), fading back in by STREAM_SMOOTH beyond its bank.
   const nc0 = net.channels(north, east, channelNear);
@@ -1080,7 +1106,8 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     const I = v.influence;
     const excess = Math.max(0, h - v.level - valleyProfile(f + I, f));
     const t = clamp((d - f) / I, 0, 1);
-    let carved = smin(h, v.level + valleyProfile(d, f) + excess * t * t, 4);
+    // (Where the ground stands as the threshold hillslopes' walls, they are only lowered: wallLift.)
+    let carved = smin(h, wallLift(v.level + valleyProfile(d, f) + excess * t * t, h, (d - f) / I, I, v.gap, wallHere, wallStart(f, I, v.swing)), 4);
     if (hold > 0) carved += hold * Math.max(0, Math.min(h, holdLevel + 0.5) - carved);
     h += (carved - h) * (1 - smooth(f + I * 0.75, f + I, d));
   }
@@ -1136,7 +1163,7 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
       // Nor beside a lake standing higher (its domain and a raster point round it, LakeMask.holds).
       if (c.breach > 0 && mask && mask.holds(north, east) > 0) keep = Math.max(keep, mask.holdLevel + 0.5);
       // (Faded out over the last fifth of its reach, where its walls should long since have met the ground.)
-      if (c.breach > 0) h += (Math.max(Math.min(h, keep), smin(h, c.level + breachProfile(d, c.breach), 3)) - h) * open * (1 - smooth(0.8 * c.reach, c.reach, d));
+      if (c.breach > 0) h += (Math.max(Math.min(h, keep), smin(h, breachLift(c.level + breachProfile(d, c.breach), h, d, c.reach, c.cut, wallHere), 3)) - h) * open * (1 - smooth(0.8 * c.reach, c.reach, d));
       const w = c.halfWidth * (1 - smooth(0, 20, c.beyondSource));
       if (w <= 0.3) continue;
       // (Not worked out where its banks stand well over the ground: their least height there is under the ground's.)
@@ -1158,7 +1185,7 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     const w = c.halfWidth * (1 - smooth(0, 60, c.beyondSource));
     if (w <= 0.5) continue;
     // A gorge below a fall (falls.ts): worn broadly, as a stream's breach.
-    if (c.breach > 0) h += (smin(h, c.level + breachProfile(d, c.breach), 3) - h) * open * (1 - smooth(0.8 * c.reach, c.reach, d));
+    if (c.breach > 0) h += (smin(h, breachLift(c.level + breachProfile(d, c.breach), h, d, c.reach, c.cut, wallHere), 3) - h) * open * (1 - smooth(0.8 * c.reach, c.reach, d));
     let carved = smin(h, c.level + channelProfile(d, w), 3);
     // A natural levee is a few metres at most: never a bank raised far over the plain (a wall).
     // (Judged on the ground before a stream's banks raised it: a levee on top of a stream's bank would be a wall.)
@@ -1264,6 +1291,7 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
   }
 
   let h = naturalHeight(north, east);
+  lastWallAt = SEEDED ? lastWall : 0;
 
   // Lakes: bed = natural terrain lowered toward (level - depth) inside the warped ellipse.
   lakeCover = Infinity;

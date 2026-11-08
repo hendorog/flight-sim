@@ -643,10 +643,16 @@ function valleyDepth(t: Float32Array, n: number, fixed: Uint8Array): Float32Arra
 }
 
 /** The threshold hillslopes give way to a drawn river's own floor (hillslopes.ts riverCore) from the first of these to
- * the second (its core, where its level is read: the ground there stays the model's). */
-const COURSE_SLOPES = [0.5, 0.95];
-/** ... and the gullies come back over the last of it (ErosionSample.mg). */
-const COURSE_GULLIES = [0.85, 0.95];
+ * the second (its core, where its level is read: the ground there stays the model's). Across the whole of the core's
+ * taper: the slopes' ground (on the 250 m grid) can stand a couple of hundred metres over the model's beside a river's
+ * floor narrower than a node, and over the taper's last half (from 0.5) it came in as a wall 60-90 m high in 25 m
+ * (seeds 1 / 42 / 777777: 128 / 80 / 268 of them once the valley carve no longer cut them away). */
+const COURSE_SLOPES = [0, 0.95];
+/** ... and the gullies come back over the same (ErosionSample.mg): over the last tenth of it only, the slopes' ground
+ * stood over the model's full gully relief across the rest, and where a river's channel swings onto the taper its
+ * troughs lay under the water (water over the ground > 10 m, seeds 1 / 42 / 777777: 60 / 13 / 28 with that, 55 / 10 /
+ * 23 without; overGround). */
+const COURSE_GULLIES = [0, 0.95];
 
 /** Hand the field its threshold hillslopes (hillslopes.ts thresholdSlopes), with the skip per lattice cell. */
 export function attachSlopes(f: ErosionField, s: SlopeField): void {
@@ -692,6 +698,10 @@ export interface ErosionSample {
    * core (where the ground stays the model's, gullies and all), so they do not come back in the band where the ground
    * blends from the slopes to the river's floor. */
   mg: number;
+  /** The threshold hillslopes' own weight (their mountain mask, SlopeField.w, by the home pad's keep), [0, 1]: not off
+   * on a river's core, so smooth across it (heightfield.ts carveNetwork lowers their walls by it, riverNetwork.ts
+   * wallLift). */
+  mw: number;
   north: number;
   east: number;
 }
@@ -739,12 +749,13 @@ export function sampleErosion(f: Pick<ErosionField, 'delta' | 'base' | 'carve' |
   out.r = out.w > 0 ? bicubic(f.base, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true) : 0;
   out.keep = padKeep(f.home, north, east);
   out.o = outside(north, east);
-  out.m = out.hs = out.ch = out.mg = 0;
+  out.m = out.hs = out.ch = out.mg = out.mw = 0;
   const sl = f.slopes;
   if (sl && inside && (f.slopeAny as Uint8Array)[cellAt(north, east)]) {
     const kr = catmullRomU8(sl.core, CUT_N, fy, fx) / 255;
     const m0 = Math.min(1, Math.max(0, catmullRomU8(sl.w, CUT_N, fy, fx) / 255));
     out.mg = m0 * (1 - smoothstep(COURSE_GULLIES[0], COURSE_GULLIES[1], kr)) * out.keep;
+    out.mw = m0 * out.keep;
     const m = m0 * (1 - smoothstep(COURSE_SLOPES[0], COURSE_SLOPES[1], kr));
     if (m > 1e-4) {
       out.m = Math.min(1, m) * out.keep;
@@ -880,13 +891,14 @@ export function sampleErosionGrad(f: Pick<ErosionField, 'delta' | 'base' | 'carv
   }
   out.keep = padKeep(f.home, north, east);
   out.o = outside(north, east);
-  out.m = out.hs = out.ch = out.mg = 0;
+  out.m = out.hs = out.ch = out.mg = out.mw = 0;
   g.mN = g.mE = g.hN = g.hE = 0;
   const sl = f.slopes;
   if (sl && inside && (f.slopeAny as Uint8Array)[cellAt(north, east)]) {
     const m0 = Math.min(1, Math.max(0, catmullRomU8(sl.w, CUT_N, fy, fx) / 255));
     const kr = catmullRomU8(sl.core, CUT_N, fy, fx) / 255;
     out.mg = m0 * (1 - smoothstep(COURSE_GULLIES[0], COURSE_GULLIES[1], kr)) * out.keep;
+    out.mw = m0 * out.keep;
     const kc = 1 - smoothstep(COURSE_SLOPES[0], COURSE_SLOPES[1], kr);
     const m = m0 * kc;
     if (m > 1e-4) {

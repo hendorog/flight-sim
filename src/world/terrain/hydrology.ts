@@ -217,6 +217,16 @@ export interface ValleyNear {
   floodplain: number;
   /** How far beyond the floodplain the valley walls are carved, m. */
   influence: number;
+  /** How far the ground where this side's wall starts (riverNetwork.ts wallStart) stands over the valley's floor, m
+   * (0 off the threshold hillslopes): the carve lowers the slopes' walls by that, tapering out across its reach
+   * (riverNetwork.ts wallLift). */
+  gap: number;
+  /** How far from the axis the channel may swing (its meander belt and half-width), m: it can run past the floodplain's
+   * edge where the floodplain's width is smoothed along the river. */
+  swing: number;
+  /** The line, and the arc length along its axis of the nearest point (diagnostics). */
+  line?: number;
+  s?: number;
 }
 
 /** A line's channel near a point (NetworkQuery.channels). */
@@ -227,6 +237,8 @@ export interface ChannelNear {
   /** A stream's broad breach here (RiverLine.breach), m: 0 none; and how far from the line it is carved, m. */
   breach: number;
   reach: number;
+  /** How far the stream's water runs under the ground it was traced over here (its breach's depth), m. */
+  cut: number;
   dist: number;
   side: number;
   level: number;
@@ -236,7 +248,8 @@ export interface ChannelNear {
 }
 
 export interface NetworkQuery {
-  /** The valleys of every line near the point (each line's nearest axis point); returns how many were written. */
+  /** The valleys of every line near the point (each line's nearest stretch, blended with any other about as near:
+   * riverNetwork.ts SegmentIndex.perLineBlend); returns how many were written. */
   valleys(north: number, east: number, out: ValleyNear[]): number;
   /** The channels of every line within carving reach of the point; returns how many were written. */
   channels(north: number, east: number, out: ChannelNear[]): number;

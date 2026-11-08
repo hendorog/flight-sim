@@ -39,6 +39,10 @@ const AXIS_SPACING = 120;
 /** Index cells, m. */
 const CHANNEL_CELL = 500;
 const VALLEY_CELL = 1000;
+/** A valley's stretches are blended over this far past the nearest (SegmentIndex.perLineBlend), m, at most
+ * VALLEY_BAND_MAX. */
+const valleyBand = (d: number): number => Math.min(VALLEY_BAND_MAX, 40 + 0.1 * d);
+const VALLEY_BAND_MAX = 300;
 /** Channels are searched this far beyond their half-width (bank and levee), m. */
 const CHANNEL_MARGIN = CHANNEL_BANK + 45;
 /** Beyond the channel index's reach, queryRiver estimates the distance from the valley axis. */
@@ -77,6 +81,49 @@ function valleyWall(d: number, floodplain: number): number {
   const b = d - floodplain;
   return 1.3 + 1.2 + 0.012 * b + 0.00011 * b * b;
 }
+
+/** The walls' lowering (wallLift) takes over from the carve's own shape over this share of a valley's reach past where
+ * the walls start (wallStart). */
+const WALL_IN = 0.1;
+/** Where the carve's own shape cuts deeper than the walls' gap (on the way in from the floor), the cut at most WALL_CUT
+ * times the distance to the reach's edge: the walls above steepen by that much at most. */
+const WALL_CUT = 0.25;
+/** A valley's floor over its water (valleyWall at the floodplain's edge), m: a wall's gap is the ground's height over it. */
+const FLOOR_OVER = 2.5;
+/** The carve's own floor is kept this far past the farthest a channel swings (its banks and their carving's reach,
+ * heightfield.ts channelProfile within CHANNEL_MARGIN), m. */
+const SWING_KEEP = CHANNEL_BANK + 45;
+/** Where a valley's walls start, as a share of its reach past the floodplain (wallLift's t0): past the floodplain,
+ * and past the channel's swing (belt and half-width, ValleyNear.swing). */
+export const wallStart = (f: number, I: number, swing: number): number => Math.max(0, (swing + SWING_KEEP - f) / I);
+/**
+ * A valley's carve target at reach fraction t = (d - floodplain) / reach I, where the ground there stands as the
+ * threshold hillslopes' walls (hillslopes.ts; weight w, erosion.ts ErosionSample.mw); `target` is the carve's own.
+ *
+ * The carve's own shape (a floor, then walls climbing as t^2 to the ground at the reach's edge: a gorge through a
+ * plateau) cuts a straight 36 degree wall deeply - a third of its height at mid-reach - and meets it at the edge at
+ * twice its slope, then fades out over the last quarter: a band of near-vertical rock along the valley's side (stage
+ * 4's pale slabs; most of stepScan's steps). Here the walls are instead only lowered by their gap (ValleyNear.gap: how
+ * far the ground where the wall starts stands over the floor), tapering out quadratically to the reach's edge: the V
+ * stays a V, sunk to its water, and meets the carve's floor where it starts. That takes over from the carve's own shape
+ * over WALL_IN of the reach; on the way the cut is at most WALL_CUT times the distance to the reach's edge (or the gap's
+ * taper, if more). Nothing where w is 0 (all the ground but the mountains' slopes: unchanged there), nor on the
+ * floodplain or across the channel's swing.
+ */
+export function wallLift(target: number, h: number, t: number, I: number, gap: number, w: number, t0 = 0): number {
+  if (!(w > 0) || !(t > t0) || t0 >= 1) return target;
+  const r = 1 - Math.min(1, t);
+  const rw = r / (1 - t0);
+  const s = smooth(t0, t0 + WALL_IN, t);
+  const cut = gap * rw * rw;
+  const tw = Math.max((h - cut) * s + target * (1 - s), h - Math.max(WALL_CUT * I * r, cut) / Math.max(s, 1e-6));
+  return tw > target ? target + w * (tw - target) : target;
+}
+/** The gap of a valley's side at its segment k, t along it (ValleyNear.gap). */
+const gapAt = (a: { gapR: Float64Array; gapL: Float64Array }, k: number, t: number, side: number): number => {
+  const g = side > 0 ? a.gapR : a.gapL;
+  return g[k] + (g[k + 1] - g[k]) * t;
+};
 
 /**
  * No cliffs: a small stream may fall steeply, a big river at most 0.8 % more than the ground under it falls (the
@@ -165,6 +212,11 @@ interface Axis {
   wavelength: Float64Array;
   floodplain: Float64Array;
   influence: Float64Array;
+  /** The ground the level was read from (the lowest of the axis and 80 m either side), m. */
+  ground: Float64Array;
+  /** Each side's wall gap (ValleyNear.gap: right, left of the flow), m; 0 off the threshold hillslopes. */
+  gapR: Float64Array;
+  gapL: Float64Array;
 }
 
 /**
@@ -230,7 +282,7 @@ export const levelProbe: { on?: (stage: string, li: number, line: LevelStage) =>
  * of `area` km². */
 export const valleyInfluence = (area: number): number => 500 + 1900 * smooth(30, 2000, area);
 /** Build a seeded world's hydrology from its drainage and lakes. */
-export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyDepth?: Float32Array, smoothGround: (north: number, east: number) => number = natural, markFloor?: (axes: Array<{ north: Float64Array; east: Float64Array; half: Float64Array; area: Float64Array }>) => void, pinned?: (north: number, east: number) => number): Hydrology {
+export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyDepth?: Float32Array, smoothGround: (north: number, east: number) => number = natural, markFloor?: (axes: Array<{ north: Float64Array; east: Float64Array; half: Float64Array; area: Float64Array }>) => void, pinned?: (north: number, east: number) => number, wallWeight?: (north: number, east: number) => number): Hydrology {
   const lines = d.lines;
   // How freely a course may wander off its lattice cells (1) or keeps to them (PINNED_WANDER): a valley of the macro
   // ground (erosion.ts, `valleyDepth` per cell, >= 0) is the river's own, and its floor lies along the lattice path; a
@@ -481,7 +533,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // The floodplain's width changes only gradually along the river: inside a bend the nearest axis point jumps from
     // one stretch to another, and two different widths there would leave a step in the valley wall.
     smoothAlong(floodplain, Math.ceil(1500 / AXIS_SPACING), 3);
-    axes.push({ north, east, s, area, level, halfWidth, belt, meander, wavelength, floodplain, influence });
+    axes.push({ north, east, s, area, level, halfWidth, belt, meander, wavelength, floodplain, influence, ground: pre[li].ground, gapR: new Float64Array(count), gapL: new Float64Array(count) });
   }
 
   // --- Water under the other valleys' carving. Each line's level came from the natural ground along it, but the
@@ -510,6 +562,37 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     return out;
   });
   const valleyIndex = new SegmentIndex(axes, (li, i) => Math.max(valleyReach[li][i], valleyReach[li][i + 1]), VALLEY_CELL);
+  // The terrain's valleys blend each line's stretches about a switch of its nearest point (SegmentIndex.perLineBlend),
+  // their segments listed VALLEY_BAND_MAX further out (the levels above were read with the nearest alone, as before).
+  const valleyBlend = new SegmentIndex(axes, (li, i) => Math.max(valleyReach[li][i], valleyReach[li][i + 1]) + VALLEY_BAND_MAX, VALLEY_CELL);
+  /** A line's valley at a point (valleyBlend's segments for it), into o. */
+  const blendValley = (li: number, dist: number, n: number, o: ValleyNear): void => {
+    const a = axes[li];
+    const B = valleyBlend;
+    let lv = 0, fp = 0, inf = 0, gp = 0, sw = 0, s = 0, top = -1;
+    for (let q = 0; q < n; q++) {
+      const i = B.bSeg[q];
+      const t = B.bT[q];
+      const w = B.bW[q];
+      lv += w * (a.level[i] + (a.level[i + 1] - a.level[i]) * t);
+      fp += w * (a.floodplain[i] + (a.floodplain[i + 1] - a.floodplain[i]) * t);
+      inf += w * (a.influence[i] + (a.influence[i + 1] - a.influence[i]) * t);
+      gp += w * gapAt(a, i, t, B.bSide[q]);
+      sw += w * (a.belt[i] + a.halfWidth[i] + (a.belt[i + 1] + a.halfWidth[i + 1] - a.belt[i] - a.halfWidth[i]) * t);
+      if (w > top) {
+        top = w;
+        s = a.s[i] + (a.s[i + 1] - a.s[i]) * t;
+      }
+    }
+    o.dist = dist;
+    o.level = lv;
+    o.floodplain = fp;
+    o.influence = inf;
+    o.gap = gp;
+    o.swing = sw;
+    o.line = li;
+    o.s = s;
+  };
   for (let li = 0; li < lines.length; li++) {
     const L = lines[li];
     const P = pre[li];
@@ -560,6 +643,31 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     levelProbe.on?.('E', li, pre[li]);
     const a = axes[li];
     confineBelt(natural, a.north, a.east, a.level, a.belt, a.wavelength);
+  }
+  // The walls' gaps (wallLift): on each side, how far the ground where the wall starts (past the floodplain and the
+  // channel's swing, wallStart) stands over the valley's floor, where the threshold hillslopes' walls stand about it;
+  // every other sample, the ones between interpolated.
+  if (wallWeight) {
+    for (const a of axes) {
+      const m = a.north.length;
+      for (let i = 0; i < m; i++) {
+        if (i % 2 === 1 && i < m - 1) continue;
+        if (!(wallWeight(a.north[i], a.east[i]) > 0)) continue;
+        const i0 = Math.max(0, i - 1);
+        const i1 = Math.min(m - 1, i + 1);
+        const tl = Math.hypot(a.north[i1] - a.north[i0], a.east[i1] - a.east[i0]) || 1;
+        const de = Math.max(a.floodplain[i], a.belt[i] + a.halfWidth[i] + SWING_KEEP);
+        const qn = (-(a.east[i1] - a.east[i0]) / tl) * de;
+        const qe = ((a.north[i1] - a.north[i0]) / tl) * de;
+        const floor = a.level[i] + FLOOR_OVER;
+        a.gapR[i] = Math.max(0, natural(a.north[i] + qn, a.east[i] + qe) - floor);
+        a.gapL[i] = Math.max(0, natural(a.north[i] - qn, a.east[i] - qe) - floor);
+      }
+      for (let i = 1; i < m - 1; i += 2) {
+        a.gapR[i] = 0.5 * (a.gapR[i - 1] + a.gapR[i + 1]);
+        a.gapL[i] = 0.5 * (a.gapL[i - 1] + a.gapL[i + 1]);
+      }
+    }
   }
   /**
    * The highest water a channel point at (pn, pe) may hold given the valleys' carve there (carveNetwork's valley cut
@@ -736,16 +844,32 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   for (const P of pre) for (let i = 0; i < P.wet.length; i++) if (P.wet[i] && P.poolOf[i] >= 0) riverPools[P.poolOf[i]] = 1;
   // The ground the streams run down: the terrain's, with the rivers' valleys cut in (as carveNetwork cuts them); they
   // are routed over it without its small-scale relief.
+  const routeValley: ValleyNear = { dist: 0, level: 0, floodplain: 0, influence: 0, gap: 0, swing: 0 };
   const carvedGround = (h: number, pn: number, pe: number): number => {
-    valleyIndex.perLine(pn, pe, (lj, k, t, dd) => {
-      const v = axes[lj];
-      const f = v.floodplain[k] + (v.floodplain[k + 1] - v.floodplain[k]) * t;
-      const I = v.influence[k] + (v.influence[k + 1] - v.influence[k]) * t;
+    let w = -1;
+    // (Each line's nearest stretch, as the levels were read: the terrain's blend about a switch moves the ground by a
+    // few metres at most, and the streams traced on it would wander off into other courses for it.)
+    valleyIndex.perLine(pn, pe, (lj, k, t, dd, side) => {
+      const v = routeValley;
+      const a = axes[lj];
+      v.floodplain = a.floodplain[k] + (a.floodplain[k + 1] - a.floodplain[k]) * t;
+      v.influence = a.influence[k] + (a.influence[k + 1] - a.influence[k]) * t;
+      v.level = a.level[k] + (a.level[k + 1] - a.level[k]) * t;
+      v.gap = gapAt(a, k, t, side);
+      v.swing = a.belt[k] + a.halfWidth[k] + (a.belt[k + 1] + a.halfWidth[k + 1] - a.belt[k] - a.halfWidth[k]) * t;
+      const f = v.floodplain;
+      const I = v.influence;
       if (dd >= f + I) return false;
-      const lv = v.level[k] + (v.level[k + 1] - v.level[k]) * t;
+      const lv = v.level;
       const excess = Math.max(0, h - lv - valleyWall(f + I, f));
       const u = Math.min(1, Math.max(0, (dd - f) / I));
-      const carved = sminN(h, lv + valleyWall(dd, f) + excess * u * u, 4);
+      let target = lv + valleyWall(dd, f) + excess * u * u;
+      // (As the terrain carves it: the threshold hillslopes' walls only lowered, wallLift.)
+      if (wallWeight && dd > f) {
+        if (w < 0) w = wallWeight(pn, pe);
+        target = wallLift(target, h, (dd - f) / I, I, v.gap, w, wallStart(f, I, v.swing));
+      }
+      const carved = sminN(h, target, 4);
       h += (carved - h) * (1 - smooth(f + I * 0.75, f + I, dd));
       return false;
     });
@@ -991,20 +1115,16 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const channelHits: ChannelNear[] = [];
   const network: NetworkQuery = {
     valleys(pn, pe, out) {
-      return valleyIndex.perLine(pn, pe, (li, i, t, dist, _side, _u, k) => {
-        const a = axes[li];
-        const o = out[k] ?? (out[k] = { dist: 0, level: 0, floodplain: 0, influence: 0 });
-        o.dist = dist;
-        o.level = a.level[i] + (a.level[i + 1] - a.level[i]) * t;
-        o.floodplain = a.floodplain[i] + (a.floodplain[i + 1] - a.floodplain[i]) * t;
-        o.influence = a.influence[i] + (a.influence[i + 1] - a.influence[i]) * t;
+      return valleyBlend.perLineBlend(pn, pe, valleyBand, (li, dist, n, k) => {
+        const o = out[k] ?? (out[k] = { dist: 0, level: 0, floodplain: 0, influence: 0, gap: 0, swing: 0 });
+        blendValley(li, dist, n, o);
         return dist < o.floodplain + o.influence;
       });
     },
     channels(pn, pe, out) {
       return channelIndex.perLine(pn, pe, (li, i, t, dist, side, u, k) => {
         const r = allLines[li];
-        const o = out[k] ?? (out[k] = { line: 0, dist: 0, side: 0, level: 0, halfWidth: 0, s: 0, beyondSource: 0, kind: 0, breach: 0, reach: 0 });
+        const o = out[k] ?? (out[k] = { line: 0, dist: 0, side: 0, level: 0, halfWidth: 0, s: 0, beyondSource: 0, kind: 0, breach: 0, reach: 0, cut: 0 });
         o.line = li;
         o.kind = kinds[li];
         o.dist = dist;
@@ -1018,6 +1138,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
           const b = (r as { breach: Float64Array }).breach;
           o.breach = b[i] + (b[i + 1] - b[i]) * t;
           o.reach = Math.max(br[i], br[i + 1]);
+          const ct = (r as { cut: Float64Array }).cut;
+          o.cut = ct[i] + (ct[i + 1] - ct[i]) * t;
           return dist < Math.max(o.halfWidth + CHANNEL_MARGIN, o.reach);
         }
         o.breach = 0;
@@ -1757,6 +1879,92 @@ class SegmentIndex {
       const de = l.east[i + 1] - l.east[i];
       const side = dn * (pe - l.east[i]) - de * (pn - l.north[i]) >= 0 ? 1 : -1;
       if (f(li, i, this.bestT[li], Math.sqrt(this.bestD[li]), side, this.bestU[li], count)) count++;
+    }
+    return count;
+  }
+
+  /** perLineBlend's segments for the line it is calling back on: segment, parameter, side, weight (summing to 1). */
+  bSeg = new Int32Array(64);
+  bT = new Float64Array(64);
+  bSide = new Float64Array(64);
+  bW = new Float64Array(64);
+  private bD = new Float64Array(64);
+
+  /**
+   * As perLine, but for every line listed at the point its stretches within band(d) of its nearest (d) are blended:
+   * f is called with the line, d and the number of segments, left in bSeg / bT / bSide / bW, weighted 1 at the nearest
+   * down to 0 at d + band. A stretch is a segment the point lies square to (or the nearest point, an end). A line's nearest point jumps from one stretch to another across a bend's inside (the two
+   * equally far); the stretches' levels and widths differ there, and taken from the nearest alone they left a step in
+   * the valley's walls along the line where it switched. (The cells list each line's segments in order, together.)
+   */
+  perLineBlend(pn: number, pe: number, band: (d: number) => number, f: (line: number, dist: number, n: number, k: number) => boolean): number {
+    const cx = Math.floor(pn / this.cell) - this.cn0;
+    const cy = Math.floor(pe / this.cell) - this.ce0;
+    if (cx < 0 || cy < 0 || cx >= this.rows || cy >= this.cols) return 0;
+    const c = cx * this.cols + cy;
+    const k0 = this.start[c];
+    const k1 = this.start[c + 1];
+    const list = this.entries;
+    let count = 0;
+    for (let g = k0; g < k1; ) {
+      const li = list[g];
+      let g1 = g;
+      while (g1 < k1 && list[g1] === li) g1 += 2;
+      const m = (g1 - g) >> 1;
+      if (m > this.bD.length) {
+        this.bD = new Float64Array(2 * m);
+        this.bSeg = new Int32Array(2 * m);
+        this.bT = new Float64Array(2 * m);
+        this.bSide = new Float64Array(2 * m);
+        this.bW = new Float64Array(2 * m);
+      }
+      const l = this.lines[li];
+      let best = Infinity;
+      for (let q = 0; q < m; q++) {
+        const i = list[g + 2 * q + 1];
+        const an = l.north[i];
+        const ae = l.east[i];
+        const dn = l.north[i + 1] - an;
+        const de = l.east[i + 1] - ae;
+        const l2 = dn * dn + de * de;
+        const u = l2 > 0 ? ((pn - an) * dn + (pe - ae) * de) / l2 : 0;
+        const t = u < 0 ? 0 : u > 1 ? 1 : u;
+        const qn = an + dn * t - pn;
+        const qe = ae + de * t - pe;
+        const d = Math.sqrt(qn * qn + qe * qe);
+        // (Only a segment the point lies square to is a stretch of its own; one whose nearest point is its end is the
+        // stretch running on through that point, and blending it would smooth the valley along the line.)
+        this.bD[q] = u > 0 && u < 1 ? d : -d;
+        if (d < best) best = d;
+      }
+      const B = band(best);
+      let n = 0;
+      let sum = 0;
+      let ends = 0;
+      for (let q = 0; q < m; q++) {
+        const dq = this.bD[q];
+        // (An end counts once, where it is the nearest: at a bend's outside, where no segment lies square to the point.)
+        if (dq < 0 && (-dq > best || ends++ > 0)) continue;
+        const x = (Math.abs(dq) - best) / B;
+        if (x >= 1) continue;
+        const w = 1 - x * x * (3 - 2 * x);
+        const i = list[g + 2 * q + 1];
+        const an = l.north[i];
+        const ae = l.east[i];
+        const dn = l.north[i + 1] - an;
+        const de = l.east[i + 1] - ae;
+        const l2 = dn * dn + de * de;
+        const u = l2 > 0 ? ((pn - an) * dn + (pe - ae) * de) / l2 : 0;
+        this.bSeg[n] = i;
+        this.bT[n] = u < 0 ? 0 : u > 1 ? 1 : u;
+        this.bSide[n] = dn * (pe - ae) - de * (pn - an) >= 0 ? 1 : -1;
+        this.bW[n] = w;
+        sum += w;
+        n++;
+      }
+      for (let q = 0; q < n; q++) this.bW[q] /= sum;
+      if (f(li, best, n, count)) count++;
+      g = g1;
     }
     return count;
   }
