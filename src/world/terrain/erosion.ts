@@ -28,6 +28,7 @@
 
 import { DOMAIN_HALF, DRAIN_CELL, HOME_MOUND, HOME_RADIUS, LAKE_HOME_CLEAR, RIVER_AREA } from './drainage';
 import type { SlopeField } from './hillslopes';
+import { placeBlock, type Structure } from './structure';
 
 /** Settings of the steady-state model. */
 export interface SteadyParams {
@@ -54,7 +55,7 @@ export interface SteadyParams {
  */
 export const STEADY: SteadyParams = { iterations: 30, ridge: 400, m: 0.6, sc: 0.45, grade: 0.06 };
 /** Bump when the model or its inputs change meaning: part of the cache key (macroCache.ts). */
-export const MODEL_VERSION = 'ss3';
+export const MODEL_VERSION = 'ss4';
 
 /** Catchment, cells, from which a diagonal step of a channel lowers the cells beside it. */
 const CORNER_AREA = 10;
@@ -112,6 +113,10 @@ export interface ModelInputs {
   /** How many of the noise ground's hollows are kept as lakes (keptHollows). */
   lakes: number;
   home: { north: number; east: number; heading: number };
+  /** The mountains' structure (structure.ts: erodibility bands, faults' uplift steps, the front block); null: none. */
+  struct?: Structure | null;
+  /** The uplift's fade toward the coast per cell (ModelSample.fade). */
+  fade?: Float32Array;
 }
 
 /**
@@ -243,7 +248,7 @@ export function modelInputs(sample: (north: number, east: number, out: ModelSamp
   if (orogen) ur.set(orogenEnvelope(ur, n, orogen));
   for (let c = 0; c < N; c++) u[c] = Math.max(0, (ur[c] + hu[c]) * fade[c]);
   const kept = lakes ? keptHollows(h0, fixed, ur, n, home, cap, sill) : 0;
-  return { n, h0, mound, u, ur, g, fixed, hard, cap, sill, lakes: kept, home: { north: home.north, east: home.east, heading: home.heading } };
+  return { n, h0, mound, u, ur, g, fixed, hard, cap, sill, lakes: kept, home: { north: home.north, east: home.east, heading: home.heading }, struct: null, fade };
 }
 
 /** What modelInputs' `sample` writes at a lattice node. */
@@ -412,6 +417,14 @@ export function modelKey(inp: ModelInputs, p: SteadyParams = STEADY): string {
   mixIn(inp.hard);
   mixIn(inp.cap);
   mixIn(inp.sill);
+  if (inp.struct) {
+    mixIn(inp.struct.k);
+    mixIn(inp.struct.start);
+    mixIn(inp.struct.fault);
+    mixIn(inp.struct.block);
+    const q = inp.struct.p;
+    mixIn(new Float64Array([q.blockRate, q.blockA, q.blockRaise, q.blockIter, q.blockSpan, q.blockGorge]));
+  }
   mixIn(new Float64Array([p.iterations, p.ridge, p.m, p.sc, p.grade, inp.home.north, inp.home.east, inp.home.heading]));
   return `${MODEL_VERSION}-${(h >>> 0).toString(16).padStart(8, '0')}`;
 }
@@ -421,14 +434,28 @@ export function modelKey(inp: ModelInputs, p: SteadyParams = STEADY): string {
  * cache can hand it over: macroCache.ts). Fixed cells keep their height; a held cell (`hard` < 1) keeps that share
  * of its noise height; under the home runway's corridors (`cap`) a cell rises no higher than its noise height.
  */
+/** Probes: the front block's weight the last steadyLattice placed (structure.ts placeBlock), null if none. */
+export let lastBlock: Float32Array | null = null;
 export function steadyLattice(inp: ModelInputs, p: SteadyParams = STEADY): Float32Array {
-  const { n, h0, u, g, fixed, hard, cap, sill } = inp;
+  lastBlock = null;
+  const { n, h0, g, fixed, hard, cap, sill } = inp;
+  const st = inp.struct ?? null;
+  const N = n * n;
   const h = h0.slice();
+  let u = inp.u;
+  // The structure (structure.ts): the faults' steps of the uplift rate, the erodibility bands and the start surface
+  // the first routing reads (the soft belts lower).
+  if (st) {
+    u = new Float32Array(N);
+    for (let c = 0; c < N; c++) u[c] = inp.u[c] * st.fault[c];
+    for (let c = 0; c < N; c++) if (!fixed[c]) h[c] += st.start[c] * hard[c];
+  }
+  const kf = st ? st.k : null;
   const R = new SteadyRouter(n);
   const L = DRAIN_CELL;
   const per = L / 1000;
-  for (let s = 0; s < p.iterations; s++) {
-    R.route(h, fixed);
+  const solve = (uu: Float32Array, hold: Int32Array | null): void => {
+    R.route(h, fixed, hold);
     const { receiver, order, area, diag } = R;
     for (let k = 0; k < order.length; k++) {
       const c = order[k];
@@ -436,7 +463,7 @@ export function steadyLattice(inp: ModelInputs, p: SteadyParams = STEADY): Float
       if (r < 0 || fixed[c]) continue;
       const a = area[c];
       const dist = diag[c] ? Math.SQRT2 : 1;
-      const rise = Math.max(p.ridge * per * u[c] * Math.pow(a, -p.m), p.grade * g[c] * L * Math.pow(a, -0.45)) * dist;
+      const rise = Math.max((p.ridge * per * uu[c] * Math.pow(a, -p.m)) / (kf ? kf[c] : 1), p.grade * g[c] * L * Math.pow(a, -0.45)) * dist;
       let hs = Math.max(h[r], LAND_MIN) + Math.min(rise, p.sc * L * dist);
       // Under the home runway's protected surfaces the ground may fall but not rise.
       if (cap[c] > 0 && hs > h0[c]) hs -= cap[c] * (hs - h0[c]);
@@ -444,6 +471,55 @@ export function steadyLattice(inp: ModelInputs, p: SteadyParams = STEADY): Float
       if (hs < sill[c]) hs = sill[c];
       const k0 = hard[c];
       h[c] = k0 >= 1 ? hs : h0[c] + k0 * (hs - h0[c]);
+    }
+  };
+  for (let s = 0; s < p.iterations; s++) solve(u, null);
+  // The late front block (structure.ts): the tree as it stands holds the courses of its rivers of blockA or more
+  // (antecedent gorges); the block's ground rises at once by blockRaise and its rate is raised to blockRate, and the
+  // rest is routed again over it, turned aside behind it where it cannot hold a course over the rise.
+  if (st && st.p.blockRate > 0) {
+    const block = placeBlock(st, n, R.receiver, R.area, R.order);
+    lastBlock = block;
+    let any = false;
+    for (let c = 0; c < N; c++) if (block[c] > 0) any = true;
+    if (any) {
+      const hold = new Int32Array(N).fill(-1);
+      for (let c = 0; c < N; c++) if (!fixed[c] && R.area[c] >= st.p.blockA && R.receiver[c] >= 0) hold[c] = R.receiver[c];
+      // (The block rises less beside a held river, within st.p.blockGorge cells: its gorge is wider than one cell, so
+      // the drawn river's channel is not cut into a wall standing at its margin.)
+      const gorge = new Float32Array(N).fill(1);
+      const G = st.p.blockGorge;
+      if (G > 0) {
+        for (let c = 0; c < N; c++) {
+          if (hold[c] < 0 || block[c] <= 0) continue;
+          const ci = (c / n) | 0;
+          const cj = c - ci * n;
+          for (let di = -G; di <= G; di++) {
+            for (let dj = -G; dj <= G; dj++) {
+              const ii = ci + di;
+              const jj = cj + dj;
+              if (ii < 0 || jj < 0 || ii >= n || jj >= n) continue;
+              const d = Math.hypot(di, dj);
+              const f = Math.min(1, d / (G + 1));
+              const q = ii * n + jj;
+              if (f < gorge[q]) gorge[q] = f;
+            }
+          }
+        }
+      }
+      const ub = new Float32Array(N);
+      const hr = h.slice();
+      for (let c = 0; c < N; c++) {
+        const w = block[c] * (hold[c] >= 0 ? 1 : gorge[c]);
+        ub[c] = u[c] + w * Math.max(0, st.p.blockRate * (inp.fade ? inp.fade[c] : 1) - u[c]);
+        if (!fixed[c] && hold[c] < 0) hr[c] += st.p.blockRaise * w * Math.min(1, hard[c]);
+      }
+      // Routed once over the risen block (the big rivers held), then the heights solved on that routing; then
+      // blockIter free iterations (the big rivers still held), where the rest may capture each other again.
+      R.route(hr, fixed, hold);
+      const all = Int32Array.from(R.receiver);
+      solve(ub, all);
+      for (let s = 0; s < st.p.blockIter; s++) solve(ub, hold);
     }
   }
   return h;
@@ -1329,7 +1405,11 @@ function markFloor(floor: Uint8Array, N: number, n0: number, e0: number, n1: num
 }
 
 /** Beyond a drawn river's own floor (markCourse) the relief finer than the lattice comes back over this, m. */
-const COURSE_TAPER = 500;
+let COURSE_TAPER = 500;
+/** Probes: the course mark's taper, m. */
+export function setCourseTaper(v: number): void {
+  COURSE_TAPER = v;
+}
 /** markCourse marks a valley axis in chords of about this, m. */
 const COURSE_CHORD = 480;
 
@@ -1484,7 +1564,9 @@ export class SteadyRouter {
     this.donors = new Int32Array(N);
   }
 
-  route(h: Float32Array, fixed: Uint8Array): void {
+  /** Route `h`; where `hold` is set (>= 0) a cell keeps that receiver (structure.ts: the front block's antecedent
+   * rivers, whose held courses run down to base level). */
+  route(h: Float32Array, fixed: Uint8Array, hold: Int32Array | null = null): void {
     const { n, receiver, filled, done, pit, heap, order, area, diag } = this;
     const N = n * n;
     done.fill(0);
@@ -1541,6 +1623,7 @@ export class SteadyRouter {
       }
       if (best >= 0) receiver[c] = best;
     }
+    if (hold) for (let c = 0; c < N; c++) if (hold[c] >= 0 && !fixed[c]) receiver[c] = hold[c];
     for (let c = 0; c < N; c++) {
       const r = receiver[c];
       diag[c] = r >= 0 && ((r / n) | 0) !== ((c / n) | 0) && r % n !== c % n ? 1 : 0;

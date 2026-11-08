@@ -11,7 +11,7 @@
 //
 // Every function here is unbounded: any (north, east) gives a valid answer.
 
-import { onWorldSeed, setWorldSeed, worldSeed } from '../worldSeed';
+import { onWorldSeed, seeded, setWorldSeed, worldSeed } from '../worldSeed';
 import { macroCacheBegin, macroCachedAt, macroCachedGradAt, macroCacheEnd, macroCacheRecord, seededOrogen, setLayoutGround, type Macro, type MacroGrad } from './seededLayout';
 import { clamp, type Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
@@ -22,6 +22,8 @@ import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth, type Dra
 import { attachSlopes, buildErosion, CUT_CELL as CUT_CELL_M, CUT_N, erosionGullies, upsample, markCourse, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
 import { buildNetworkHydrology, valleyInfluence, wallLift, wallStart } from './riverNetwork';
 import { riverCore, slopeKey, slopeParams, thresholdSlopes, type SlopeField } from './hillslopes';
+import { structParams, structureFor } from './structure';
+import { buildFaults } from './faults';
 import { fbm, gnoise, gullies, gulliesFast, type Deriv } from './noise';
 import { era, isPresent } from '../era/eraState';
 import { volcanoBound, volcanoHeight, volcanoMerge } from './volcano';
@@ -755,6 +757,9 @@ function buildWater(): void {
       macroCacheRecord(n, e);
     }, { north: home.north, east: home.east, heading: AIRPORT.runway.heading }, seededOrogen(), true);
     macroCacheEnd();
+    // The mountains' structure (structure.ts: erodibility bands along strike, the faults' uplift steps, the front
+    // block), on a seed with a wide orogen only (narrow ranges keep their character).
+    if (seededOrogen()) inputs.struct = structureFor(inputs, buildFaults(), seeded(STRUCT_SALT), structParams());
     seededInputs = inputs;
     // The model's cells: handed over for this seed (macroCache.ts: another thread or the cache worked them out), or
     // worked out here.
@@ -865,6 +870,8 @@ function slopeWall(north: number, east: number): number {
  * past the lattice's edge and fades out (erosion.ts OUTSIDE_FADE), the slopes not (the terrain reads none of the grid
  * within its outer rows), so they are gone well inside it. */
 const SLOPE_EDGE = [10000, 16000];
+/** The structure's noise salt (structure.ts). */
+const STRUCT_SALT = 0x57c3;
 /** riverNetwork.ts floorHalf's margin for the fine grid (FLOOR_GRID), taken off its half-widths for the rivers' cores. */
 const FLOOR_GRID_MARGIN = 250;
 /** The gullies' share of their relief in the threshold hillslopes' mountains (hillslopes.ts SlopeParams.gully), for the
@@ -872,7 +879,9 @@ const FLOOR_GRID_MARGIN = 250;
 let slopeGully = 1;
 let slopeFine = 1;
 function mountainSlopes(inputs: ModelInputs, sp: ReturnType<typeof slopeParams>, axes: ReadonlyArray<{ north: ArrayLike<number>; east: ArrayLike<number>; half: ArrayLike<number>; area: ArrayLike<number> }>): SlopeField {
-  const ur = upsample(inputs.ur, inputs.n);
+  // (The front block, structure.ts, stands outside the orogen's mask: it takes the mountains' slopes by its weight.)
+  const blk = inputs.struct ? inputs.struct.block : null;
+  const ur = upsample(blk ? Float32Array.from(inputs.ur, (v, c) => Math.max(v, sp.onset + (sp.full - sp.onset) * blk[c])) : inputs.ur, inputs.n);
   const hard = upsample(inputs.hard, inputs.n);
   const cap = upsample(inputs.cap, inputs.n);
   const w = new Float32Array(ur.length);

@@ -225,7 +225,7 @@ export interface TreeStats {
   exits: Exit[];
   hack: { h: number; c: number; hMtn: number };
   re: { basins: number[]; exits: number[] };
-  mouths: Array<{ outlet: number; area: number; topExit: number; exits10: number; sea: boolean }>;
+  mouths: Array<{ outlet: number; area: number; topExit: number; exits10: number; sea: boolean; exitSum?: number }>;
   classArea: number[];
   frontCells: number;
   text: string;
@@ -378,7 +378,7 @@ export function measureTree(label: string, t: Tree, cls: Uint8Array, isSea: (c: 
   const mouths: TreeStats['mouths'] = [];
   for (const [o, es] of byOutlet) {
     if (area[o] < 500) continue;
-    mouths.push({ outlet: o, area: area[o], topExit: es[0].area, exits10: es.filter((e) => e.area >= 10).length, sea: isSea(o) });
+    mouths.push({ outlet: o, area: area[o], topExit: es[0].area, exits10: es.filter((e) => e.area >= 10).length, sea: isSea(o), exitSum: es.reduce((s2, e) => s2 + e.area, 0) });
   }
   mouths.sort((a, b) => b.area - a.area);
 
