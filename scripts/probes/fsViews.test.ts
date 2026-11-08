@@ -37,7 +37,7 @@ it('fs views', () => {
       if (r.kind !== 1 || (r.joins ?? -1) < 0 || R[r.joins!].kind !== 0 || r.end !== 'channel') return;
       // (A chain stream: its head on a chain node of the slopes' routing, gullies.ts, at the hand-off.)
       const hq = Math.round((r.north[0] - gn0.origin) / gn0.cell) * gn0.n + Math.round((r.east[0] - gn0.origin) / gn0.cell);
-      if (!gn0.dir[hq] || r.area![0] > 6) return;
+      if (!gn0.dir[hq] || r.area![0] > 11) return;
       const A = r.area![r.area!.length - 1], L = r.s[r.s.length - 1];
       if (A < 15 || A > 80 || L < 3000) return;
       const m = r.north.length - 1;
@@ -75,7 +75,7 @@ it('fs views', () => {
       let best: { li: number; path: Array<{ n: number; e: number; A: number; lv: number }> } | null = null;
       for (let li = 0; li < R.length && !best; li++) {
         const r = R[li];
-        if (r.kind !== 1 || r.area![0] < 4.9 || r.area![0] > 8) continue;
+        if (r.kind !== 1 || r.area![0] < 9.9 || r.area![0] > 14) continue;
         // Follow the lines to the sea.
         const pts: Array<{ n: number; e: number; A: number; lv: number }> = [];
         let cur = li, s0 = 0, guard = 0, ok = false;
@@ -109,7 +109,7 @@ it('fs views', () => {
       }
       if (best) {
         const P = best.path;
-        const targets = [0.4, 1.5, 5, 20, 200, 2000, 1e9];
+        const targets = [0.4, 1.5, 5, 10, 20, 200, 2000, 1e9];
         let j = 0;
         for (const T of targets) {
           while (j < P.length - 1 && P[j].A < T) j++;

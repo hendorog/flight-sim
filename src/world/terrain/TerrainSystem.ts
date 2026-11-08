@@ -251,7 +251,7 @@ export class TerrainSystem implements Subsystem {
     this.vegetation?.update(dt, ctx);
     this.boulders?.update(ctx.camera);
     this.rills?.update(ctx.camera);
-    this.updateSmallRibbons(ctx.camera);
+    if (this.smallRibbons?.length) this.updateSmallRibbons(ctx.camera);
     this.grass?.update(dt, ctx.camera);
     if (!isPresent()) {
       updateEraUniforms(dt, ctx.sky);

@@ -15,7 +15,7 @@ import { DOMAIN_HALF, LAKE_RASTER } from './drainage';
 
 /** Catchment, km², from which a chain is traced as a stream (a ribbon with its channel) rather than painted by the
  * ground shader (rills.ts): the hand-off between the two, at one width (streams.ts channelHalfWidth). */
-export const CHAIN_AREA = 5;
+export const CHAIN_AREA = 10;
 /** Probes: the hand-off's catchment (null: CHAIN_AREA). */
 let chainOverride: number | null = null;
 export function setChainArea(a: number | null): void {
@@ -34,6 +34,8 @@ export interface GullyNet {
   area: Float32Array;
   /** SlopeField.core: how far a node lies on a drawn river's own floor (held by the pass), 0-255. */
   core: Uint8Array;
+  /** SlopeField.h: the ground the pass built, m. */
+  h: Float32Array;
 }
 
 let lastSlopes: SlopeField | null = null;
@@ -78,7 +80,7 @@ export function gullyNetOf(sl: SlopeField | null | undefined): GullyNet | null {
     if (--indeg[r] === 0) queue[tail++] = r;
   }
   lastSlopes = sl;
-  lastNet = { n, cell: LAKE_RASTER, origin: -DOMAIN_HALF, dir, area, core: sl.core };
+  lastNet = { n, cell: LAKE_RASTER, origin: -DOMAIN_HALF, dir, area, core: sl.core, h: sl.h };
   return lastNet;
 }
 

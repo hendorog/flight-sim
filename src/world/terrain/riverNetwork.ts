@@ -895,6 +895,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   };
   tPhase.push(performance.now());
   const route = (pn: number, pe: number): number => carvedGround(smoothGround(pn, pe), pn, pe);
+  const netMs = { refine: 0, shape: 0, pitch: 0, flow: 0, index: 0 };
   const traced = traceStreams({ d, mask, route, rivers, riverPools, pinned });
   // A river whose head is in no lake begins where its water does: where the first stream (a feeder, streams.ts
   // feedHeads) or lattice tributary joins it, when that is within FEED_JOIN of the head - no trickle runs on above it.
@@ -939,7 +940,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // (An outlet's first samples keep its lake's level.)
     for (let i = 0; i < st.held - 1; i++) keep[i] = 1;
     // A steep stream is a cascade whose water follows the ground down between its samples.
+    const tR = performance.now();
     const f = refineSteep({ north: st.north, east: st.east, level: st.level, halfWidth: st.halfWidth, s: st.s, area: st.area, breach: st.breach, cut: st.cut }, keep, route);
+    netMs.refine += performance.now() - tR;
     const c = { north: f.north, east: f.east, level: f.level, halfWidth: f.halfWidth, s: f.s, breach: f.breach, cut: f.cut };
     streamLines.push(c);
     streamJoins.push(st.joins);
@@ -1029,7 +1032,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       // valley's fall, and its last reach as steep as those slopes.)
       ...(isChain(li) ? { alpine: () => false, confluence: CHAIN_CONFLUENCE } : { alpine }),
     }));
+    const tS = performance.now();
     const shaped = shapeLines(inputs, faultIndex, CONFLUENCE_GRADIENT);
+    netMs.shape += performance.now() - tS;
     for (let li = 0; li < allLines.length; li++) {
       // A stream lowered (a gorge below a fall, its last reach a cascade down to its mouth) runs that much deeper
       // under the ground: its breach (streams.ts) follows.
@@ -1093,10 +1098,13 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       lipsOf[li] = lipsOf[li].map((k) => r.map[k]);
     }
     pitchReport.ms = performance.now() - tp;
+    netMs.pitch = pitchReport.ms;
     if (levelProbe.on) for (let li = 0; li < nR; li++) levelProbe.on('pitch', li, allLines[li]);
   }
   tPhase.push(performance.now());
+  const tF = performance.now();
   const flows = allLines.map((c, li) => flowOf(c, lipsOf[li]));
+  netMs.flow += performance.now() - tF;
   // The stones on each bed (falls.ts bedGrain).
   const feetOf: Array<Array<{ index: number; height: number }>> = allLines.map(() => []);
   for (const f of falls) feetOf[f.line].push({ index: f.index, height: f.height });
@@ -1123,11 +1131,14 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     }
     return any ? r : null;
   });
+  const tI = performance.now();
   const channelIndex = new SegmentIndex(allLines, (li, i) => {
     const br = breachReach[li];
     return Math.max(li < nR ? CHANNEL_REACH : STREAM_REACH, br ? Math.max(br[i], br[i + 1]) : 0);
   }, CHANNEL_CELL);
   const wideIndex = channelIndex;
+  netMs.index = performance.now() - tI;
+  traced.report.netMs = netMs;
   tPhase.push(performance.now());
   traced.report.phases = tPhase.slice(1).map((t, i) => t - tPhase[i]);
   const oxbowIndex = new PolylineIndex(oxbows, 200, 100);

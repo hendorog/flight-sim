@@ -18,8 +18,8 @@ import { RIVER_AREA } from './drainage';
  * fully from the second (A about 0.15 and 1.2 km², streams.ts channelHalfWidth). */
 export const RILL_OPEN = [0.6, 2.0];
 /** A painted stream's bed turns to the traced streams' pale stones over this catchment, km² (to the hand-off,
- * gullies.ts CHAIN_AREA 5): the switch from one to the other shows no change of colour. */
-export const RILL_BIG = [1, 4];
+ * gullies.ts CHAIN_AREA 10): the switch from one to the other shows no change of colour. */
+export const RILL_BIG = [2, 8];
 /** Patches held around the viewer: SLOTS_SIDE² texture layers. */
 export const RILL_SLOTS_SIDE = 6;
 export const RILL_SLOTS = RILL_SLOTS_SIDE * RILL_SLOTS_SIDE;

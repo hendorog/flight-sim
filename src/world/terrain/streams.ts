@@ -287,9 +287,13 @@ export interface StreamReport {
   /** The gully chains traced as streams (gullies.ts): heads, traced, km, skipped (already on water), ms. */
   /** Chain streams that lowered the chain stream they join to their own water (build: CHAIN_LOWER). */
   chainLowered?: number;
+  /** riverNetwork.ts's sub-phases after the tracing (probes), ms. */
+  netMs?: Record<string, number>;
+  /** Ground samples the floor crossings took (probes). */
+  crossSamples?: number;
   /** Line sinks (probes): north, east of the last point, 0 a river / 1 a stream, the gap (m), 1 a chain stream. */
   sinkAt?: number[];
-  chains?: { heads: number; traced: number; km: number; skipped: number; crossed: number; ms: number };
+  chains?: { heads: number; traced: number; km: number; skipped: number; crossed: number; ms: number; msTrace: number; msBuild: number; samples0: number };
 }
 
 /**
@@ -649,7 +653,8 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     // between walls rising a raster step's threshold rise: smoothed off them, a stream would ride up a wall).
     let sn = pn.slice();
     let se = pe.slice();
-    const pin = p.pinned ? pn.map((v, i) => (p.pinned as (n: number, e: number) => number)(v, pe[i])) : null;
+    // (A chain's own points lie on its channel's floor: pinned without asking.)
+    const pin = p.pinned ? pn.map((v, i) => (pathArea && pa[i] === pa[i] ? 1 : (p.pinned as (n: number, e: number) => number)(v, pe[i]))) : null;
     for (let pass = 0; pass < 2; pass++) {
       const n2 = sn.slice();
       const e2 = se.slice();
@@ -707,7 +712,8 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     // wander on.)
     const seenG = pathArea ? new Float64Array(on.length).fill(NaN) : wander(on, oe, p.route, (n, e) => mask.at(n, e) > -Infinity, nR + streams.length, area0, pool >= 0, report);
     const before = on.length;
-    untangleCourse(on, oe, ol, og, pathArea ? oa : undefined);
+    // (A course along a chain alone cannot fold over itself: pinned to raster points, not smoothed.)
+    if (!pathArea || chainEnd < pa.length - 2) untangleCourse(on, oe, ol, og, pathArea ? oa : undefined);
     if (on.length !== before) seenG.fill(NaN);
     const count = on.length;
     const north = Float64Array.from(on);
@@ -723,7 +729,12 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     /** The samples whose ground was looked at (og then holds it, not the raster points' interpolated). */
     const seen = new Uint8Array(count);
     seen[0] = seen[count - 1] = 1;
+    // (A chain stream's samples along its chain are not looked at again: the chain runs from raster point to raster point
+    // on the slopes' channel floor, which falls straight between them, so the raster points' ground, interpolated, is
+    // the floor's.)
+    const onChain = (i: number): boolean => i < chainSamples;
     for (let i = 1; i < count - 1; i += LEVEL_EVERY) {
+      if (onChain(i)) continue;
       const g = seenG[i] === seenG[i] ? seenG[i] : groundAt(north[i], east[i]);
       if (seenG[i] !== seenG[i]) report.levelSamples++;
       og[i] = g;
@@ -734,7 +745,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     }
     // And the samples between where the level falls steeply there (a cliff can lie between two looked at).
     for (let i = 2; i < count - 1; i++) {
-      if ((i - 1) % LEVEL_EVERY === 0) continue;
+      if ((i - 1) % LEVEL_EVERY === 0 || onChain(i)) continue;
       const lo = i - ((i - 1) % LEVEL_EVERY);
       if (level[lo] - level[Math.min(count - 1, lo + LEVEL_EVERY)] < STEEP_RECHECK) continue;
       const g = groundAt(north[i], east[i]);
@@ -1174,7 +1185,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
   // pass ends, on down the ground as any trace). The longest chains first: a valley's trunk is one line, each side
   // gully's stream joins it.
   const gn = gullyNet();
-  const chainStats = { heads: 0, traced: 0, km: 0, skipped: 0, crossed: 0, ms: 0 };
+  const chainStats = { heads: 0, traced: 0, km: 0, skipped: 0, crossed: 0, ms: 0, msTrace: 0, msBuild: 0, samples0: report.samples };
   if (gn && gn.n === R) {
     const tc = performance.now();
     const AV = chainArea();
@@ -1258,15 +1269,16 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       }
     };
     for (let j = 0; j < streams.length; j++) indexLine(nR + j);
-    /** Whether a chain's raster point k lies in a V: the ground on both sides across its flow (the next points) stands
-     * V_SIDE m over it. */
+    /** Whether a chain's raster point k lies in a V: the slopes' ground (gullies.ts GullyNet.h) on both sides across its
+     * flow (the next points) stands V_SIDE m over it. */
+    const H = gn.h;
     const inV = (k: number, next: number): boolean => {
       const ki = Math.floor(k / R);
       const kj = k % R;
       const di = Math.floor(next / R) - ki;
       const dj = (next % R) - kj;
-      const g0 = G(k);
-      return G((ki + dj) * R + kj - di) - g0 > V_SIDE && G((ki - dj) * R + kj + di) - g0 > V_SIDE;
+      const g0 = H[k];
+      return H[(ki + dj) * R + kj - di] - g0 > V_SIDE && H[(ki - dj) * R + kj + di] - g0 > V_SIDE;
     };
     const crossTo = (k: number, low: number): End | null => {
       const kn = ORIGIN + Math.floor(k / R) * LAKE_RASTER;
@@ -1311,6 +1323,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       for (let t = FLOOR_STEP; t < L - r.halfWidth[bi]; t += FLOOR_STEP) {
         const f = t / L;
         const g = p.route(kn + (r.north[bi] - kn) * f, ke + (r.east[bi] - ke) * f);
+        report.crossSamples = (report.crossSamples ?? 0) + 1;
         if (g > g0 + FLOOR_RISE || g - STREAM_DEPTH < mouth - BACKUP_FILL) return null;
       }
       return { kind: 'channel', line: bl, idx: bi, pool: -1, ok: true };
@@ -1342,9 +1355,13 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         if ((cross = besideChain(r, low))) break;
       }
       const before = streams.length;
+      const tt = performance.now();
       const t = cross ? { path, end: cross } : trace(path, -1, G(q), true);
       if (cross) chainStats.crossed++;
+      const tb = performance.now();
       build(t.path, t.end, null, gn.area[q], -1, -1, pathA);
+      chainStats.msTrace += tb - tt;
+      chainStats.msBuild += performance.now() - tb;
       if (streams.length > before) {
         indexLine(nR + before);
         chainStats.traced++;
@@ -1352,6 +1369,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       }
     }
     chainStats.ms = performance.now() - tc;
+    chainStats.samples0 = report.samples - chainStats.samples0;
   }
   report.chains = chainStats;
   for (const c of heads) {
