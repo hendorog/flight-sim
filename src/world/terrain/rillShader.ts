@@ -17,6 +17,9 @@ import { RIVER_AREA } from './drainage';
 /** Water this wide (m) opens the canopy over a painted stream's bed and carries it through the fields: from the first,
  * fully from the second (A about 0.15 and 1.2 km², streams.ts channelHalfWidth). */
 export const RILL_OPEN = [0.6, 2.0];
+/** A painted stream's bed turns to the traced streams' pale stones over this catchment, km² (to the hand-off,
+ * gullies.ts CHAIN_AREA 5): the switch from one to the other shows no change of colour. */
+export const RILL_BIG = [1, 4];
 /** Patches held around the viewer: SLOTS_SIDE² texture layers. */
 export const RILL_SLOTS_SIDE = 6;
 export const RILL_SLOTS = RILL_SLOTS_SIDE * RILL_SLOTS_SIDE;
@@ -101,6 +104,9 @@ float tRillSize = 0.0;
 float tRillOpen = 0.0;
 // (The water's half-width on the nearest line, m: a stream wide enough opens the canopy and runs through the fields.)
 float tRillWaterW = 0.0;
+// (How far the nearest line is grown to a stream with a stony bed, as the traced streams it hands over to draw theirs:
+// from RILL_BIG[0] to RILL_BIG[1] km² of catchment.)
+float tRillBig = 0.0;
 vec2 tRillBank = vec2(0.0);
 // (A rill on steep ground, from about 22 to 32 degrees: a torrent bed, rock-walled and broken; see below. The
 // smallest, and those on gentler ground, stay lines of damp herbage.)
@@ -111,6 +117,7 @@ if (tDist < ${f(RILL_FADE_FAR)}) {
   if (rl.y > 0.001) {
     float lk = rillLook(rl.y);
     tRillSize = lk;
+    tRillBig = smoothstep(${f(rillSize(RILL_BIG[0]))}, ${f(rillSize(RILL_BIG[1]))}, rl.y);
     tRillSteep = smoothstep(0.925, 0.845, tUp) * smoothstep(0.15, 0.35, lk);
     // The pixel's footprint across the line (a line running toward the viewer is many pixels wide where one running
     // across the view is foreshortened into one); right on the line, where the vector to it vanishes, the whole one.
@@ -169,7 +176,7 @@ if (tRillOpen > 0.001) {
   acc.slope += tRillBank * 1.1 * open;
   if (tRillBed > 0.001) {
     // Stony where the ground is steep (and more so down the bigger ones), else dark wet soil under rushes.
-    float stones = clamp(steep * (0.85 + 0.3 * tRillSize + 0.6 * (nD.b - 0.5)), 0.0, 1.0);
+    float stones = max(clamp(steep * (0.85 + 0.3 * tRillSize + 0.6 * (nD.b - 0.5)), 0.0, 1.0), 0.85 * tRillBig);
     vec3 soil = mix(${P.bankRoughA} * 0.85, ${P.mud}, 0.35 * smoothstep(0.35, 0.7, nC.r + 0.3 * nD.a));
     vec3 bed = soil;
     float bedRough = 0.95;
@@ -180,14 +187,15 @@ if (tRillOpen > 0.001) {
       Mat g = layerTop(${gravelLayer}, tXZ, tDist);
       // (Wet dark rock and boulders on steep ground, in the shadow of its notch: darker and greyer than scree.)
       // (Mottled: boulders lighter, the gaps between them dark.)
-      bed = mix(soil, ${P.scree} * mix(0.6, 0.3 + 0.3 * smoothstep(0.35, 0.75, nD.a + 0.4 * (nC.b - 0.5)), tRillSteep) * g.albedo, stones);
+      bed = mix(soil, ${P.scree} * mix(mix(0.6, 0.3 + 0.3 * smoothstep(0.35, 0.75, nD.a + 0.4 * (nC.b - 0.5)), tRillSteep), 0.9, tRillBig) * g.albedo, stones);
       bedRough = mix(0.95, g.rough, stones);
       bedCavity = mix(1.0, g.cavity * mix(1.0, 0.65, tRillSteep), stones);
       bedSlope = g.slope * stones;
     }
     // In the shade of its notch, and wet toward the middle: a dark line cut into the cover.
-    bed *= 0.62 * mix(1.0, 0.7, max(tRillWet, 0.4 * smoothstep(0.3, 0.8, tRillBed)));
-    bed *= mix(1.0, 0.75, tRillSteep * smoothstep(0.3, 0.9, tRillBed));
+    // (A stream grown to a stony bed is pale as the traced streams' beds, not in a notch's shade.)
+    bed *= mix(0.62 * mix(1.0, 0.7, max(tRillWet, 0.4 * smoothstep(0.3, 0.8, tRillBed))), 0.95, tRillBig);
+    bed *= mix(1.0, 0.75, tRillSteep * smoothstep(0.3, 0.9, tRillBed) * (1.0 - tRillBig));
     float w = tRillBed * open;
     acc.albedo = mix(acc.albedo, bed, w);
     tFoliageW = max(tFoliageW, 0.6 * w * (1.0 - stones));
