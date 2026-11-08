@@ -60,6 +60,9 @@ const JOIN_PULL = 1000;
 const CONFLUENCE_GRADIENT = 0.3;
 /** ... a gully chain's stream (gullies.ts) as steep as the threshold slopes it comes down (hillslopes.ts SLOPES.sc). */
 const CHAIN_CONFLUENCE = 0.75;
+/** A stream's water narrows to this share of its width down a reach of gradient (m/m) from the first to the second. */
+const STEEP_SLOT = 0.45;
+const STEEP_NARROW = [0.05, 0.2];
 /** A hanging valley's lip lies where the alpine uplift (seededLayout.ts) is over this: high in the ranges. */
 const HANG_UPLIFT = 0.25;
 /** Catchment (km²) above which a river meanders on low ground, and the valley gradient below which it does. */
@@ -1105,6 +1108,14 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const tF = performance.now();
   const flows = allLines.map((c, li) => flowOf(c, lipsOf[li]));
   netMs.flow += performance.now() - tF;
+  // A stream's water down a steep reach (a step-pool cascade) runs in a slot among the boulders of its bed, narrower
+  // than on a gentle reach: STEEP_SLOT of its width from the first of STEEP_NARROW to the second (the reach's gradient).
+  // (Wide water down a steep face stood over the ground beside it: streams.ts channelHalfWidth.)
+  for (let li = nR; li < allLines.length; li++) {
+    const hw = allLines[li].halfWidth;
+    const g = flows[li].gradient;
+    for (let i = 0; i < hw.length; i++) hw[i] = Math.max(0.4, hw[i] * (1 - (1 - STEEP_SLOT) * smooth(STEEP_NARROW[0], STEEP_NARROW[1], g[i])));
+  }
   // The stones on each bed (falls.ts bedGrain).
   const feetOf: Array<Array<{ index: number; height: number }>> = allLines.map(() => []);
   for (const f of falls) feetOf[f.line].push({ index: f.index, height: f.height });
