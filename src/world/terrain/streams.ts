@@ -73,6 +73,9 @@ const SINK_CLEAR = 200;
 /** A chain stream (gullies.ts) joins a chain stream whose water lies up to this much over its own, m: that water is
  * lowered to its own from the junction on (build). */
 const CHAIN_LOWER = 40;
+/** A chain stream's samples between two of its points take the points' ground where the routing ground there is the
+ * slopes' own within this, m (away from a river's carved valley). */
+const CHAIN_PLAIN = 2;
 /** A chain come onto a river's floor (gullies.ts GullyNet.core) crosses it to the river's nearest sample within
  * FLOOR_CROSS m, where the ground on the way (looked at every FLOOR_STEP m) rises no more than FLOOR_RISE m over the
  * chain's there, and the water there lies no more than FLOOR_DROP m under the chain's ground (a floor, not a valley
@@ -674,6 +677,15 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     const ol: number[] = [];
     const og: number[] = [];
     const oa: number[] = [];
+    /** Whether each sample lies between two of a chain's points where the routing ground is the slopes' own (not a
+     * river's valley carved into it): its ground is the points' interpolated. */
+    const oc: boolean[] = [];
+    const gnH = pathArea ? gullyNet() : null;
+    const plain = (i: number): boolean => {
+      if (!gnH || !(pa[i] === pa[i])) return false;
+      const k = path[i - (first ? 1 : 0)];
+      return k !== undefined && Math.abs(G(k) - gnH.h[k]) < CHAIN_PLAIN;
+    };
     // (A chain stream: its points' catchment past the chain the last one's, gathering LATERAL_GAIN as a headwater's.)
     let chainEnd = -1;
     let chainSamples = 0;
@@ -698,6 +710,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         ol.push(lv[i] + (lv[i + 1] - lv[i]) * t);
         og.push(gp[i] + (gp[i + 1] - gp[i]) * t);
         if (pathArea) oa.push(pa[i] + (pa[i + 1] - pa[i]) * t);
+        oc.push(plain(i) && plain(i + 1));
         if (i < chainEnd) chainSamples++;
       }
     }
@@ -706,6 +719,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     ol.push(lv[lv.length - 1]);
     og.push(gp[gp.length - 1]);
     if (pathArea) oa.push(pa[pa.length - 1]);
+    oc.push(false);
     // A natural wander about the raster's course (wander): the ground under every LEVEL_EVERY-th sample (from the
     // first) is looked at on the way, and kept for the level below.
     // (Not a chain stream's: its chain is the V's floor, between walls at the threshold slope, so it has no floor to
@@ -732,7 +746,8 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     // (A chain stream's samples along its chain are not looked at again: the chain runs from raster point to raster point
     // on the slopes' channel floor, which falls straight between them, so the raster points' ground, interpolated, is
     // the floor's.)
-    const onChain = (i: number): boolean => i < chainSamples;
+    const untangled = !pathArea || chainEnd < pa.length - 2;
+    const onChain = (i: number): boolean => !untangled && !!oc[i];
     for (let i = 1; i < count - 1; i += LEVEL_EVERY) {
       if (onChain(i)) continue;
       const g = seenG[i] === seenG[i] ? seenG[i] : groundAt(north[i], east[i]);
