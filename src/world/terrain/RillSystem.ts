@@ -15,7 +15,7 @@ const MAX_INFLIGHT = 2;
  * blocks the patches share, rills.ts). */
 const RILL_WORKER = -1;
 /** Patch results kept after they leave the held set (flying back over them costs nothing), patches. */
-const KEEP = 24;
+const KEEP = 48;
 
 const keyOf = (pi: number, pj: number): string => `${pi},${pj}`;
 const slotOf = (pi: number, pj: number): number => {

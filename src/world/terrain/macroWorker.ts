@@ -16,5 +16,6 @@ self.onmessage = (e: MessageEvent<ModelRequest>) => {
   const reply: ModelReply = { model, ms: performance.now() - t0 };
   const moved: ArrayBuffer[] = model ? [model.lattice.buffer as ArrayBuffer] : [];
   if (model?.slopes) moved.push(model.slopes.h.buffer as ArrayBuffer, model.slopes.w.buffer as ArrayBuffer, model.slopes.chan.buffer as ArrayBuffer, model.slopes.core.buffer as ArrayBuffer);
+  if (model?.slopes?.dir) moved.push(model.slopes.dir.buffer as ArrayBuffer);
   (self as unknown as Worker).postMessage(reply, moved);
 };

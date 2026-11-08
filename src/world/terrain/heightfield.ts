@@ -19,6 +19,7 @@ import { AIRPORT, onHomeAirport } from '../../core/world';
 import { breachWall } from './streams';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth, type Drainage } from './drainage';
+import { gullyNetOf, setGullyNet } from './gullies';
 import { attachSlopes, buildErosion, CUT_CELL as CUT_CELL_M, CUT_N, erosionGullies, upsample, markCourse, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
 import { buildNetworkHydrology, valleyInfluence, wallLift, wallStart } from './riverNetwork';
 import { riverCore, slopeKey, slopeParams, thresholdSlopes, type SlopeField } from './hillslopes';
@@ -745,6 +746,7 @@ export const seededModel = (): SeededModel | null => lastModel;
 /** How long the last seeded world's airfield siting took, ms (probes). */
 export let siteMs = 0;
 function buildWater(): void {
+  setGullyNet(null);
   if (SEEDED) {
     // The macro model first (erosion.ts): the steady state of uplift and river incision over the noise ground's
     // drainage, which the terrain takes as its macro ground. Then the drainage, routed over the model's cells (they
@@ -818,6 +820,8 @@ function buildWater(): void {
         const slopes = (handed && handed.slopes) || mountainSlopes(inputs, sp, axes);
         if (!(handed && handed.slopes)) modelMs += performance.now() - t1;
         attachSlopes(eroded, slopes);
+        // (The slopes' own routing, with its catchment: the streams follow it, gullies.ts.)
+        setGullyNet(gullyNetOf(slopes));
         lastModel = { seed: worldSeed(), key, lattice: T, slopes };
         if (modelOnly) throw MODEL_DONE;
       }, slopePinned, slopeWall);

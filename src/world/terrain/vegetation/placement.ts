@@ -8,7 +8,8 @@
 
 import { computeBiome, CoverShapeField, makeBiome, makeCoverShape } from '../biome';
 import { GALLERY_FAR, GALLERY_FLOOR, GALLERY_NEAR, GALLERY_SCRUB, RIPARIAN_FAR, RIPARIAN_NEAR, riparianPresence } from '../riparian';
-import { hydrology, makeSample, sampleTerrain } from '../heightfield';
+import { hydrology, makeSample, sampleTerrain, seededDrainage } from '../heightfield';
+import type { Drainage } from '../drainage';
 import { bedRock, GALLERY_ROCK_THIN, ROCK_TREE_THIN, rockAtPoint } from '../bedrock';
 import type { FlowHit } from '../hydrology';
 import { COLUMN_M, columnEdge, districtHasBelts, edgeRandom, isShelterbelt, makeParcel, parcelAt } from '../fields';
@@ -17,6 +18,8 @@ import { inTownClearZone } from '../townMask';
 import { onRoadVerge } from '../roads';
 import { CLEARFELL_YEARS, compartmentAt, EDGE_FIREBREAK, EDGE_GAP, EDGE_HALF_WIDTH, EDGE_ROAD, PLANT_EUC_ID, PLANT_FIR_ID, makeCompartment, standHeight, type Compartment } from '../plantation';
 import { era } from '../../era/eraState';
+import { gullyNear, gullyNet, type GullyHit } from '../gullies';
+import { bedWidth } from '../streams';
 import { FLORA } from './flora';
 
 export interface TreeCellRequest {
@@ -101,6 +104,20 @@ const flowHit: FlowHit = { dist: Infinity, side: 0, line: -1, kind: 0, index: 0,
 const TRUNK_CLEAR = 1.5;
 /** Beyond that, trees within this of the rock thin out as it would, m. */
 const ROCK_THIN_BAND = 6;
+/** A seeded world's painted streams (rills.ts) open the canopy over their beds from about this catchment (rillShader.ts
+ * RILL_OPEN): no tree stands on the bed of a gully chain draining this much (gullies.ts) nor within GULLY_BANK m of it,
+ * km². (On a chain this big the slopes' valley floor runs from node to node: the chain is the floor.) */
+const GULLY_TREE_AREA = 1.5;
+const GULLY_BANK = 2.5;
+const gullyHit: GullyHit = { dist: Infinity, area: 0, node: -1, t: 0 };
+/** Whether (north, east) lies on a gully chain's stream bed (a seeded world's mountains only). */
+function onGullyBed(north: number, east: number): boolean {
+  const g = gullyNet();
+  if (!g) return false;
+  gullyNear(g, north, east, GULLY_TREE_AREA, 12, gullyHit);
+  return gullyHit.dist < 0.5 * bedWidth(gullyHit.area) + GULLY_BANK;
+}
+
 function onBareRock(north: number, east: number, s: { riverDist: number; riverHalfWidth: number }, h0: number, gallery: boolean): boolean {
   const q = hydrology.queryFlow;
   if (!q || !(s.riverHalfWidth > 0) || s.riverDist - s.riverHalfWidth > GALLERY_FAR + 4) return false;
@@ -232,6 +249,7 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
       if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) continue;
       // Never in the river channel (nor on the first metres of its bank), whatever the coarse lattice says.
       if (sample.riverHalfWidth > 0 && sample.riverDist < sample.riverHalfWidth + (scrub ? 1.2 : 2.5)) continue;
+      if (onGullyBed(north, east)) continue;
       if (onBareRock(north, east, sample, h0, riparian)) continue;
       let species: number;
       let height: number;
@@ -336,6 +354,7 @@ function plantRows(e0: number, n0: number, size: number, spacing: number, m: num
         sampleTerrain(north, east, sample);
         if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) continue;
         if (sample.riverHalfWidth > 0 && sample.riverDist < sample.riverHalfWidth + 2.5) continue;
+        if (onGullyBed(north, east)) continue;
         const open = rowComp.border < 15 || c.years < 7 || f < 0.5 || nearOpenLand(fx, fz);
         // Ordered rank, not random: as the impostors thin with distance whole rows go (every other one, then
         // every fourth), then every other tree along those left, so what remains is still planted in rows.
@@ -345,6 +364,45 @@ function plantRows(e0: number, n0: number, size: number, spacing: number, m: num
       }
     }
   }
+}
+
+/**
+ * Plains (a seeded world): ground whose relief over its 5 km window (the 1 km lattice within RELIEF_R cells, highest
+ * less lowest) is under PLAIN_RELIEF m - the relief classes' plain (scripts/probes/treeMetrics.ts reliefClasses).
+ * Clipped hedges belong there only: in a hill or mountain valley a shelterbelt grows out (plantShelterbelts). Worked
+ * out once per world from its drainage lattice.
+ */
+const PLAIN_RELIEF = 150;
+const RELIEF_R = 2;
+let plainsOf: Drainage | null = null;
+let plains: Uint8Array | null = null;
+/** Whether (north, east) lies on the plains: true in seed 0's world (it keeps its own rule). */
+export function onPlains(north: number, east: number): boolean {
+  const d = seededDrainage;
+  if (!d) return true;
+  if (plainsOf !== d) {
+    const n = d.n;
+    const h = d.height;
+    const out = new Uint8Array(n * n);
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++) {
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (let a = Math.max(0, i - RELIEF_R); a <= Math.min(n - 1, i + RELIEF_R); a++)
+          for (let b = Math.max(0, j - RELIEF_R); b <= Math.min(n - 1, j + RELIEF_R); b++) {
+            const v = Math.max(0, h[a * n + b]);
+            if (v < lo) lo = v;
+            if (v > hi) hi = v;
+          }
+        out[i * n + j] = hi - lo < PLAIN_RELIEF ? 1 : 0;
+      }
+    plains = out;
+    plainsOf = d;
+  }
+  const i = Math.round((north - d.origin) / 1000);
+  const j = Math.round((east - d.origin) / 1000);
+  if (i < 0 || j < 0 || i >= d.n || j >= d.n) return true;
+  return (plains as Uint8Array)[i * d.n + j] === 1;
 }
 
 const beltParcel = makeParcel();
@@ -387,16 +445,20 @@ function plantShelterbelts(e0: number, n0: number, size: number, m: number, farm
       const r = edgeRandom(k, dseed, 0);
       const species = r < 0.4 ? SPECIES.poplar : r < 0.75 ? SPECIES.macrocarpa : SPECIES.pine;
       const along = species === SPECIES.poplar ? 4.5 : species === SPECIES.macrocarpa ? 3.2 : 4;
-      // Maturity (macrocarpa and pine): 15 % young, 25 % grown out untrimmed, 60 % clipped.
+      // Maturity (macrocarpa and pine): 15 % young, 25 % grown out untrimmed, 60 % clipped. In a seeded world a poplar
+      // belt is never cut (a row of trees, never a wall), and a belt is clipped on the plains only: in a hill or
+      // mountain valley it grows out (onPlains, per point along it).
+      const seeded = !!seededDrainage;
       const age = species === SPECIES.poplar ? 1 : edgeRandom(k, dseed, 2);
       const young = age < 0.15;
-      const clipped = age >= 0.4;
+      const clippable = (!seeded || species !== SPECIES.poplar) && age >= 0.4;
       const h1 = edgeRandom(k, dseed, 1);
-      const tall =
+      const heightOf = (clipped: boolean): number =>
         species === SPECIES.poplar ? 17 + 9 * h1
         : young ? 3 + 3 * h1
         : species === SPECIES.macrocarpa ? (clipped ? 4 + 4 * h1 : 10 + 8 * h1)
         : clipped ? 4 + 4 * h1 : 13 + 8 * h1;
+      let tall = heightOf(clippable);
       const wide = 3 + 3 * edgeRandom(k, dseed, 3);
       // The hedge run being laid: its first point (east, north, ground), its last, and its length so far.
       let run: number[] | null = null;
@@ -412,7 +474,12 @@ function plantShelterbelts(e0: number, n0: number, size: number, m: number, farm
         const qy = j * along;
         const east = c * x - s * qy;
         const north = s * x + c * qy;
+        const clipped = clippable && (!seeded || onPlains(north, east));
         if (east < e0 || east >= e0 + size || north < n0 || north >= n0 + size) { if (clipped) flush(); continue; }
+        if (!clipped) {
+          flush();
+          tall = heightOf(false);
+        } else tall = heightOf(true);
         const h0 = hash2i(k * 7 + j, dseed + 99);
         if (!clipped && rnd(h0, 1) < 0.03) continue;
         const fx = (east - e0) / LATTICE;
@@ -612,6 +679,7 @@ function buildTreeCellEra(req: TreeCellRequest): TreeCellData {
       sampleTerrain(north, east, sample);
       if (sample.ground < Math.max(sample.standing, sample.river) + 1 || sample.airportBlend < 0.98 || sample.approach > 0) continue;
       if (sample.riverHalfWidth > 0 && sample.riverDist < sample.riverHalfWidth + 2.5) continue;
+      if (onGullyBed(north, east)) continue;
       if (onBareRock(north, east, sample, h0, kind === 'riparian')) continue;
       let species: number;
       let height: number;

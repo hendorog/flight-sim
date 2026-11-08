@@ -10,15 +10,20 @@
 
 import * as THREE from 'three';
 import { hydrology } from './heightfield';
-import { RILL_PATCH, RILL_RANGE, RILL_TEX, RILL_TEXEL, rillSize, RILL_WET_AREA } from './rills';
+import { RILL_AREA, RILL_AREA_TOP, RILL_HEAD, RILL_LOOK_CAP, RILL_PATCH, RILL_RANGE, RILL_TEX, RILL_TEXEL, RILL_WET_RAMP, rillSize, RILL_WET_AREA } from './rills';
+import { BED_A, BED_B, WATER_A0, WATER_SHARE0 } from './streams';
+import { RIVER_AREA } from './drainage';
 
+/** Water this wide (m) opens the canopy over a painted stream's bed and carries it through the fields: from the first,
+ * fully from the second (A about 0.5 and 3 km², streams.ts channelHalfWidth). */
+export const RILL_OPEN = [1.2, 3.2];
 /** Patches held around the viewer: SLOTS_SIDE² texture layers. */
-export const RILL_SLOTS_SIDE = 4;
+export const RILL_SLOTS_SIDE = 6;
 export const RILL_SLOTS = RILL_SLOTS_SIDE * RILL_SLOTS_SIDE;
-/** Rills fade out from this distance to the next (3D, from the viewer), m: inside the patches held (at least 1.5
- * patches all round). */
-export const RILL_FADE_NEAR = 2300;
-export const RILL_FADE_FAR = 2950;
+/** Rills fade out from this distance to the next (3D, from the viewer), m: inside the patches held (at least 2.5
+ * patches all round). Far enough that from 1500 m the gullies' streams are drawn down into the valley below. */
+export const RILL_FADE_NEAR = 4200;
+export const RILL_FADE_FAR = 4900;
 
 /** `?rills=0` switches the rills off (shader text and streaming): for measuring their cost and before/after shots. */
 export function rillsEnabled(): boolean {
@@ -65,10 +70,15 @@ vec4 rillNear(vec2 xz) {
   float d = max(length(v), t.z * ${f(RILL_RANGE)} - ${f(RILL_TEXEL * 0.73)});
   return vec4(d, t.w, v.x, -v.y);
 }
-// Half-widths of the channel and of the water, m, for a size code (rills.ts rillBedHalf, rillWaterHalf): growing
-// a little faster than the root of the catchment, fivefold from a thread at the head to a hillside's trunk (s 0.6).
-float rillBedHalf(float s) { return 0.35 * exp(2.6 * s) * smoothstep(0.0, 0.08, s); }
-float rillWaterHalf(float s) { return s <= ${f(WET0)} ? 0.0 : rillBedHalf(s) * 0.55 * min(1.0, (s - ${f(WET0)}) / 0.12); }
+// A size code's catchment (km²) and its look's size (rills.ts rillArea, rillLook).
+float rillArea(float s) { return ${f(RILL_AREA)} * pow(${f(RILL_AREA_TOP / RILL_AREA)}, s); }
+float rillLook(float s) { return min(1.0, s * ${f(Math.log(RILL_AREA_TOP / RILL_AREA) / Math.log(RILL_LOOK_CAP / RILL_AREA))}); }
+// Half-widths of the channel (its bed) and of the water, m, for a size code (rills.ts rillBedHalf, rillWaterHalf): the
+// one width law of every channel (streams.ts bedWidth, waterShare), so a painted stream meets the traced one it runs
+// into at its width.
+float rillBedHalf(float s) { return 0.5 * ${f(BED_A)} * pow(rillArea(s), ${f(BED_B)}) * smoothstep(0.0, ${f(RILL_HEAD)}, s); }
+float rillWaterShare(float s) { return ${f(WATER_SHARE0)} + ${f(1 - WATER_SHARE0)} * clamp(log(rillArea(s) / ${f(WATER_A0)}) / ${f(Math.log(RIVER_AREA / WATER_A0))}, 0.0, 1.0); }
+float rillWaterHalf(float s) { return s <= ${f(WET0)} ? 0.0 : rillBedHalf(s) * rillWaterShare(s) * min(1.0, (s - ${f(WET0)}) / ${f(RILL_WET_RAMP)}); }
 // Cover of a stripe of half-width hw at distance d, seen through a pixel fp across: a stripe thinner than the pixel
 // is spread over it at its mean cover.
 float rillCover(float d, float hw, float fp) {
@@ -89,6 +99,8 @@ float tRillDamp = 0.0;
 float tRillWet = 0.0;
 float tRillSize = 0.0;
 float tRillOpen = 0.0;
+// (The water's half-width on the nearest line, m: a stream wide enough opens the canopy and runs through the fields.)
+float tRillWaterW = 0.0;
 vec2 tRillBank = vec2(0.0);
 // (A rill on steep ground, from about 22 to 32 degrees: a torrent bed, rock-walled and broken; see below. The
 // smallest, and those on gentler ground, stay lines of damp herbage.)
@@ -97,8 +109,9 @@ if (tDist < ${f(RILL_FADE_FAR)}) {
   vec4 rl = rillNear(tXZ);
   float fade = 1.0 - smoothstep(${f(RILL_FADE_NEAR)}, ${f(RILL_FADE_FAR)}, tDist);
   if (rl.y > 0.001) {
-    tRillSize = rl.y;
-    tRillSteep = smoothstep(0.925, 0.845, tUp) * smoothstep(0.15, 0.35, rl.y);
+    float lk = rillLook(rl.y);
+    tRillSize = lk;
+    tRillSteep = smoothstep(0.925, 0.845, tUp) * smoothstep(0.15, 0.35, lk);
     // The pixel's footprint across the line (a line running toward the viewer is many pixels wide where one running
     // across the view is foreshortened into one); right on the line, where the vector to it vanishes, the whole one.
     float vl = length(rl.zw);
@@ -117,14 +130,15 @@ if (tDist < ${f(RILL_FADE_FAR)}) {
     tRillBed = rillCover(dr, bh, fpA) * fade * mix(1.0, smoothstep(0.33, 0.5, nr2 + 0.3 * (nr.b - 0.5)), 0.9 * tRillSteep);
     // A strip of wetter, greener herbage along the line, from nothing along a thread to a few channels wide along the
     // bigger reaches, stronger down the line; it thins out into the cover around it rather than ending at an edge.
-    float mh = (bh * (2.2 + 2.0 * rl.y) + 0.8) * (0.75 + 0.5 * nr.b);
-    tRillDamp = rillCover(rl.x + wob * 1.5 * bh, mh, fpA + 0.3 * mh) * fade * smoothstep(0.0, 0.04, rl.y) * mix(0.6, 1.0, smoothstep(0.0, 0.5, rl.y));
-    tRillWet = rillCover(dr, rillWaterHalf(rl.y) * (0.8 + 0.4 * nr.a), fpA) * fade;
+    float mh = (bh * (2.2 + 2.0 * lk) + 0.8) * (0.75 + 0.5 * nr.b);
+    tRillDamp = rillCover(rl.x + wob * 1.5 * bh, mh, fpA + 0.3 * mh) * fade * smoothstep(0.0, 0.04, lk) * mix(0.6, 1.0, smoothstep(0.0, 0.5, lk));
+    tRillWaterW = rillWaterHalf(rl.y);
+    tRillWet = rillCover(dr, tRillWaterW * (0.8 + 0.4 * nr.a), fpA) * fade;
     // The channel is cut into the slope: its banks lean in toward the line (one lit, one shaded), out to a notch wider
     // and deeper down the line; faded as the notch narrows under a pixel.
-    float nh = bh * 2.5 + 3.0 * rl.y;
+    float nh = bh * 2.5 + 3.0 * lk;
     float bank = smoothstep(0.3 * bh, 0.9 * bh, rl.x) * (1.0 - smoothstep(0.6 * nh, nh, rl.x));
-    tRillBank = an * bank * fade * clamp(nh / fpA - 0.5, 0.0, 1.0) * (0.8 + 1.6 * rl.y) * (1.0 + 0.6 * tRillSteep);
+    tRillBank = an * bank * fade * clamp(nh / fpA - 0.5, 0.0, 1.0) * (0.8 + 1.6 * lk) * (1.0 + 0.6 * tRillSteep);
   }
 }
 `;
@@ -136,8 +150,9 @@ if (tDist < ${f(RILL_FADE_FAR)}) {
 export function rillSplatGlsl(P: { riverBed: string; scree: string; bankRoughA: string; mud: string }, gravelLayer: number, roads: boolean): string {
   return /* glsl */ `
 // Not under the canopy, nor in the fields (ploughed and drained: their ditches are not drawn), nor over a road and its
-// verges (a culvert takes the water under it).
-if (max(max(tRillDamp, tRillBed), abs(tRillBank.x) + abs(tRillBank.y)) > 0.001) tRillOpen = (1.0 - tFoliageW) * (1.0 - farmWeight)${roads ? ` * smoothstep(tRoad.y + 1.0, tRoad.y + 4.0, tRoad.x)` : ''};
+// verges (a culvert takes the water under it). A stream with RILL_OPEN m of water or more opens the canopy over its
+// bed and runs on through the fields.
+if (max(max(tRillDamp, tRillBed), abs(tRillBank.x) + abs(tRillBank.y)) > 0.001) tRillOpen = mix((1.0 - tFoliageW) * (1.0 - farmWeight), 1.0, smoothstep(${f(RILL_OPEN[0] / 2)}, ${f(RILL_OPEN[1] / 2)}, tRillWaterW))${roads ? ` * smoothstep(tRoad.y + 1.0, tRoad.y + 4.0, tRoad.x)` : ''};
 if (tRillOpen > 0.001) {
   float open = tRillOpen;
   float steep = smoothstep(0.92, 0.7, tUp);

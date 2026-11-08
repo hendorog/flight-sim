@@ -95,7 +95,14 @@ export interface SlopeField {
   /** How far a node lies on a drawn river's own floor, 0-255 (riverCore): the pass holds it and the terrain keeps the
    * ground as it stood there. */
   core: Uint8Array;
+  /** The pass's own routing (its last, over the ground it built): at each node it built, 1 + the index into DI8/DJ8 of
+   * its receiver's direction; 0 at every other node. The streams follow it (gullies.ts). Absent from old caches. */
+  dir?: Uint8Array;
 }
+
+/** Neighbour offsets of SlopeField.dir (code 1 + k): rows (north) then columns (east). */
+export const SLOPE_DI = [-1, -1, -1, 0, 0, 1, 1, 1];
+export const SLOPE_DJ = [-1, 0, 1, -1, 1, -1, 0, 1];
 
 /** Beyond a drawn river's floor (where its level is read and its channel swings) the nodes are held this much further,
  * m (a point on the floor reads the 2 x 2 nodes about it: half a diagonal), and the hold comes off over CORE_TAPER. */
@@ -627,10 +634,19 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, h
   for (let q = 0; q < N; q++) if (state[q] === 1 && held[q] === 2) chan[q] = 255;
   for (const q of chanFloor) chan[q] = 255;
   for (let q = 0; q < N; q++) if (state[q] === 0) w8[q] = 0;
+  // The routing the slopes were built from, for the streams (gullies.ts).
+  const dir = new Uint8Array(N);
+  for (let k = 0; k < active; k++) {
+    const c = list[k];
+    const r = rec[c];
+    const dy = ((r / n) | 0) - ((c / n) | 0);
+    const dx = r - ((r / n) | 0) * n - (c - ((c / n) | 0) * n);
+    for (let d = 0; d < 8; d++) if (DI8[d] === dy && DJ8[d] === dx) dir[c] = d + 1;
+  }
   slopeStats.active = active;
   slopeStats.sampled = sampled;
   slopeStats.corners = corners;
   slopeStats.msSample = t1 - t0;
   slopeStats.msPass = performance.now() - t1;
-  return { h: H, w: w8, chan, core };
+  return { h: H, w: w8, chan, core, dir };
 }

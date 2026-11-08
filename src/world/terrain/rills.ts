@@ -28,6 +28,8 @@
 import { hydrology, makeSample, sampleTerrain, snowShiftM, type TerrainSample } from './heightfield';
 import type { FlowHit } from './hydrology';
 import { gnoise } from './noise';
+import { gullyNear, gullyNet, type GullyHit } from './gullies';
+import { bedWidth, waterShare } from './streams';
 import { worldSeed } from '../worldSeed';
 import { era } from '../era/eraState';
 
@@ -39,9 +41,16 @@ export const RILL_TEXEL = 4;
 export const RILL_TEX = RILL_PATCH / RILL_TEXEL + 2;
 /** Texels hold the vector to the nearest line point out to this distance, m. */
 export const RILL_RANGE = 16;
-/** Catchment a rill starts from, km²; the most a rill's size counts (wider ones are drawn as this), km². */
+/** Catchment a rill starts from, km²; the most a rill's size code holds, km² (above the gully chains' hand-off to the
+ * traced streams, gullies.ts CHAIN_AREA: the painted ones end where those begin). */
 export const RILL_AREA = 0.03;
-export const RILL_AREA_CAP = 2;
+export const RILL_AREA_TOP = 16;
+/** The size a rill's look (its damp margin, its notch, its stones) is reckoned on: its catchment from RILL_AREA to
+ * RILL_LOOK_CAP, log scale (0..1); its widths come from its catchment itself (rillBedHalf). */
+export const RILL_LOOK_CAP = 2;
+/** A rill whose catchment reaches beyond its window (it would be counted at the window's part of it) takes the gully
+ * chain's (gullies.ts) within this of its cell, m, where that is more. */
+const CHAIN_REACH = 90;
 /** Catchment from which a rill carries water to be seen (thinner ones are just the damp bed in its notch), km². */
 export const RILL_WET_AREA = 0.12;
 
@@ -140,26 +149,31 @@ export interface RillSegment {
   s1: number;
 }
 
-/** Size code (0..1) of a catchment (km²): log scale from RILL_AREA to RILL_AREA_CAP. */
+/** Size code (0..1) of a catchment (km²): log scale from RILL_AREA to RILL_AREA_TOP. */
 export function rillSize(area: number): number {
-  return Math.min(1, Math.max(0, Math.log(area / RILL_AREA) / Math.log(RILL_AREA_CAP / RILL_AREA)));
+  return Math.min(1, Math.max(0, Math.log(area / RILL_AREA) / Math.log(RILL_AREA_TOP / RILL_AREA)));
 }
 /** Catchment (km²) of a size code. */
 export function rillArea(size: number): number {
-  return RILL_AREA * Math.pow(RILL_AREA_CAP / RILL_AREA, size);
+  return RILL_AREA * Math.pow(RILL_AREA_TOP / RILL_AREA, size);
 }
-/** Half-width of a rill's channel (m) for a size code (the shader's twin: rillShader.ts). Hydraulic geometry: a channel's
- * width goes about as the root of its catchment; a little faster here, so that over the sizes a hillside's rills
- * reach (code 0 to about 0.6: 0.03 to 0.4 km² near them) it widens fivefold, 0.35 m to 1.7 m, and the trunk below a
- * join is plainly wider than either branch. Grows in from nothing at the head. */
+/** The look's size (0..1, RILL_LOOK_CAP) of a size code (the shader's twin). */
+export const rillLook = (size: number): number => Math.min(1, size * (Math.log(RILL_AREA_TOP / RILL_AREA) / Math.log(RILL_LOOK_CAP / RILL_AREA)));
+/** The head's fade-in: the size code over which a rill's bed grows from nothing (to 1.4 x RILL_AREA). */
+export const RILL_HEAD = Math.log(1.4) / Math.log(RILL_AREA_TOP / RILL_AREA);
+/** Over this much of the size code past RILL_WET_AREA its water comes in. */
+export const RILL_WET_RAMP = 0.08;
+/** Half-width of a rill's channel, its bed (m), for a size code (the shader's twin: rillShader.ts): the one width law of
+ * every channel (streams.ts bedWidth), grown in from nothing at the head. */
 export function rillBedHalf(size: number): number {
-  const t = Math.min(1, Math.max(0, size / 0.08));
-  return 0.35 * Math.exp(2.6 * size) * t * t * (3 - 2 * t);
+  const t = Math.min(1, Math.max(0, size / RILL_HEAD));
+  return 0.5 * bedWidth(rillArea(size)) * t * t * (3 - 2 * t);
 }
-/** Half-width of the water (m), 0 below RILL_WET_AREA: about half the channel, coming in over a short way. */
+/** Half-width of the water (m), 0 below RILL_WET_AREA: the law's share of the bed (streams.ts waterShare), coming in
+ * over RILL_WET_RAMP: at the gully chains' hand-off as wide as the traced stream it runs into (channelHalfWidth). */
 export function rillWaterHalf(size: number): number {
   const s0 = rillSize(RILL_WET_AREA);
-  return size <= s0 ? 0 : rillBedHalf(size) * 0.55 * Math.min(1, (size - s0) / 0.12);
+  return size <= s0 ? 0 : rillBedHalf(size) * waterShare(rillArea(size)) * Math.min(1, (size - s0) / RILL_WET_RAMP);
 }
 
 /** The traced raster of a window: everything the lines need, valid (window-independent) inside its margin. */
@@ -190,6 +204,7 @@ export interface RillGraph {
 }
 
 const scratch: TerrainSample = makeSample();
+const chainHit: GullyHit = { dist: Infinity, area: 0, node: -1, t: 0 };
 
 /** Raster cells per cached block side, and blocks kept (about 9 KB each: four windows' worth). */
 const BLOCK = 32;
@@ -475,7 +490,16 @@ export function traceRillGraph(gx0: number, gy0: number, nx: number, ny: number,
 /** A cell's size code: its near catchment (plus `extra` cells), fading below the last cell that starts its line and
  * toward a sink. */
 function sizeOf(g: RillGraph, i: number, extra = 0): number {
-  let s = rillSize(((g.areaR[i] + extra) * RILL_CELL * RILL_CELL) / 1e6);
+  let km2 = ((g.areaR[i] + extra) * RILL_CELL * RILL_CELL) / 1e6;
+  // (Its catchment reaches beyond its window's part of it: the gully chain's, where it runs by one.)
+  if (g.cells[i] > g.areaR[i]) {
+    const gn = gullyNet();
+    if (gn) {
+      gullyNear(gn, (g.gy0 + ((i / g.nx) | 0)) * RILL_CELL, (g.gx0 + (i % g.nx)) * RILL_CELL, km2, CHAIN_REACH, chainHit);
+      if (chainHit.area > km2) km2 = chainHit.area;
+    }
+  }
+  let s = rillSize(km2);
   if (g.persist[i] < FADE) s *= g.persist[i] / FADE;
   if (g.toSink[i] <= TAPER) s *= (0.25 + g.toSink[i]) / (TAPER + 0.25);
   return s;

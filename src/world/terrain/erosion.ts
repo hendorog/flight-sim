@@ -55,7 +55,7 @@ export interface SteadyParams {
  */
 export const STEADY: SteadyParams = { iterations: 30, ridge: 400, m: 0.6, sc: 0.45, grade: 0.06 };
 /** Bump when the model or its inputs change meaning: part of the cache key (macroCache.ts). */
-export const MODEL_VERSION = 'ss4';
+export const MODEL_VERSION = 'ss5';
 
 /** Catchment, cells, from which a diagonal step of a channel lowers the cells beside it. */
 const CORNER_AREA = 10;

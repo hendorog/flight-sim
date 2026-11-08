@@ -68,7 +68,7 @@ export function rememberSeededModel(): void {
 /** A copy of the model to store (this thread's build keeps its own arrays). */
 function copyOf(m: SeededModel): SeededModel {
   const s = m.slopes;
-  return { seed: m.seed, key: m.key, lattice: m.lattice.slice(), slopes: s ? { h: s.h.slice(), w: s.w.slice(), chan: s.chan.slice(), core: s.core.slice() } : null };
+  return { seed: m.seed, key: m.key, lattice: m.lattice.slice(), slopes: s ? { h: s.h.slice(), w: s.w.slice(), chan: s.chan.slice(), core: s.core.slice(), ...(s.dir ? { dir: s.dir.slice() } : {}) } : null };
 }
 
 function computeInWorker(seed: number, era: EraId): Promise<SeededModel | null> {
@@ -93,7 +93,7 @@ interface Entry {
   key: string;
   lattice: ArrayBuffer;
   /** The threshold hillslopes' fine-grid fields (hillslopes.ts SlopeField), when the seed has them. */
-  slopes?: { h: ArrayBuffer; w: ArrayBuffer; chan: ArrayBuffer; core: ArrayBuffer };
+  slopes?: { h: ArrayBuffer; w: ArrayBuffer; chan: ArrayBuffer; core: ArrayBuffer; dir?: ArrayBuffer };
 }
 
 function openDb(): Promise<IDBDatabase | null> {
@@ -126,7 +126,7 @@ async function readCached(seed: number): Promise<SeededModel | null> {
         db.close();
         if (!e || e.seed !== seed || !(e.lattice instanceof ArrayBuffer)) return resolve(null);
         const s = e.slopes;
-        const slopes = s && s.h instanceof ArrayBuffer && s.w instanceof ArrayBuffer && s.chan instanceof ArrayBuffer && s.core instanceof ArrayBuffer ? { h: new Float32Array(s.h), w: new Uint8Array(s.w), chan: new Uint8Array(s.chan), core: new Uint8Array(s.core) } : null;
+        const slopes = s && s.h instanceof ArrayBuffer && s.w instanceof ArrayBuffer && s.chan instanceof ArrayBuffer && s.core instanceof ArrayBuffer ? { h: new Float32Array(s.h), w: new Uint8Array(s.w), chan: new Uint8Array(s.chan), core: new Uint8Array(s.core), ...(s.dir instanceof ArrayBuffer ? { dir: new Uint8Array(s.dir) } : {}) } : null;
         resolve({ seed, key: e.key, lattice: new Float32Array(e.lattice), slopes });
       };
       req.onerror = () => {
@@ -146,7 +146,7 @@ async function writeCached(m: SeededModel): Promise<void> {
   try {
     const tx = db.transaction(STORE, 'readwrite');
     const entry: Entry = { id: entryId(m.seed), seed: m.seed, key: m.key, lattice: m.lattice.buffer as ArrayBuffer };
-    if (m.slopes) entry.slopes = { h: m.slopes.h.buffer as ArrayBuffer, w: m.slopes.w.buffer as ArrayBuffer, chan: m.slopes.chan.buffer as ArrayBuffer, core: m.slopes.core.buffer as ArrayBuffer };
+    if (m.slopes) entry.slopes = { h: m.slopes.h.buffer as ArrayBuffer, w: m.slopes.w.buffer as ArrayBuffer, chan: m.slopes.chan.buffer as ArrayBuffer, core: m.slopes.core.buffer as ArrayBuffer, ...(m.slopes.dir ? { dir: m.slopes.dir.buffer as ArrayBuffer } : {}) };
     tx.objectStore(STORE).put(entry);
     tx.oncomplete = () => db.close();
     tx.onerror = () => db.close();
