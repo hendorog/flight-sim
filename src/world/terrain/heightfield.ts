@@ -1000,14 +1000,15 @@ function channelProfile(d: number, halfWidth: number): number {
  * slope that varies (about 30 to 50 degrees, steepening a little with height, never sheer), with ledges and
  * buttresses across them. `s` is the arc length along the stream, `side` the bank (+1 right), `line` the stream.
  */
-function streamBanks(d: number, halfWidth: number, s: number, side: number, line: number): number {
+function streamBanks(d: number, halfWidth: number, bed: number, s: number, side: number, line: number): number {
   if (d < halfWidth) {
     const t = d / halfWidth;
     return -(0.5 + 0.2 * halfWidth) * (1 - t * t);
   }
   const b = d - halfWidth;
   const n1 = gnoise(s / 90 + side * 5.3 + line * 0.71, line * 1.37 + side * 0.5);
-  const bank = (2 + 1.5 * halfWidth) * (1 + 0.6 * n1);
+  // (The bank's low strip out to the bed's edge: the stones and gravel a flood covers, streams.ts bedWidth.)
+  const bank = streamBankWidth(halfWidth, bed) * (1 + 0.3 * n1);
   if (b < bank) return 0.5 * smooth(0, bank, b);
   const w = b - bank;
   const slope = 0.75 - 0.35 * n1;
@@ -1015,6 +1016,9 @@ function streamBanks(d: number, halfWidth: number, s: number, side: number, line
   return 0.5 + slope * w + 0.02 * w * w + Math.min(4, 1 + 0.08 * w) * ledge * smooth(0, 8, w);
 }
 
+/** The low strip of a stream's banks beyond its water: out to its bed's edge, at least STREAM_BANK_MIN m. */
+const STREAM_BANK_MIN = 0.6;
+const streamBankWidth = (halfWidth: number, bed: number): number => Math.max(STREAM_BANK_MIN, bed - halfWidth);
 /** A stream's broad breach (streams.ts BREACH_*): its floor BREACH_FLOOR over the water, rising BREACH_RISE across to
  * its edge at `breach` m, walls at BREACH_WALL beyond. */
 const BREACH_FLOOR = 0.6;
@@ -1188,8 +1192,8 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
       if (w <= 0.3) continue;
       // (Not worked out where its banks stand well over the ground: their least height there is under the ground's.)
       const kb = 0.5 + 0.3 * w;
-      if (d < w || c.level + 0.4 * (d - w - 3.2 * (2 + 1.5 * w)) - 4 < h + kb) {
-        const banks = smin(h, c.level + streamBanks(d, w, c.s, c.side, c.line), kb);
+      if (d < w || c.level + 0.4 * (d - w - 2.1 * streamBankWidth(w, c.bed)) - 4 < h + kb) {
+        const banks = smin(h, c.level + streamBanks(d, w, c.bed, c.s, c.side, c.line), kb);
         h += ((d > w ? Math.max(Math.min(h, keep), banks) : banks) - h) * open;
       }
       // Its banks hold its water: where the ground beside it lies under the water (a hillside it crosses, a dip

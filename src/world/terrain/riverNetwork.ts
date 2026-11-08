@@ -11,7 +11,7 @@
 import { fbm, hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
 import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type DrainLine, type LakeMask } from './drainage';
-import { breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
+import { bedWidth, breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
 import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
 import { buildFaults, FaultIndex } from './faults';
 import { pitchPool, type PitchReport } from './pitchPool';
@@ -934,13 +934,29 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const streamLines: Array<{ north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; breach: Float64Array; cut: Float64Array }> = [];
   const streamJoins: number[] = [];
   const streamEnds: Array<StreamLine['end']> = [];
-  const lineOf = (li: number): { s: Float64Array; level: Float64Array } => (li < nR ? rivers[li] : streamLines[li - nR]);
+  // (A stream that ran on as a continuation joins a line traced after it: that one's levels as traced, then.)
+  const lineOf = (li: number): { s: Float64Array; level: Float64Array } => (li < nR ? rivers[li] : streamLines[li - nR] ?? traced.streams[li - nR]);
   for (let j = 0; j < traced.streams.length; j++) {
     const st = traced.streams[j];
     const li = nR + j;
     // Its end at the water of the line it joins (final: that line came first).
     if (st.joins >= 0) st.level[st.level.length - 1] = Math.min(st.level[st.level.length - 1], levelOn(lineOf(st.joins), st.joinS));
     for (let i = 1; i < st.level.length; i++) st.level[i] = Math.min(st.level[i], st.level[i - 1]);
+    // A stream not leaving a lake runs as high as the ground it was traced over lets it (the running minimum of that
+    // ground, less its depth: never rising downstream, never over the ground): between the raster points its level was
+    // laid in a straight line, which runs tens of metres under a convex face or a spur's nose. Where it still runs well
+    // under the ground (a sill it wears through) its notch is a bed's width (below), not a broad floor.
+    if (st.pool < 0) {
+      const m = st.level.length;
+      let run = Infinity;
+      for (let i = 0; i < m - 1; i++) {
+        const top = st.level[i] + st.cut[i];
+        run = Math.min(run, top);
+        if (run > st.level[i]) st.level[i] = run;
+        st.cut[i] = Math.max(0, top - st.level[i]);
+        st.breach[i] = breachOfCut(st.cut[i]);
+      }
+    }
     const keep = new Uint8Array(st.level.length);
     // (An outlet's first samples keep its lake's level.)
     for (let i = 0; i < st.held - 1; i++) keep[i] = 1;
@@ -1107,6 +1123,14 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     if (levelProbe.on) for (let li = 0; li < nR; li++) levelProbe.on('pitch', li, allLines[li]);
   }
   tPhase.push(performance.now());
+  // A stream's carved floor is its bed: no broad breach (a floor worn through a rim) but at a lake's outlet; where its
+  // water runs well under the ground (a sill, a gorge below a fall) the notch is its bed's width (streams.ts bedWidth).
+  for (let li = nR; li < allLines.length; li++) {
+    if (traced.streams[li - nR].pool >= 0) continue;
+    const b = (allLines[li] as unknown as { breach: Float64Array }).breach;
+    const A = channelArea[li];
+    for (let i = 0; i < b.length; i++) if (b[i] > 0) b[i] = Math.min(b[i], 0.5 * bedWidth(A[i]));
+  }
   const tF = performance.now();
   const flows = allLines.map((c, li) => flowOf(c, lipsOf[li]));
   netMs.flow += performance.now() - tF;
@@ -1120,6 +1144,19 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const sEnd = allLines[li].s[hw.length - 1];
     const s = allLines[li].s;
     for (let i = 0; i < hw.length; i++) hw[i] = Math.max(0.4, hw[i] * (1 - (1 - STEEP_SLOT) * smooth(STEEP_NARROW[0], STEEP_NARROW[1], g[i]) * (1 - smooth(sEnd - STEEP_MOUTH, sEnd, s[i]))));
+  }
+  // Below a junction a stream's water is never narrower than what joined it there (its mouth is never narrowed).
+  for (let li = 0; li < allLines.length; li++) {
+    const j = joinsOf(li);
+    if (j < nR) continue;
+    const c = allLines[li];
+    const wIn = c.halfWidth[c.halfWidth.length - 1];
+    const P = allLines[j];
+    const sj = joinSOf(li);
+    for (let i = 0; i < P.s.length; i++) {
+      if (P.s[i] < sj - 1e-6) continue;
+      P.halfWidth[i] = Math.max(P.halfWidth[i], wIn);
+    }
   }
   // The stones on each bed (falls.ts bedGrain).
   const feetOf: Array<Array<{ index: number; height: number }>> = allLines.map(() => []);
@@ -1147,6 +1184,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     }
     return any ? r : null;
   });
+  // A stream's bed half-width at each sample (its banks are carved to it, heightfield.ts streamBanks).
+  const bedOf = allLines.map((c, li) => (li < nR ? null : Float64Array.from(channelArea[li], (A) => 0.5 * bedWidth(A))));
   const tI = performance.now();
   const channelIndex = new SegmentIndex(allLines, (li, i) => {
     const br = breachReach[li];
@@ -1173,7 +1212,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     channels(pn, pe, out) {
       return channelIndex.perLine(pn, pe, (li, i, t, dist, side, u, k) => {
         const r = allLines[li];
-        const o = out[k] ?? (out[k] = { line: 0, dist: 0, side: 0, level: 0, halfWidth: 0, s: 0, beyondSource: 0, kind: 0, breach: 0, reach: 0, cut: 0 });
+        const o = out[k] ?? (out[k] = { line: 0, dist: 0, side: 0, level: 0, halfWidth: 0, s: 0, beyondSource: 0, kind: 0, breach: 0, reach: 0, cut: 0, bed: 0 });
         o.line = li;
         o.kind = kinds[li];
         o.dist = dist;
@@ -1182,6 +1221,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         o.halfWidth = r.halfWidth[i] + (r.halfWidth[i + 1] - r.halfWidth[i]) * t;
         o.s = r.s[i] + (r.s[i + 1] - r.s[i]) * t;
         o.beyondSource = i === 0 && u < 0 ? -u * Math.hypot(r.north[1] - r.north[0], r.east[1] - r.east[0]) : 0;
+        const bd = bedOf[li];
+        o.bed = bd ? bd[i] + (bd[i + 1] - bd[i]) * t : o.halfWidth;
         const br = breachReach[li];
         if (br && (br[i] > 0 || br[i + 1] > 0)) {
           const b = (r as { breach: Float64Array }).breach;

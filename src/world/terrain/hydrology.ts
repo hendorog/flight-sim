@@ -239,6 +239,8 @@ export interface ChannelNear {
   reach: number;
   /** How far the stream's water runs under the ground it was traced over here (its breach's depth), m. */
   cut: number;
+  /** A stream's bed half-width here (streams.ts bedWidth: its banks are carved to it), m; a river's: its half-width. */
+  bed: number;
   dist: number;
   side: number;
   level: number;
