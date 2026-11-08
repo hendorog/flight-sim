@@ -767,8 +767,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     }
     // And the samples between where the level falls steeply there (a cliff can lie between two looked at).
     for (let i = 2; i < count - 1; i++) {
-      // (Not along a chain at all: its raster points were looked at, and the every-LEVEL_EVERY-th samples above.)
-      if ((i - 1) % LEVEL_EVERY === 0 || onChain(i) || (pathArea && i < chainSamples)) continue;
+      if ((i - 1) % LEVEL_EVERY === 0 || onChain(i)) continue;
       const lo = i - ((i - 1) % LEVEL_EVERY);
       if (level[lo] - level[Math.min(count - 1, lo + LEVEL_EVERY)] < STEEP_RECHECK) continue;
       const g = groundAt(north[i], east[i]);
