@@ -937,8 +937,8 @@ export class LakeMask {
   readonly main: Int32Array;
   private readonly rasters: PondRaster[] = [];
   /** Per lattice square: the ponds whose water reaches it (CSR). */
-  private readonly sqStart: Int32Array;
-  private readonly sqPond: Int16Array;
+  private sqStart: Int32Array;
+  private sqPond: Int16Array;
   constructor(private readonly d: Drainage, ground: (north: number, east: number) => number) {
     /** A raster's ground at (row, col), sampled where the flood did not. */
     const groundOf = (R: PondRaster, i: number, j: number): number => {
@@ -1417,6 +1417,76 @@ export class LakeMask {
       if (id >= 0) return id;
     }
     return -1;
+  }
+  /**
+   * Add a pond flooded after the drainage (streams.ts: a closed hollow a stream ends in, filled to its spill): its
+   * raster points (global indices) whose `ground` (the routing ground there) lies under `level`, as one pool of a new
+   * raster of its own (no relief smoothing about it). Returns the pool's id. Its water is drawn as any lake's (at).
+   */
+  addPond(points: readonly number[], ground: readonly number[], level: number, spill: number): number {
+    const { d } = this;
+    let i0 = Infinity, i1 = -Infinity, j0 = Infinity, j1 = -Infinity;
+    for (const k of points) {
+      const i = Math.floor(k / RASTER_N);
+      const j = k % RASTER_N;
+      i0 = Math.min(i0, i);
+      i1 = Math.max(i1, i);
+      j0 = Math.min(j0, j);
+      j1 = Math.max(j1, j);
+    }
+    const gi = Math.max(0, i0 - 2);
+    const gj = Math.max(0, j0 - 2);
+    const rows = Math.min(RASTER_N - 1, i1 + 2) - gi + 1;
+    const cols = Math.min(RASTER_N - 1, j1 + 2) - gj + 1;
+    const R: PondRaster = { gi, gj, rows, cols, ground: new Float32Array(rows * cols).fill(NaN), pool: new Int16Array(rows * cols).fill(-1), soft: new Uint8Array(rows * cols), shore: new Int16Array(rows * cols).fill(-1), softPool: new Int16Array(rows * cols).fill(-1) };
+    const k = this.rasters.length;
+    const id = this.pools.length;
+    let wet = 0, sn = 0, se = 0, bottom = Infinity, cn = 0, ce = 0, deep = -Infinity;
+    points.forEach((q, t) => {
+      const p = (Math.floor(q / RASTER_N) - gi) * cols + (q % RASTER_N) - gj;
+      R.ground[p] = ground[t];
+      R.pool[p] = id;
+      const north = d.origin + Math.floor(q / RASTER_N) * LAKE_RASTER;
+      const east = d.origin + (q % RASTER_N) * LAKE_RASTER;
+      wet++;
+      sn += north;
+      se += east;
+      bottom = Math.min(bottom, ground[t]);
+      if (level - ground[t] > deep) {
+        deep = level - ground[t];
+        cn = north;
+        ce = east;
+      }
+    });
+    this.rasters.push(R);
+    this.pools.push({ lake: k, level, bottom, wet, north: sn / wet, east: se / wet, snn: 0, see: 0, sne: 0, centreNorth: cn, centreEast: ce, spill });
+    // The squares its points (and two about them, as at() reads a raster square's corners) reach.
+    const n = d.n;
+    const N = n * n;
+    const add = new Map<number, number>();
+    for (const q of points) {
+      const ri = Math.floor(q / RASTER_N);
+      const rj = q % RASTER_N;
+      for (let a = -2; a <= 1; a++)
+        for (let b = -2; b <= 1; b++) {
+          const si = Math.floor((ri + a) / RASTER_PER_CELL);
+          const sj = Math.floor((rj + b) / RASTER_PER_CELL);
+          if (si < 0 || sj < 0 || si >= n - 1 || sj >= n - 1) continue;
+          add.set(si * n + sj, 1);
+        }
+    }
+    const start = new Int32Array(N + 1);
+    for (let sq = 0; sq < N; sq++) start[sq + 1] = start[sq] + (this.sqStart[sq + 1] - this.sqStart[sq]) + (add.has(sq) ? 1 : 0);
+    const pond = new Int16Array(start[N]);
+    for (let sq = 0; sq < N; sq++) {
+      const a0 = this.sqStart[sq];
+      const len = this.sqStart[sq + 1] - a0;
+      pond.set(this.sqPond.subarray(a0, a0 + len), start[sq]);
+      if (add.has(sq)) pond[start[sq] + len] = k;
+    }
+    this.sqStart = start;
+    this.sqPond = pond;
+    return id;
   }
   /** The raster points (global indices ri * RASTER_N + rj) of a pool's domain. */
   poolPoints(id: number): number[] {

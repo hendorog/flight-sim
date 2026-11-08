@@ -82,6 +82,13 @@ const CONNECT_R = 12;
  * its own within CONT_CONNECT_R raster steps. */
 const CONT_CLIMB = 80;
 const CONT_CONNECT_R = 24;
+/** A hollow a stream ends in is filled as a pond up to POND_MAX raster points (about 30 km²) and POND_DEEP m deep, its
+ * water POND_DROP m under its sill. */
+const POND_MAX = 500;
+const POND_DEEP = 120;
+const POND_DROP = 0.5;
+/** A stream stopped beside water over its own runs in to it from within this many raster steps (joinBeside). */
+const JOIN_REACH = 4;
 /** A trace in a hollow on the threshold hillslopes follows their routing down at most this many raster steps. */
 const PASS_WALK = 400;
 /** A chain stream's samples between two of its points take the points' ground where the routing ground there is the
@@ -303,6 +310,9 @@ export interface StreamReport {
   /** The rivers' head feeders (probes). */
   feed?: Record<string, unknown>;
   /** The gully chains traced as streams (gullies.ts): heads, traced, km, skipped (already on water), ms. */
+  /** Ponds filled in hollows streams ended in (trace): pool id, raster points, in pairs. */
+  ponds?: number[];
+  pondWhy?: Record<string, number>;
   /** Streams that ended in a hollow run on as a continuation. */
   continued?: number;
   /** Traces led out of a hollow down the threshold hillslopes' routing (trace). */
@@ -1573,6 +1583,157 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       conts.push({ old: j, cont: before, at0: a0 });
     }
     report.continued = conts.length;
+  }
+  /** Stream j, ending at raster point k0, runs on to the nearest other line's sample within JOIN_REACH raster steps
+   * (its course straight there, its water no higher than at its end): whether it found one. */
+  const joinBeside = (j: number, k0: number): boolean => {
+    const st = streams[j];
+    const ki = Math.floor(k0 / R);
+    const kj = k0 % R;
+    let best = -1;
+    let bd = Infinity;
+    for (let a = -JOIN_REACH; a <= JOIN_REACH; a++)
+      for (let b = -JOIN_REACH; b <= JOIN_REACH; b++) {
+        const qi = ki + a;
+        const qj = kj + b;
+        if (qi < 0 || qj < 0 || qi >= R || qj >= R) continue;
+        const o = occ[qi * R + qj];
+        if (o === 0 || occLine(o) === nR + j) continue;
+        // (Not a line that runs back into this one.)
+        let loop = false;
+        for (let L = occLine(o), g = 0; L >= nR && g < 200; L = streams[L - nR].joins, g++) if (L === nR + j) loop = true;
+        if (loop) continue;
+        const d = Math.hypot(a, b);
+        if (d >= bd) continue;
+        // (Not across its own course.)
+        const T = lineAt(occLine(o));
+        const tn = T.north[occIdx(o)], te = T.east[occIdx(o)];
+        const m0 = st.north.length - 1;
+        const ax = st.east[m0], ay = st.north[m0];
+        let cross = false;
+        for (let i = 0; i + 2 < m0 && !cross; i++) {
+          const cx = st.east[i], cy = st.north[i], dx = st.east[i + 1], dy = st.north[i + 1];
+          if (Math.max(cx, dx) < Math.min(ax, te) - 1 || Math.min(cx, dx) > Math.max(ax, te) + 1 || Math.max(cy, dy) < Math.min(ay, tn) - 1 || Math.min(cy, dy) > Math.max(ay, tn) + 1) continue;
+          const d1 = (te - ax) * (cy - ay) - (tn - ay) * (cx - ax);
+          const d2 = (te - ax) * (dy - ay) - (tn - ay) * (dx - ax);
+          const d3 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx);
+          const d4 = (dx - cx) * (tn - cy) - (dy - cy) * (te - cx);
+          if (d1 * d2 < 0 && d3 * d4 < 0) cross = true;
+        }
+        if (cross) continue;
+        bd = d;
+        best = o;
+      }
+    if (best < 0) return false;
+    const L = lineAt(occLine(best));
+    const idx = occIdx(best);
+    const m = st.north.length;
+    const tn = L.north[idx];
+    const te = L.east[idx];
+    const dist = Math.hypot(tn - st.north[m - 1], te - st.east[m - 1]);
+    const add = Math.max(1, Math.ceil(dist / STREAM_SPACING));
+    const grow = (a: Float64Array, f: (t: number) => number): Float64Array => {
+      const out = new Float64Array(m + add);
+      out.set(a);
+      for (let q = 1; q <= add; q++) out[m - 1 + q] = f(q / add);
+      return out;
+    };
+    const n0 = st.north[m - 1], e0 = st.east[m - 1], lv = st.level[m - 1], s0 = st.s[m - 1], a0 = st.area[m - 1];
+    st.north = grow(st.north, (t) => n0 + (tn - n0) * t);
+    st.east = grow(st.east, (t) => e0 + (te - e0) * t);
+    st.level = grow(st.level, () => Math.min(lv, L.level[idx]));
+    st.s = grow(st.s, (t) => s0 + dist * t);
+    st.area = grow(st.area, () => a0);
+    st.halfWidth = grow(st.halfWidth, () => st.halfWidth[m - 1]);
+    st.breach = grow(st.breach, () => 0);
+    st.cut = grow(st.cut, () => 0);
+    st.end = 'channel';
+    st.joins = occLine(best);
+    st.joinS = L.s[idx];
+    return true;
+  };
+  // --- A stream that still ends in a hollow fills it: the hollow (a priority flood from its end over the routing
+  // ground, up to its lowest sill) becomes a pond at its spill (LakeMask.addPond), and the pond's outlet runs on from
+  // the sill as any lake's (outletPath, trace). A hollow too big (POND_MAX raster points) or deep (POND_DEEP) for that,
+  // or by the home field, stays a sink.
+  {
+    const nBefore = streams.length;
+    const ponds: number[] = [];
+    for (let j = 0; j < nBefore; j++) {
+      const st = streams[j];
+      if (st.end !== 'sink' || st.joins >= 0 || st.pool >= 0) continue;
+      const m = st.north.length - 1;
+      const k0 = Math.round((st.north[m] - ORIGIN) / LAKE_RASTER) * R + Math.round((st.east[m] - ORIGIN) / LAKE_RASTER);
+      const heap = new MinHeap(8 * (POND_MAX + 2));
+      const seen = new Set<number>([k0]);
+      const popped: number[] = [];
+      heap.push(k0, G(k0));
+      let lvl = -Infinity;
+      let sill = -1;
+      let ok = true;
+      while (heap.size > 0) {
+        const c = heap.pop();
+        const g = G(c);
+        if (g < lvl - 0.01 || (occ[c] !== 0 && occLine(occ[c]) !== nR + j) || (mask.poolAt(Math.floor(c / R), c % R) >= 0) || g <= 0.5) {
+          // Over the sill: lower ground, another line's water, a lake, the sea.
+          sill = c;
+          break;
+        }
+        lvl = Math.max(lvl, g);
+        popped.push(c);
+        if (popped.length > POND_MAX || lvl - G(k0) > POND_DEEP || byHome(c)) {
+          const why = popped.length > POND_MAX ? 'big' : byHome(c) ? 'home' : 'deep';
+          (report.pondWhy ??= {})[why] = (report.pondWhy[why] ?? 0) + 1;
+          ok = false;
+          break;
+        }
+        const ci = Math.floor(c / R);
+        const cj = c % R;
+        for (let a = 0; a < 8; a++) {
+          const qi = ci + DI[a];
+          const qj = cj + DJ[a];
+          if (qi < 1 || qj < 1 || qi >= R - 1 || qj >= R - 1) continue;
+          const q = qi * R + qj;
+          if (seen.has(q)) continue;
+          seen.add(q);
+          heap.push(q, G(q));
+        }
+      }
+      if (ok && sill < 0) (report.pondWhy ??= {}).nosill = (report.pondWhy.nosill ?? 0) + 1;
+      if (!ok || sill < 0) continue;
+      // Its water stands at the sill, POND_DROP under it: the points under that.
+      const level = lvl - POND_DROP;
+      const pts: number[] = [];
+      const gs: number[] = [];
+      for (const c of popped) {
+        if (G(c) < level) {
+          pts.push(c);
+          gs.push(G(c));
+        }
+      }
+      if (pts.length === 0) {
+        (report.pondWhy ??= {}).flat = (report.pondWhy.flat ?? 0) + 1;
+        // (No hollow: it stopped beside water standing over its own - a river held up on its floor, a stream - that its
+        // trace may not step into. It runs in there: on to that line's nearest sample within JOIN_REACH raster steps,
+        // its water level, as at any mouth, under the other's.)
+        if (joinBeside(j, k0)) (report.pondWhy ??= {}).joined = (report.pondWhy.joined ?? 0) + 1;
+        // (A raster artefact: no water would stand here. The stream runs on over the sill.)
+        continue;
+      }
+      const id = mask.addPond(pts, gs, level, sill);
+      ponds.push(id, pts.length);
+      st.end = 'lake';
+      // (Its water at the pond's, or under it where it came down into it.)
+      st.level[m] = Math.min(st.level[m], level);
+      // The outlet, from the pond's lowest way out.
+      const out = outletPath(id);
+      if (!out) continue;
+      const kk = out.path[0];
+      const first = { north: ORIGIN + Math.floor(kk / R) * LAKE_RASTER, east: ORIGIN + (kk % R) * LAKE_RASTER, level };
+      const t = out.end ? { path: out.path.slice(1), end: { ...out.end, ok: true } } : trace(out.path.slice(1), id, level, false, CONT_CLIMB, true, -1, CONT_CONNECT_R);
+      build(t.path, t.end, first, Math.max(1, st.area[m]), id);
+    }
+    report.ponds = ponds;
   }
   // (Where a river's water starts: a chain or a continuation may join it above its first feeder - riverNetwork.ts trims
   // the river's head to the first junction.)
