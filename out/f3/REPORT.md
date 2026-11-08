@@ -70,7 +70,8 @@ pushed. "f4s" below is `c6eafff`, the stage this builds on.
    - **Your call:** accept the gaps for now?
 3. **The block is continuous along the whole front, not segments.**
    - **Continuous (as built):** 3900-5900 km² of hill country becomes foothill range. Some lowland trunk rivers that ran
-     along the range front now run 15-38 km in a valley between the main range and the block (faultKnick lists them).
+     along the range front now run inside the block's belt, in a valley between the main range and the block: 20
+     stretches of 15 km or more over the three seeds, the longest 47 km (`final-faultKnick.log`).
    - **Segments centred on the big rivers' exits** (`blockSpan` 25 km): about a quarter of the area. On the proxy they
      gave exit / mouth 0.42 / 0.47 / 0.41, too close to the gate to keep.
    - **Your call:** continuous, or segments with the gate as a target to tune.
@@ -127,8 +128,12 @@ probe, via `scripts/probes/slopeSetup.ts`).
   - **The 3000 m is a routing wall only.** It never enters the ground: T is the steady state on that routing.
   - **The gorge.** Within one cell of a held river the block rises less (`blockGorge 1`).
 - **Cache and key.** `MODEL_VERSION` ss3 → ss4, and `modelKey` hashes the structure's fields and settings.
-- **Off means off.** With no structure, the model is bit-identical to f4s: the "none" variant reproduces every f4s gate
-  number exactly.
+- **The model is unchanged with the structure off.** With no structure, T is bit-identical to f4s's. The "none"
+  ablation, run before the river fixes below, reproduced every f4s gate number exactly.
+- **The world is not.** The two river fixes below apply to every seeded world, so structure-off on this branch is not
+  f4s. Seed 1's riverZero goes 0 → 2.4-2.7 km and seed 42's steps over 50 m go 17 → 15-20 (`abl-nonem.out`,
+  `abl-b0none.out`). Turning the structure off therefore does not return the owner to f4s. Narrow seeds get the river
+  fixes too.
 - **Only on wide-orogen seeds** (`seededOrogen()` non-null). Narrow seeds and seed 0 build no structure.
 
 **The threshold hillslopes in the block** (`heightfield.ts mountainSlopes`). The pass's mask takes the block's weight:
@@ -165,7 +170,16 @@ Logs:
 | **homeCheck** (seeds 1, 2, 5, 7, 42, 1234, 99991, 777777) | ok | **ok**; circuit 69 → 61 m on seed 1234 and 100 → 92 m on seed 777777, the rest identical | ok | pass |
 | **NaN; edge steps** | 0; 76.0 / 78.4 / 68.1 m | **0; 76.0 / 78.4 / 68.1 m** (same points) | not worse | pass |
 | **seed 0; presentGuard** | | nothing new runs at seed 0; presentGuard passes, not re-pinned | | pass |
-| **full suite** | 745 | SUITE_RESULT | all pass | SUITE_VERDICT |
+| **full suite** | 745 | **744 / 745** clean run; the one failure is career's "200 boards at seed 7" at 6.4 s against its 5 s timeout. `tests/career` with `--testTimeout=120000`: **528 / 528** | all pass | pass (the brief's timeout rule) |
+
+**Suite** (`npx vitest run --no-file-parallelism tests/terrain tests/world tests/era tests/career`):
+- **Clean run** (`suite2.log`): 744 / 745. The one failure is the 200-boards timeout above.
+- **First run, under load** (`suite.log`, run with the gate battery and the shots): 739 / 745.
+  - Three `seededWorld` "sites its own home field" tests timed out at 5 s. Run alone: 21 / 21.
+  - The golden boards for seed 7 failed. They were re-baked with `FS_CAREER_BAKE=1`; seed 0's entry is deep-equal to
+    `c6eafff`'s.
+  - Two 200-boards tests timed out.
+- **presentGuard** passes, not re-pinned.
 
 **riverZero on seed 1.** One line, 0.2 km, 5.6-8.3 km from its mouth (rzMouth). This is the f2s residual class: an
 estuary river beside 30-40 m coastal ground. No block or fault is near (blockAt: block weight 0, about 1 km inland).
