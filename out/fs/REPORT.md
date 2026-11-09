@@ -482,3 +482,223 @@ had three causes, each confirmed by switching one layer off at a time:
 - Suite 742/745, the three failures time budgets (200 boards, landmarks, airfields seed 7); all six affected files
   pass 76/76 with `--testTimeout=120000`.
 - World build 3.9–4.0 s per thread (node).
+
+## Round S: square corners, bigger streams stopping short, raised rivers (`8ade57e` .. `a26ee71`)
+
+Seeds 1 / 42 / 777777 throughout. "Before" is `dadaf54` (round D's `final11`); "after" is `a26ee71` (`out/fs/finalS8`).
+Battery logs per step: `finalS1`/`finalS2` (fix 1), `finalS3`/`finalS5` (fix 2), `finalS6`/`finalS7`/`finalS8` (fix 3). Shots
+in `out/fs/shots/*-S0.png` (before, rendered from a `dadaf54` copy in `out/fs/preS`) and `*-S.png` (after); the
+views are in `out/fs/viewsS.txt`. Port 5205; stopped.
+
+### Short version
+
+| | met? | before | after | aim |
+|---|---|---|---|---|
+| 1. square corners: painted right-angle turns (rillGate iii) | **no** | 11.7 / 9.1 / 13.1 per 100 km | **8.8 / 7.8 / 10.5** | < 1 |
+| 1. ... of which in the course itself (not at a junction or a pit's spill) | | not split | 0.4 / 1.0 / 0.2 | |
+| 1. traced gully-chain streams' turns on open floors | | 6.9 / 7.9 / 6.5 per 100 km | 4.3 / 4.6 / 4.0 | (no aim) |
+| 1. floor sinuosity, 1.5 km windows under the braid line, p50 | **no** | 1.06 / 1.07 / 1.06 | 1.04 / 1.06 / 1.05 | NZ 1.3-2.5 |
+| 2. traced streams ending as sinks in hills and mountains | **no** (4 left) | 5 / 2 / 2 | **2 / 1 / 1** | 0 |
+| 2. painted wet ends > 30 m from water | yes (better) | 8 / 10 / 10 | **0 / 0 / 0** | not worse |
+| 2. dry river heads with no feeder | yes (same) | 9 / 12 / 7 | 9 / 12 / 7 | not worse |
+| 3. river over a dry neighbour > 10 m (waterWalls) | **no** | 1930 / 2008 / 1859 | **1860 / 1906 / 1780** | under 1692 / 1824 / 1605 |
+| 3. ... > 30 m | **no** | | see below | 0 |
+| 3. water over ground > 10 m (overGround) | yes | 9 / 58 / 36 | 9 / 58 / 35 | not worse |
+
+What a pilot sees at the owner's three views is the same before and after (below): the painted streams there are
+under forest, or a pixel wide, from 1000-1300 m. The changes show on the maps (`out/fs/shots/tm-*`) and close up.
+
+### 1. Square corners
+
+**What the corners were.** Three different things, found by mapping the painted lines over the ground
+(`scripts/probes/turnMap.test.ts`) and splitting rillGate's turns by what is within 50 m of them:
+- **The drawn ground's facets.** Beside a gully chain the terrain draws the threshold slopes' 250 m ground bilinearly
+  (erosion.ts sampleErosion: Catmull-Rom ripples a V's floor). At a face's foot that makes planes facing along the
+  grid's rows and columns. A painted stream came down the face's fall line, then turned onto the crease along a grid
+  row and ran due west to the valley's stream (`tm-42-owner-S0.png`, the dark face on the right). That is the corner
+  in the owner's valley.
+- **Pits' spills.** A pit on near-level ground spills to the first lower cell a small flood reaches, up to 160 m away.
+  It was drawn as one straight chord, with a corner at each end.
+- **Junctions.** A side stream meeting a bigger one at more than 60 degrees counts as a turn. Before this round this
+  was most of rillGate's count; it still is.
+
+**What changed.**
+- `rills.ts`: the painted streams are routed over the drawn ground with the threshold slopes' part replaced by its
+  B-spline (`erosion.ts slopeSmoothDelta`). They follow the slopes' own fall lines and round their valleys' bends.
+  The drawn ground is not changed. Nothing is faded or smoothed more.
+- `rills.ts`: a pit's spill is drawn along the flood's own way over the low ground (the cells it crossed, corners
+  cut), not as a chord.
+- `rills.ts`: a dead-end bug in the strand merge. A line running into a strand hidden beside a bigger line, whose
+  bigger line was the incoming one itself, stopped dead there, wet. Every one of rillGate's wet ends over 30 m from
+  water (8 / 10 / 10) was this. The strand is now drawn as the line's way on.
+- `streams.ts`: a gully-chain stream's points on an open floor (the slopes' ground a node either side under 15 m
+  over it) are no longer pinned to the 250 m raster: its samples there are laid as a curve through them and their
+  ground looked at again. A chain stream coming off an open floor, or across one, joins its receiver along a curve
+  tangent to both courses, up to 400 m down it, at 45 degrees or less (a Y, not a T): 358 such joins on seed 42.
+
+**Numbers** (`finalS8/turnClass.log`, `streamTurns.log`, `rillGate.log`):
+- Painted turns 11.7 / 9.1 / 13.1 → 8.8 / 7.8 / 10.5 per 100 km. By kind, after: at a junction 7.0 / 5.6 / 8.9, at a
+  spill 1.5 / 1.2 / 1.4, in the course 0.4 / 1.0 / 0.2. Before (seeds 1, 42): junction 7.9 / 6.4, spill 3.7 / 2.8.
+- In the owner's valley (the 9 patches about the floor view): 7.5 → 3.1 per 100 km.
+- Traced chain streams' turns: open floor 6.9 / 7.9 / 6.5 → 4.3 / 4.6 / 4.0; in a V 2.6 / 3.5 / 3.3 → 2.5 / 3.0 /
+  3.1 (kept to the V's floor on purpose); off the slopes 10.3 / 8.6 / 9.6 → 7.2 / 4.6 / 7.5.
+- Chain-stream mouths joining at more than 60 degrees: 781 / 794 / 856 → 713 / 705 / 749 of about 1130-1230. Only
+  the mouths off an open floor are curved; those coming out of a V keep the angle the V meets its trunk at (not
+  measured further).
+- Floor sinuosity (1.5 km windows, gradient under the braid line 0.083 A^-0.44): p50 1.04 / 1.06 / 1.05, p90
+  1.97 / 2.10 / 2.07; 13 / 17 / 15 % of windows in NZ's 1.3-2.5.
+- Painted band in the floor view (`out/fs/tools2/banddiff.py`: pixels changed against a rills-off render): 1-3 km²
+  0.1 → 0.0 px, 3-10 km² 2.0 → 1.7 px. Not wider.
+
+**Not met, and why.**
+- **The gate (< 1 per 100 km) is not met.** What is left is junctions (7.0 / 5.6 / 8.9) and spills (1.5 / 1.2 /
+  1.4). The course itself is under 1 on seeds 1 and 777777 and at 1.0 on seed 42.
+- **The landform itself follows the grid.** On gentle floors the threshold-slope pass (hillslopes.ts) routes over
+  the 250 m grid and builds its channel floors along that routing. Where it ran dead straight along a row or a
+  diagonal, the valley it built does too. Example: `tm-1-end-S1.png`, a 1.2 km floor chain due west along a grid row
+  with column-straight tributaries joining it at right angles. A painted or traced stream in that valley follows it.
+  Fixing that means changing the pass's routing, which moves the ground everywhere and every gate with it. Not done
+  this round.
+- **Traced streams pinned on the slopes' floors** (not gully chains: lattice streams, continuations) still keep to
+  their raster points. Where the routing alternates orthogonal steps they run as a staircase (`cases/s1-1265-*.png`,
+  lower left).
+- **Winding.** Floor sinuosity stays at 1.04-1.06, against NZ's 1.3-2.5 for winding single threads. Nothing was
+  added to make it wind: the streams are no longer cornered, but they are not meandering either.
+
+**Pictures.**
+- Maps: `tm-42-owner-S0.png` (before) and `tm-42-owner-S2.png` (after): the painted streams on the right-hand face now
+  come down its fall line into the valley stream instead of running due west along the creases.
+  `tm-42-b-S3.png` (junction hooks and a grid-diagonal floor chain), `tm-1-end-S1.png` (grid-row floor chain).
+- The owner's views (`floor-`, `wind-`, `face-S0.png` / `-S.png`; `floor` compared on the crop 950,250-1600,900):
+  - **floor:** the same picture. The valley stream runs down the floor at the face's foot; the fields beyond carry the
+    same thin, crack-like painted lines. Their jaggedness is the line's drawing at a pixel wide from 2 km, not its
+    course. No new corners.
+  - **wind:** the same. The winding stream with wooded banks runs down the floor; the left wall is forest, and no
+    side stream shows from 1000 m.
+  - **face:** the same. The two small streams the brief names are not visible from this camera, before or after.
+- Close pair: `foot-` and `fields-S0.png` / `-S.png` (at 250 m over the floor): the same; the face's painted streams
+  are under the canopy.
+
+### 2. Bigger streams stopping short
+
+Each case, why the existing paths declined it (StreamReport.endWhy, probe `sinkCases`), and what now happens:
+
+| seed, line | end N, E | catchment | why it stayed a sink | now |
+|---|---|---|---|---|
+| 1, 433 | 127750, 156000 | 28.6 km² | a lake's outlet: outlets were never offered the run-on or pond paths | ends in a pond filled at its end (`cases/s1-433-*`) |
+| 1, 434 | -131250, -147250 | 22.1 km² | the same | ends in a pond |
+| 1, 602 | 36250, 41000 | 99.7 km² | run-on sank; pond filled, but every straight way in crossed its own course | **still a sink**: cutting it back into the pond takes 0.6 km of its course |
+| 1, 1265 | 25250, -98750 | 71.9 km² | run-on sank (no way out); the hollow's lowest neighbour was another line's point (801), read as its sill: no pond, no run-on | that line's water stands higher, so it walls the hollow now; the hollow is filled as a pond and the stream ends in it |
+| 1, 1414 | -43000, -64500 | 119.0 km² | as 602 | **still a sink**: the cut would take 1.3 km |
+| 42, 450 | 110250, -29000 | 22.0 km² | a lake's outlet, as 433 | **still a sink**: its hollow is flat (no point under its sill) and the run-on from the sill sinks at once. Run on from its own end, the trace kept beside its lake's shore round to a way out (a carved channel ringing the lake), so that is not done |
+| 42, 728 | -138750, -118500 | 84.8 km² | as 602 | cut back (under 450 m) into the pond it filled (`cases/s42-728-*`) |
+| 777777, 789 | -83250, -52750 | 130.4 km² | as 602 | **still a sink**: its course ran through a 6 ha hollow 5 km before its end, climbed over a sill and ended in another; the cut would take 5.0 km |
+| 777777, 818 | -16500, -9000 | 82.4 km² | as 602 | cut back into its pond |
+
+**What changed** (`streams.ts`):
+- The pond pass takes lakes' outlets too. The run-on pass does not (the shore-ringing channel above).
+- The pond's flood takes another line's water standing over the flood as a wall at that height. A line at the sill
+  no higher than the flood is where the hollow spills: the stream runs into it.
+- A stream whose every straight way into its pond crosses its own course is cut back as little as it may: to its last
+  sample from which a straight reach of at most two raster steps runs in without crossing. At most 450 m: a 3 km
+  allowance cut 0.6 km off seed 42's f3 line 716, which moved.py counted. Streams joining the part cut off run on to
+  its new end.
+- Ponds made: 8 / 18 / 16 → 14 / 20 / 20.
+
+**Not met.** 2 / 1 / 1 left (seed 1 lines 602 and 1414, seed 42 line 450, seed 777777 line 789), for the reasons in
+the table. 602, 1414 and 789 need a pond over two hollows joined by the sill their course climbed; 450 needs its lake
+to keep its water (no outlet) or its hollow filled from the lake's side.
+
+**Same fix, other counts:** painted wet ends over 30 m from water 8 / 10 / 10 → 0 / 0 / 0 (fix 1's strand bug); dry
+river heads with no feeder 9 / 12 / 7, unchanged.
+
+**Pictures:** `out/fs/shots/cases/s<seed>-<line>-before.png` / `-after.png` (4 km maps about each end: traced lines
+cyan, painted blue/brown, chains pink/red).
+
+### 3. Raised rivers
+
+**What the count is made of.** waterWalls counts a 50 m grid point in a channel whose neighbour 50 m away is dry and
+more than 10 m under the water. Split (probe `wallSplit`, at `a26ee71`):
+
+| class | seed 1 | seed 42 | seed 777777 |
+|---|---|---|---|
+| a river's mouth over the sea bed (the sea, standing at 0 m, is taken as dry by the probe) | 738 | 1071 | 525 |
+| along: the channel's own fall over the 50 m (a steep reach, a fall) | 962 | 666 | 1029 |
+| beside, bank (no lower ground across within 250 m) | 16 | 5 | 12 |
+| beside, off the floor (lower ground across: perched) | 144 | 164 | 214 |
+| of the beside ones, over 30 m | 11 | 9 | 9 |
+| total > 10 m | 1860 | 1906 | 1780 |
+
+The three worst named are all "along": seed 1's 123.8 m at -23350,114100 is a waterfall over a fault (`ww1-S0/-S`),
+seed 42's 70.0 m at -71300,20500 a stream on a 115 % cascade, seed 777777's 92.1 m at 21500,-144050 a stream dropping
+over f3's 110 m step (`ww7`). The perched ones are mostly streams (111 / 102 / 174), then rivers (18 / 53 / 20) and chain streams (15 / 9 / 20).
+
+**What changed.**
+- `riverNetwork.ts`: bbe5199's raise of a stream's water toward the drawn ground is held to at most 2 m over the lower
+  of its banks, sampled 25 m beyond its channel either side. On a spur's nose the ground falls away either side; the
+  raise had stood the water over it.
+- Tried and not kept: filling a perched river's floodplain up to its floor (the valley cut signed, at most 40 m;
+  `8f1e22a`). It took the total down by only 12 / 32 / 15, and it raised the ground beside rivers up to 40 m over
+  the natural ground, which tests/terrain/seededWorld forbids (a levee is a few metres at most). Removed in `a26ee71`.
+- Tried and not kept: dropping the raise altogether. That took the total to 1625 / 1755 / 1525 (under stage 3), but
+  brought back seed 777777's 110 m step at 21500,-144000 (steps > 100 m 0 → 1) and two points of water over the
+  ground at a held mouth on seed 1 (overGround 9 → 11). Both are on the must-not-regress list.
+
+**Not met.**
+- The total is 1860 / 1906 / 1780 against stage 3's 1692 / 1824 / 1605 (before: 1930 / 2008 / 1859). Over half of it
+  is sea-bed mouths and channels' own falls, which the metric counts and which no water level fixes.
+- Over 30 m: not 0. Beside (perched) over 30 m: 11 / 9 / 9 edges. Worst perched: seed 777777 line 720 (stream) 62 m
+  at -13700,31250; seed 42 line 2117 (chain) 45 m at -42950,33000; seed 1 line 2185 (chain) 38 m at 23650,-100700.
+- Pictures at the three worst spots, before/after: `ww1-`, `ww42-`, `ww7-S0.png` / `-S.png`. All three look the same
+  after: a waterfall over a fault (seed 1), a thin stream through a clearing on a steep forested slope (seed 42), and a
+  dark notch where a stream drops through the forest to the valley farms (seed 777777).
+
+### Must not regress (`final11` → `finalS8`)
+
+| | before | after | |
+|---|---|---|---|
+| drawnGate (i) traced drawn width within ×0.6-1.6 of the bed law | 95.9 / 95.8 / 95.5 % | 96.1 / 95.7 / 95.5 % | seed 42 0.1 under (it read 95.6-95.8 over the round's steps) |
+| drawnGate (ii) receivers under 0.8× the joining stream | 1 / 1 / 0 | 0 / 1 / 0 | held |
+| drawnGate (iii) breaches wider than the bed | 0 | 0 | held |
+| painted band, floor view (banddiff.py), 1-3 / 3-10 km² | 0.1 / 2.0 px | 0.0 / 1.7 px | held |
+| moved.py (f3 courses) | 1 / 0 / 3 | 1 / 0 / 3 | held |
+| seed-42 box: slope p50, peak, 1 km relief, b, pits | 31.0°, 35-37.5, 594 m, 1.16, 1.89 | 31.0°, 35-37.5, 594 m, 1.26, 1.89 | passes (b ≤ 1.3); b moved 1.12-1.26 over the round's steps |
+| homeCheck; riverZero; lakes; edges; NaN | 8/8; 0.2 / 2.2 / 0.0 km; 71 / 74 / 61; 76.0 / 78.4 / 68.1 m; 0 | the same | held |
+| steps > 100 m | 0 / 0 / 0 | 0 / 0 / 0 | held |
+| world build per thread (node, alone; seeds 42 / 1 / 777777) | 3.9-4.0 s | **4.07-4.20 / 3.98-3.99 / 4.11-4.15 s** | **over**, by 0.1-0.2 s on seeds 42 and 777777 |
+| seed 0 / presentGuard | | presentGuard passes, not re-pinned; the new terrain code is seeded-world only (the slopes' smoothing reads the threshold slopes, none at seed 0) | held |
+| small streams at true width | | unchanged (no width code touched) | held |
+| MODEL_VERSION | ss5 | ss6 | bumped |
+
+Also moved, not on the list: steps over 50 m 39 / 15 / 43 → 40 / 15 / 43; streams' lower bank over the water by more
+than 10 m (bankHeight) 91 / 121 / 90 → 92 / 121 / 90; the seed-42 box's b over 10-100 m 1.21 → 1.38 (it moved
+between 1.21 and 1.41 over the round's steps); gullyGate cut V's with water 98.3 / 94.9 / 98.5 → 97.8 / 96.8 / 98.5 %, and wet painted line ends reaching the
+network 91.5 / 92.0 / 91.2 → 93.3 / 92.4 / 94.2 %.
+
+**Build time, where it went** (phaseTimes alone, twice each): after fix 1 3.91-3.99 / 3.83 / 3.92-4.00 s. Fix 3's
+bank check on the raise costs about 130 ms a seed (without it: 4.04 / 3.88 / 4.00 s): two natural-ground samples
+beside each raised sample. Looking at the banks every other sample took it to 4.06-4.09 / 3.96-3.99 / 4.05-4.08 s but
+let 31-38 more perched edges back per seed (waterWalls 1891 / 1944 / 1813), so it was not kept. Not fixed.
+
+**Suite** (`finalS8/suite.log`): 738 / 745. All 7 failures are 5 s time budgets: landmarks (3: determinism, the
+rules at seed 7, the road network at seed 7), 200 boards at seed 7, airfields (2: seed 7, differs between seeds),
+seededWorld seed 7 "sites its own home field". Round D had 3 of these. The six files pass 76 / 76 with
+`--testTimeout=120000` (`finalS8/suite-longtimeout.log`). At `92682fe` seededWorld also failed functionally (a
+self-crossing course at a pond entry, a 15-25 m bank from the floodplain fill); `a26ee71` fixed both.
+
+### Commits
+
+| commit | what |
+|---|---|
+| `8ade57e` | painted streams routed over the slopes' smoothed fall lines; spills drawn along their way; chain streams curved on open floors and joining as a Y; MODEL_VERSION ss6 |
+| `4f0a823` | painted streams: no dead wet end at a hidden strand |
+| `8b8da76`, `d9b0433`, `ad575e0`, `8f7f084` | dead ends: outlets in the pond pass, a higher line walls a hollow, a level line at the sill is joined, a course run past its pond cut back (at most 450 m) |
+| `8f1e22a` | raised rivers: the stream water raise dropped, perched floodplains filled (both measured alternatives, undone below) |
+| `92682fe` | the raise back, held to 2 m over the lower bank |
+| `a26ee71` | the floodplain fill removed; a cut-back stream's reach into its pond may not hook back across its last segments |
+
+### Probes and tools added
+
+`scripts/probes/`: `turnMap` (map and turn classes), `streamTurns` (traced turns, mouths, sinuosity), `chainTurns`,
+`floorSec`, `wetEnds`, `ptNet`, `sinkCases` (dead ends with reasons), `wallSplit` (waterWalls by class), `crossSec`.
+`out/fs/`: `finalS.sh` (the battery), `shotsS.sh`, `shotsS2.sh`, `caseMaps.sh`, `tools2/banddiff.py`.
