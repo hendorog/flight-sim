@@ -702,3 +702,216 @@ self-crossing course at a pond entry, a 15-25 m bank from the floodplain fill); 
 `scripts/probes/`: `turnMap` (map and turn classes), `streamTurns` (traced turns, mouths, sinuosity), `chainTurns`,
 `floorSec`, `wetEnds`, `ptNet`, `sinkCases` (dead ends with reasons), `wallSplit` (waterWalls by class), `crossSec`.
 `out/fs/`: `finalS.sh` (the battery), `shotsS.sh`, `shotsS2.sh`, `caseMaps.sh`, `tools2/banddiff.py`.
+
+## Round T: bigger streams stopping short, square corners, raised rivers (`6c35d7e` .. `1eb8e12`)
+
+Seeds 1 / 42 / 777777 (/ 7 where a test uses it). Plan: `out/fs/PLAN-T.md` (steps 1-5 done in order; step 6, the
+channel-band interpolant, waits for the owner). "Before" is HEAD `64b3c61` (code `a26ee71`, `out/fs/T0`, pictures
+rendered from a copy of HEAD in `out/fs/preT`); "after" is `1eb8e12` (`out/fs/T4` per-step checks, `out/fs/TF` the full
+battery and suite). Pictures: `out/fs/shotsT/<view>-T0.png` / `-T2.png` / `-T3.png` / `-T4.png`, cameras in
+`out/fs/viewsT.txt`, one line per picture in `out/fs/shotsT/notes.txt`. Port 5222 (the shot tool's own vite), stopped.
+
+### Short version
+
+| gate | before | after | target | met? |
+|---|---|---|---|---|
+| E1 dead ends, A >= 10 km² (seed 7 too) | 3 / 2 / 3 / 3 | **0 / 0 / 0 / 0** | 0 | yes |
+| E2 outlets running back into the water that fills them | **5 / 12 / 8 / 9** (plan said 5: it looked at the dead ends only) | **0 / 0 / 0 / 0** | 0 | yes |
+| E3 line 789's catchment at its end | 130.4 km² | **53.8 km²** | about 53.8 | yes |
+| E4 tests/terrain/seededWorld | 21 / 21 | 21 / 21 | 21 / 21 | yes |
+| C1 crease, node line vs mid-cell, in the band | 3.06x / 2.33x / 4.14x | the same | <= 1.5x | no (step 6, not done) |
+| C2 barbed mouths > 120 deg | 138 / 126 / 157 (8.3 / 7.5 / 8.8 %) | 135 / 117 / 149 (8.1 / 7.0 / 8.4 %) | <= 4 % | **no** - BARB_FIX meets it (3.3 / 3.9 / 3.1 %) but regresses three gates: off |
+| C2 staircases, non-chain floor streams | 16.2 / 10.5 / 10.1 km | the same | <= 2 km | **no** - CURVE_FLOORS gets 0.0 / 0.0 / 3.4 km but moves 517 in the owner's box: off |
+| C2 non-chain floor grid share | 45 / 39 / 42 % | the same | <= 20 % | no (34 / 28 / 31 % with CURVE_FLOORS) |
+| line 517's elbow and 146 deg hook | 58 deg turn, 146 deg mouth | the same | gone | **no** (gone with BARB_FIX: mouth 19 deg) |
+| C3 painted out-and-back segment pairs | 3 / 15 / 9 | **2 / 4 / 9** | 0 | no |
+| W1 rivers > 30 m over the floor beside them | 427.5 / 326.9 / 386.3 km | the same | -70 % | **no** - no settle (step 5 stopped: no build-time flag passes) |
+| W2 water > 10 m over its own centre ground | 0.2 / 0.6 / 2.7 km | 0.2 / 0.6 / **1.2** km | 0 | no (line 720 fixed; the rest other causes) |
+| W3 settle precision | - | - | <= 1.5 | not built |
+
+What a pilot sees: at seed 777777's valley (`s7-789-along`) the third channel running back up the floor is gone and the
+stream ends in a small lake; seed 1's long lake (`s1-1414-*`) has one outlet and no trenches or lines under its water;
+lake 70 (`s42-450`) has no pale channel leading nowhere. Seed 42's plains get a new 9.7 km² lake (`s42-716`). The owner's
+valley (`floor`, `wind`) is unchanged. Line 720 now drops into the airfield approach it crosses instead of running level
+50 m above it; the pale "sheet" there is the approach's cleared zone, not water, and stays.
+
+### Step 1: probes and baseline (`6c35d7e`)
+
+Committed gate probes (`scripts/probes/`): `endsGate` (seed 7 added; every pond made listed with area, centre, level),
+`outletLoops` (any lake or pond outlet whose way down reaches a line ending in its own pool - generic, so it found 34
+loops, not the plan's 5), `wallsGate` (invWalls part 2; scan off unless SCAN=1; default ACID spots), `cornerGate`
+(invJunctionsTraced with the mouths found from geometry, a GATE summary and the wiggle term), `creaseGate` (all three
+seeds; 24 transects per seed picked in the channel band), `paintedLoops`. Repairs: `streamTurns` finds each mouth from
+geometry (hydrology.rivers has no joinS); `invJunctionsPainted` never walks a segment twice; `waterWalls` keeps its old
+count and adds a corrected one (the sea wet, the channel's own falls apart): 1860 / 1906 / 1780 old, 1122 / 835 / 1255
+corrected, of which own falls 595 / 416 / 707. `out/fs/tools2/group.py` copied.
+
+Wiggle term (G1/G2): a course's lateral offset from its own chord over +-25/50/75 m; a ruler-straight window or grid run
+counts only where its rms is under 3 m. It takes chain ruler-straight from 50.4 / 43.6 / 50.7 % to 32.0 / 26.0 / 32.4 %
+and traced grid runs from 2100 / 1710 / 2240 km to 1545 / 1247 / 1664 km; it clears line 517's 2.1 km reach. Both raw and
+wiggle figures are kept, since the term also hides D8 runs that wander has decorated.
+
+Timing (phaseTimes alone, median of 3): HEAD 4124 / 3992 / 4081 ms (seeds 42 / 1 / 777777), streams 559 / 547 / 587 ms.
+
+### Step 2: bigger streams stopping short (`352e9a3`)
+
+**Trigger.** Written as a rule, counted before anything was built: a stream the pond pass still leaves a sink ('allCross',
+'flat' with nothing to join, a refused cut back). It fires on exactly the eight named lines and seed 7's three real
+cases (457, 567, 1521), nothing else.
+
+**What changed** (`streams.ts`, seeded worlds only):
+- FILL_DEAD_ENDS: the hollow is filled from the pit the stream's water was held at, by a priority flood in from the water
+  round it (window 12, then 24, then 48 raster steps, grown only where the way out leads to its edge - exact, and it kept
+  the trace's cost to +18-42 ms), up to its real way out; water an outlet flows into stands no higher than the pond + 6 m.
+  The stream ends where it first comes into the water; its tributaries past there end where they come in; the outlet
+  runs along the flood's way out. Where the course never enters the water it runs in from its last sample with a
+  straight reach crossing nothing; failing that the old pond stays (it is taken back and put back exactly:
+  LakeMask.pondState/restorePonds).
+- No outlet - of a pond or a lake - may join a line filling its water or upstream of that. The cause of all 34 loops:
+  outletPath ended at the first channel point, which was the filling stream lying against the pond. Where that leaves no
+  way out within OUTLET_SILL, or the way out sinks, the pond or lake is closed (no outlet), with a two-sample stand-in in
+  its water so the streams after it keep their ids (wander is seeded by id: without it every later stream on seed 777777
+  wiggled differently and overGround jittered).
+- A pond outlet's catchment is its pond's inflow (every line ending in it, each once), summed after the network's, higher
+  ponds first.
+- Decision 4 default (LAKE_BACK_CLOSED): lake 70's outlet 450 and lake 57's outlet 431 drain only back into their own
+  lakes; each is cut back to its samples in its lake. LAKE_RAISE (off) raises the lake to its real spill instead: lake 70
+  becomes 4.44 km² at 283.4 m (+22 m), outlet into line 220 (`s42-450-T2raise.png`); lake 57 8.94 km² at 144.0 m.
+- Decision 3 (POND_KEEP 3 km², POND_SILL_CUT 15 m, BIG_POND_KEEP false): only seed 42's 716 makes a pond over 3 km²;
+  its sill stands 36 m over the pit, so the lake is kept.
+
+Every pond the dead-end rule made: seed 1 602 1.00 km² at 35375,41141 (185.3 m; sill 11.7 m over the pit), 738 0.56 km²
+at 113861,128833 (24.2 m), 1414 1.44 km² at -42054,-62946 (322.9 m); seed 42 716 **9.69 km² at 132352,-123990** (198.9 m);
+seed 777777 769 0.69 km² at -148114,-23318 (20.2 m), 789 0.50 km² at -80969,-53813 (32.8 m); seed 7 567 2.19 km² at
+-12736,125757 (27.0 m), 1521 0.13 km². Pond area 7.8 / 11.4 / 8.8 / 5.7 -> 8.3 / 20.6 / 9.6 / 7.6 km². Ponds now closed by
+the loop rule: 5 / 8 / 7 / 2 (and seed 777777's lake 35), each listed by endsGate with what its outlet used to join.
+
+**Numbers:** E1 0/0/0/0; E2 0/0/0/0; 789 ends at 53.8 km² (602 and 716 become stubs inside their ponds, as the verifier
+said); seededWorld 21/21; deep-notch reaches 154.6 / 225.8 / 311.0 / 228.4 -> 148.8 / 222.7 / 301.1 / 227.4 km (reported
+only). moved.py 1/0/3 -> 3/2/6: 738, 602 / 716, **450** / 769, 789, **431**. 450 and 431 were not in the plan's list: they
+are the lake outlets decision 4's default closes. Every one is allowed by `out/fs/tools2/allow.py` (the generated list,
+decision 2): 74-100 % of each one's moved length was a notch more than 5 m under its ground. Owner's box 0/146.
+
+### Step 3: square corners, stage A (`8ba7cc3`)
+
+- **Line 517's hook** is not the course running past the river: a stream reaching a line's channel stops at the first
+  raster point within RIVER_TOUCH (200 m) of it, and joined it at the receiver sample that marked that point - the most
+  upstream one. Coming in from beside river 64, 517's last reach turned back up the river (146 deg). BARB_FIX joins such a
+  stream downstream along junction()'s curve (else at the nearest sample). Measured on: barbed 3.3 / 3.9 / 3.1 % (target
+  met), 80-90 deg 9.4 / 7.3 / 9.5 %, 517's mouth 19 deg (a 84 deg bend remains just before it). But drawnGate (i) on seed
+  42 fell to 95.4 % (floor 95.6), bankHeight rose to 94 / 122 / 93 (limit 92 / 121 / 90) and 517's points in the owner's box
+  moved. **Left off.**
+- **Staircases** on non-chain streams are pinned to the slopes' channels (slopePinned), not open floors: the plan's open
+  floor test alone changed nothing. CURVE_FLOORS frees a raster point where the curve through it keeps to ground within
+  FLOOR_RISE of the point's, with 4 more passes at the raster's spacing, each point within 90 m of its raster point
+  (lake outlets, streams ending in water and the last 3 points excluded - one ending in a lake on seed 99991 otherwise
+  failed seededWorld). Measured on: staircases 0.0 / 0.0 / 3.4 km, grid share 34 / 28 / 31 %, drawnGate, bankHeight,
+  overGround (9 / 47 / 32) and moved.py all held - but 3 of the owner's box's 146 points on line 517 moved more than 50 m.
+  **Left off** (the wind view looked the same with it on: `wind-T3.png`).
+- **Painted out-and-back pairs:** two causes. (1) Two pits' spills on flat ground running over the same cells in
+  opposite directions, drawn along their ways since round S - now drawn as chords: seed 42's hottest patch's 10 pairs
+  gone. (2) The strand merge redirecting a line back up its own line (`j = root(j)`): stopping it left 2 / 0 / 1 wet dead
+  ends in rillGate, so it is not done. 3 / 15 / 9 -> 2 / 4 / 9.
+- Not done: the optional chain-stream wander (item 3).
+With both constants off the traced lines are byte-identical to step 2's.
+
+### Step 4: water standing over its own ground, line 720 (`1eb8e12`)
+
+The plan's two suspects (perLine against perLineBlend, wallWeight against lastWallAt) are not it: no river valley reaches
+line 720 at all (probe `carveAt`). Line 720 crosses a **generated airfield's approach**: sampleTerrain trims the ground
+under APPROACH_GRADIENT after the network's carve, up to 55 m there, and the airfields are sited after the streams are
+traced. Fix, levels only: once the airfields are sited, Hydrology.holdUnder lowers each stream's water under the ground
+the airfields' trim makes of the ground it was levelled on (the home approaches, a field's approaches and flat - fieldTrim,
+the same arithmetic), falling downstream, and works its flow out again (FIELD_HOLD). 71 / 164 / 1016 samples lowered.
+W2 0.2 / 0.6 / 2.7 -> 0.2 / 0.6 / 1.2 km; line 720 is out of it (the rest are other causes: seed 777777 river 6 48.6 m at
+-107098,67358 over 308 m, streams 510, 1382, 561). The trim is a soft minimum, so the bed under 720 still lies up to 20 m
+under its water in the cut (deep water in a narrow channel; no water over the ground beside it: probe `gridAt`).
+**The "sheet"** in 777777-B720 is the approach's cleared zone (approach > 0, no trees), not water: it is still in the
+after picture, and no stream fix will move it.
+
+### Step 5: targeted settle - stopped at its first item
+
+No build-time flag passes (`out/fs/T5/proxy.txt`, from the verifier's measurements at this river geometry, unchanged by
+steps 2-4): p1 (the model's carve > 200 m off the axis) flags 3.5-4.5x the > 30 m shelf length and catches 75 % of it on
+seed 42; p2 (coarse minus filled > 30 m) flags 4-6x and catches 65-75 %; their AND can catch no more than p1's 75 % on
+seed 42. Pass needs >= 80 % at <= 1.5x. As the plan says, step 5 stops: no SETTLE built, river 64 untouched (decision 1
+default), MODEL_VERSION stays ss6 (nothing the cached model holds changed this round), and the settled alternative of
+the owner's valley exists only as the verifier's prototype renders (`out/fs/inv/vwalls/shots/42-valley-proto.png`,
+`42-wind-proto.png`).
+
+### Must not regress (`finalS8` -> `TF`, the full battery at `1eb8e12`)
+
+| | before | after | rule | |
+|---|---|---|---|---|
+| drawnGate (i) / (ii) / (iii) | 96.1 / 95.7 / 95.5 %; 0 / 1 / 0; 0 | 96.0 / 95.7 / 95.5 %; 0 / 1 / 0; 0 | (i) >= 95.6 / 95.6 / 95.4 | held |
+| moved.py (f3 courses) | 1 / 0 / 3 | 3 / 2 / 6 | named + allow-listed only | held: 738, 602 / 716, 450 / 769, 789, 431, each allowed (allow.py, 74-100 % notch) |
+| owner's box (seed 42, 146 points) | - | 0 moved | 0 | held |
+| overGround > 10 m | 9 / 58 / 35 | 8 / 58 / 35 | <= 9 / 58 / 35 | held |
+| bankHeight > 10 m | 92 / 121 / 90 | 92 / 121 / 90 | <= 92 / 121 / 90 | held |
+| steps > 100 m; > 50 m | 0; 40 / 15 / 43 | 0; 40 / 15 / 43 | 0; no worse | held |
+| seededWorld | 21 / 21 | 21 / 21 | 21 / 21 | held |
+| homeCheck; riverZero; lakes | 8/8; 0.2 / 2.2 / 0.0 km; 71 / 74 / 61 | the same | unchanged | held |
+| seed-42 box: slope p50, b, pits | 31.0, 1.26, 1.89 | 31.0, 1.26, 1.89 | b <= 1.3 | held |
+| seed-777777 box b (reported) | 1.19 | 1.34 | - | moved (step 4's held streams lie in it) |
+| gullyGate; rillGate wet ends > 30 m | 97.8 / 96.8 / 98.5 %; 0 / 0 / 0 | the same; 0 / 0 / 0 | no worse | held |
+| painted band (banddiff.py) | 0.0 / 1.7 px | not re-rendered | not wider | traced lines unchanged by step 3 as shipped; rills changed only for flat spills |
+| waterWalls old count | 1860 / 1906 / 1780 | 1856 / 1906 / 1741 | reported | |
+| presentGuard (seed 0) | passes | passes, not re-pinned | | held |
+| suite | 738 / 745 | 737 / 745: 8 failures, every one a 5 s time budget (system 200 boards, landmarks x3, waterFlow seed 42, airfields x2, bedrock stones); the six files pass 76 / 76 with --testTimeout=120000 | 738 / 745, time budgets only | one more timing failure than finalS8's 7 (decision 8: no budget changed) |
+| build time (phaseTimes alone, median of 3, seeds 42 / 1 / 777777) | 4124 / 3992 / 4081 ms | 4207 / 4020 / 4221 ms (streams 591 / 579 / 629 ms against 559 / 547 / 587) | <= +150 ms | held: +83 / +28 / +140 ms (seed 777777 at the edge) |
+
+### Pictures (before `-T0`, after `-T2` / `-T3` / `-T4`; `out/fs/shotsT/`)
+
+- `s7-789-along` (T0/T2): the third channel running back up the floor beside the stream is gone; the stream ends in a
+  narrow new lake on the floor.
+- `s1-1414-end`, `s1-1414-sw` (T0/T2): one outlet leaves the lake's far end; the twin trench, the dark lines under the
+  water and the shore trench are gone.
+- `s1-602` (T0/T2): nearly the same: a lake fed by a stream; the channel along its east shore is gone.
+- `s42-716` (T0/T2): a ~6 km lake (9.7 km²) now lies along the foot of the hills - decision 3's rule keeps it (sill 36 m).
+- `s42-450` (T0/T2): lake 70 without its pale channel to nowhere; `s42-450-T2raise`: the raised option, a 4.4 km² lake.
+- `s42-479-close`, `h42-438` (T0/T2): unchanged, as planned (ring grooves; an unfed stony head mid-slope).
+- `floor`, `v4-s42-517-elbow`, `wind` (T0/T3, rendered with BARB_FIX and CURVE_FLOORS on): the floor view the same;
+  from 340 m the hook into the grey river is gone, a short straight channel crosses a field; the wind stream the same,
+  calm, fields both sides. As shipped (both off) these views are as before.
+- `777777-B720` (T0/T4): line 720 drops into the airfield approach in a darker cut instead of running level across it;
+  the pale cleared approach zone (not water) remains.
+- Before only (no settle built), with what a pilot sees in `notes.txt`: `42-V141`, `1-V194`, `777777-V239`, `777777-V215`,
+  `1-V181` (rivers on shelves above dry floors), `42-valley-head`, `42-V64` (the owner's valley, two rivers), `42-L2-head`
+  (a 21.9 m "shelf" that looks normal), `w42c-17`, `B-s42-diag`, `D-s1-col`, `F-s1-Vvalley`, `s1a`, `s1b` (references).
+
+### Constants and owner decisions (defaults)
+
+| constant (file) | default | what the other setting does |
+|---|---|---|
+| FILL_DEAD_ENDS (streams.ts) | true | false: the dead ends stay dead |
+| POND_KEEP 3 km², POND_SILL_CUT 15 m, BIG_POND_KEEP (streams.ts) | 3 / 15 / false | decision 3: BIG_POND_KEEP true keeps every lake; only 716 is affected (kept anyway) |
+| LAKE_BACK_CLOSED (streams.ts) | true | decision 4: false leaves 450/431 as dead ends |
+| LAKE_RAISE (streams.ts) | false | decision 4: true raises lake 70 to 283.4 m (4.44 km²), lake 57 to 144.0 m (8.94 km²) |
+| BARB_FIX, BARB_ANGLE 105 deg (streams.ts) | false | barbed mouths 3.3 / 3.9 / 3.1 %, 517's hook gone; drawnGate seed 42 95.4 %, bankHeight 94 / 122 / 93 |
+| CURVE_FLOORS, FLOOR_PASSES 4, FLOOR_LAY 90 m, FLOOR_KEEP_END 3 (streams.ts) | false | staircases 0 / 0 / 3.4 km, grid 34 / 28 / 31 %; 3 points of 517 in the owner's box move |
+| FIELD_HOLD (heightfield.ts) | true | false: streams stand over airfield approaches again |
+| SETTLE | not built | step 5 stopped (no flag passes); decision 1 (river 64 held out) is the de facto default |
+| decision 2 | allow-list | `out/fs/tools2/allow.py`: only notch-wander lines (>= 50 % of the moved length > 5 m under ground) |
+| decision 6 | rillGate (iii)'s < 1 per 100 km retired | reported: 8.7 / 7.2 / 10.5 per 100 km; gated on C1-C3 instead |
+| decision 7 | W1 counts > 30 m | 10-30 m band reported: 812.9 / 654.7 / 919.3 km |
+| decision 8 | no time budget changed | suite as it is |
+
+### Not done
+
+- Step 6 (channel-band interpolant): waits for the owner (C1 3.06 / 2.33 / 4.14x unchanged).
+- Step 5's settle: no build-time flag passes; W1 427.5 / 326.9 / 386.3 km unchanged; owner decision 1 not exercised.
+- C2 barbed and staircases, line 517's hook: built (BARB_FIX, CURVE_FLOORS) and measured, left off for their regressions.
+- C3: 2 / 4 / 9 out-and-back painted pairs remain (the strand merge's redirect back up its own line).
+- W2: 0.2 / 0.6 / 1.2 km remain from other causes (seed 777777 river 6 48.6 m at -107098,67358).
+- The optional chain wander (step 3 item 3); deep-notch reaches (P3-class trace fix); unfed heads; ring grooves at 479.
+- "Doubled valleys" (W1's reported-only row) not measured.
+
+### Commits
+
+| commit | what |
+|---|---|
+| `6c35d7e` | step 1: gate probes, repairs, cameras, baseline numbers |
+| `352e9a3` | step 2: dead ends filled, no outlet loops, lake 70/57 closed (LAKE_RAISE option), outlet catchments |
+| `8ba7cc3` | step 3: BARB_FIX and CURVE_FLOORS (off), flat spills drawn as chords |
+| `1eb8e12` | step 4: streams held under the airfields' cut ground (FIELD_HOLD) |
+| (this) | report, step 5's proxy note (`out/fs/T5/proxy.txt`) |

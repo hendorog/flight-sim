@@ -1,0 +1,42 @@
+# What a pilot sees, per picture (round T). T0 = before (HEAD 64b3c61, code a26ee71).
+s7-789-along-T0: from 700 m looking NW down a farmed valley: the wooded stream forks into two, then three parallel dark channels side by side down the floor (789's wander trench beside the real course); a small pond near the far fork.
+s1-1414-end-T0: a long lake fills the valley; at its far (SW) end two straight parallel channels leave side by side (the outlet and 1414's trench); dark curved lines show under the water on the right; a short pale channel on the right shore.
+s1-1414-sw-T0: the same lake from further back: two thin dark lines curve across under the water, and a pale straight channel runs along the right shore into the lake.
+s1-602-T0: a ~1 km2 lake in farmland, a wooded stream coming in from the right (NE) along a straight trench; reads as a lake fed by a stream.
+s42-716-T0: from 4-5 km: a small pond (about 0.5 km2) on the plain at the foot of the hills; the dead end itself is not visible.
+s42-450-T0: lake 70 at 3 km; at its SE (near) shore a short pale curved channel and a parallel strip run off toward the forest edge and stop - easy to miss, but visible as a pale scar.
+s42-479-close-T0: a pale grass basin beside a 1 km2 lake, with concentric dark ring grooves round the basin's left half (line 479's 10 km wander).
+h42-438-T0: a grey stony cascade bed starts abruptly halfway up the forested mountainside with nothing above it, and a sawtooth grey bank edge runs along the valley channel in the foreground.
+floor-T0: the owner's valley from 1300 m: a grey river along the right of the floor on the shelf, the winding stream with wooded banks in the floor on the left; fields between; the 517 elbow is a small dark hook near the right river (needs the crop to see).
+v4-s42-517-elbow-T0: from 340 m AGL: the winding wooded stream comes down the floor (foreground) and, past the field, turns sharp right and hooks back to meet the grey braided river on the right: a visible elbow.
+wind-T0: the owner's calm winding stream down the middle of the floor, wooded banks, fields both sides, no white water; the grey river runs higher on the right.
+w42c-17-T0: tod 17 along the owner's valley: a row of identical rounded forested knolls down the valley side between the floor and the grey river; the stream runs straight down the left of the floor (stage B, not changed this round).
+B-s42-diag-T0: a ruler-straight dark trench (chain line 1214) runs from the bottom of the frame up the valley for km beside a natural grey braided river on the right: a canal, not a stream.
+D-s1-col-T0: a straight dark channel climbs the valley floor diagonally beside rectangular fields (chain 1158).
+F-s1-Vvalley-T0: a deep symmetric V whose floor carries a dead-straight light strip due north to its head.
+s1a-T0: a narrow forested V running away from the camera, its floor out of sight; s1b-T0: a forested face over a valley floor with a dark line along its foot and fields.
+42-V141-T0: a grey river with white rapids on a narrow shelf along the foot of the mountain wall; below it forest slopes down toward the camera to a dry pale hollow in the forest - the valley's real floor, with no river.
+1-V194-T0: a grey river ribbon on a shelf along the mountainside above forested slopes; its valley floor lower, out of the frame's left.
+777777-V239-T0: under a long grey cliff band, a pale river runs along a bench; forest below it, a dry clearing in the low ground in the foreground.
+777777-V215-T0: a pale braided river on a bench under the forested wall; the forested low ground and fields below, no river there.
+1-V181-T0: a thin grey stream along a shelf under a rock band, low and partly hidden by forest.
+777777-B720-T0: a dead-straight raised grey channel running diagonally with a translucent pale sheet hundreds of metres wide hanging over the fields and forest edge beside it.
+42-valley-head-T0: the owner's valley from its head: two rivers side by side - the winding wooded one (517) in the floor at the centre, a grey one (64) along the fields to the left, higher.
+42-V64-T0: river 64 as a thin grey line on a shelf along the forested mountainside under pale rock bands; the floor below out of frame.
+42-L2-head-T0: a big river (line 2) winding across its plain between fields and forest, a stream in the foreground: looks normal (the 21.9 m 'shelf' is not visible).
+# Step 2 (T2 = dead ends filled, outlet loops closed, lake 70/57 closed)
+s7-789-along-T2: the third, right-hand parallel channel (789's trench back up the valley) is gone; the stream now runs into a new narrow lake on the floor at mid-distance (0.5 km2). The left channel is another line, as before.
+s1-1414-end-T2: one outlet channel leaves the lake's far end; the second parallel channel, the dark lines under the water and the shore trench on the right are gone.
+s1-1414-sw-T2: a clean lake: no curved dark lines under the water, no pale channel along the right shore.
+s1-602-T2: nearly unchanged: a lake in farmland fed by a stream from the right; the channel that ran along the east shore into the lake is gone, the lake's far bay a little different.
+s42-716-T2: a new lake about 6 km long (9.7 km2) lies along the foot of the hills on the plain - the dominant feature from 4-5 km (owner decision 3: its sill stands 36 m over the pit, so the rule keeps it).
+s42-450-T2: lake 70 with no outlet: the pale curved channel and strip at its near (SE) shore are gone; the lake reads as a closed lake in forest and fields.
+s42-450-T2raise (LAKE_RAISE option): lake 70 raised 22 m to its real spill fills its basin, about 4.4 km2, a broad lake with a pale outlet scar leaving its SE end toward line 220 and the fields beside it.
+s42-479-close-T2: unchanged: the ring grooves round the pale basin remain (not fixed this round).
+h42-438-T2: unchanged: the stony cascade bed still starts mid-slope (unfed head, not fixed this round).
+# Step 3 (T3 = barbed mouths joined downstream, open-floor curve-laying, flat spills drawn as chords)
+floor-T3: the owner's valley from 1300 m looks the same; at the old 517 elbow the stream now comes in along the forest edge and turns down the floor channel without the white hook back up the river; a sharp bend remains where it turns (the Y curve's 91 deg over 100 m).
+v4-s42-517-elbow-T3: from 340 m AGL the winding stream runs straight on down the floor past the field; the hook to the right into the grey river is gone from this view (its mouth now lies further down). A short straight dark channel crosses the middle field (a small stream's mouth, line 1075/1863, re-laid to the receiver's nearest sample).
+wind-T3: the same picture: the calm winding stream with wooded banks down the middle of the floor, fields both sides, no white water; its wiggles differ by a few metres.
+# Step 4 (T4 = streams held under the airfields' cut ground)
+777777-B720-T4: line 720 now comes down the forested slope in a darker cut and drops to the floor of the generated airfield's approach instead of running level across it; the pale translucent "sheet" is still there - it is the approach's cleared zone (sampleTerrain approach > 0, no trees; gridAt finds no water over the ground anywhere in it), not stream water.
