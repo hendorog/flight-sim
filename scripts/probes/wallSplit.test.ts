@@ -120,7 +120,9 @@ it('scan', async () => {
         sampleTerrain(qn, qe, s);
         const lvlQ = h2.line === hit.line ? h2.level : hit.level;
         const perched = lvlQ - s.ground;
-        if (perched <= 10) k = `${kind} along`;
+        // (The neighbour under the sea's level: a mouth's water over the sea bed, the sea (standing at 0) taken as dry.)
+        if (s.ground < 0.5) k = `${kind} sea`;
+        else if (perched <= 10) k = `${kind} along`;
         else {
           let low = Infinity;
           for (const o of [-250, -200, -150, -100, 100, 150, 200, 250]) { sampleTerrain(n0 - hit.dirE * o, e0 + hit.dirN * o, s); low = Math.min(low, s.ground); }
