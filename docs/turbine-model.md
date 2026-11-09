@@ -249,8 +249,10 @@ passes 20 psi; the limit is the helix twist, whose inner third stays at a positi
 7. **Power-turbine characteristic** — available, used by the PC-12 only. `powerTurbine.runaway` (optional) gives the
    runaway speed against corrected Ng; below it the torque is linear in speed with the map's best power, beyond it
    negative (the propeller drives the turbine: the drag of a PT6 at flight idle in flight; docs/pc12-flight-model.md
-   "Idle runaway"). Without it the fixed stall-torque law, unchanged. Not yet applied: the C208 (the same shallow
-   idle descent) and the MD 500E, whose 20 kW power-turbine loss stands in for a low idle runaway.
+   "Idle runaway"). Without it the fixed stall-torque law, unchanged. Not applied: the C208, whose idle
+   already drags by its low idle gas power (25 / 40 shp since 2026-10-26; measured 2026-11-10 at HIGH IDLE, maximum
+   gross: 95 KIAS clean 10.4:1 against 12.6:1 feathered, 120 KIAS -1640 ft/min, level 130 to 90 KIAS at 2.1 kt/s), and
+   the MD 500E, whose 20 kW power-turbine loss stands in for a low idle runaway.
 
 ## Not modelled yet (next steps)
 
