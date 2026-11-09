@@ -1488,6 +1488,17 @@ export class LakeMask {
     this.sqPond = pond;
     return id;
   }
+  /** The ponds added so far (addPond), to take back the ones added after it (restorePonds; streams.ts, a seeded
+   * world's pond pass: a pond filled by one rule that then gives way to another). */
+  pondState(): { rasters: number; pools: number; sqStart: Int32Array; sqPond: Int16Array } {
+    return { rasters: this.rasters.length, pools: this.pools.length, sqStart: this.sqStart, sqPond: this.sqPond };
+  }
+  restorePonds(s: { rasters: number; pools: number; sqStart: Int32Array; sqPond: Int16Array }): void {
+    this.rasters.length = s.rasters;
+    this.pools.length = s.pools;
+    this.sqStart = s.sqStart;
+    this.sqPond = s.sqPond;
+  }
   /** The raster points (global indices ri * RASTER_N + rj) of a pool's domain. */
   poolPoints(id: number): number[] {
     const R = this.rasters[this.pools[id].lake];

@@ -92,6 +92,31 @@ const JOIN_REACH = 8;
 /** A stream whose every way into the pond it filled crosses its own course is cut back into the pond by at most this
  * much of its course, m (and half of it): less than moved.py's 0.5 km, so no f3 course is lost to it. */
 const CUT_BACK = 450;
+/**
+ * A stream the pond pass still leaves dead (every way into its pond crosses its own course and the cut back is refused,
+ * or its hollow is flat with no water to join): its hollow is filled from the pit its water was held at up to its real
+ * way out (FILL_WINDOW raster steps about it, a priority flood in from the water round it), the stream ends where it
+ * first comes into that water, and the pond's outlet runs along the flood's way out (round T: the trace's pit climb
+ * left these streams cutting a notch uphill round their hollow, far from it). Off: they stay dead as before.
+ */
+const FILL_DEAD_ENDS = true;
+const FILL_WINDOW = 48;
+/**
+ * Owner decision 3 (default: the recommendation). A filled pond over POND_KEEP km² is not kept where its sill stands
+ * POND_SILL_CUT m or less over the pit: the stream cuts through the sill along the flood's way out instead, and no lake
+ * is made. A sill higher than that keeps the lake. BIG_POND_KEEP true keeps every lake, whatever its size.
+ */
+const POND_KEEP = 3;
+const POND_SILL_CUT = 15;
+const BIG_POND_KEEP = false;
+/**
+ * Owner decision 4 (default: closed). A lake's outlet that ends in a hollow whose only way out is back into its own lake
+ * (seed 42 line 450 from lake 70, seed 777777 line 431 from lake 57) is no outlet: the lake stays closed, as lakes with
+ * no way out are (the outlet is cut back to its first samples in the lake). LAKE_RAISE true instead raises the lake to
+ * its real spill (the hollow and the lake together, flooded to where they spill into other water) with its outlet there.
+ */
+const LAKE_BACK_CLOSED = true;
+const LAKE_RAISE = false;
 /** A trace in a hollow on the threshold hillslopes follows their routing down at most this many raster steps. */
 const PASS_WALK = 400;
 /** A chain stream's samples between two of its points take the points' ground where the routing ground there is the
@@ -179,6 +204,8 @@ const RIVER_TOUCH = 200;
 const HOME_CLEAR = 2500;
 
 const ORIGIN = -DOMAIN_HALF;
+/** The last traceStreams' routing ground (probes: endsGate's notch reaches). */
+export const streamDebug: { route?: (north: number, east: number) => number } = {};
 const PER_CELL = DRAIN_CELL / LAKE_RASTER;
 const SQRT2 = Math.SQRT2;
 const DI = [-1, -1, -1, 0, 0, 1, 1, 1];
@@ -322,6 +349,12 @@ export interface StreamReport {
   /** The gully chains traced as streams (gullies.ts): heads, traced, km, skipped (already on water), ms. */
   /** Ponds filled in hollows streams ended in (trace): pool id, raster points, in pairs. */
   ponds?: number[];
+  /** Streams the pond pass left dead whose hollow was filled to its real way out (FILL_DEAD_ENDS), by line. */
+  filled?: number[];
+  /** Pond outlets whose catchment was set to their pond's inflow. */
+  pondInflow?: number;
+  /** Ponds left closed by the outlet rule, and why (probes). */
+  pondClosed?: string[];
   pondWhy?: Record<string, number>;
   /** Streams that ended in a hollow run on as a continuation. */
   continued?: number;
@@ -357,6 +390,7 @@ export interface StreamReport {
 export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: number, east: number) => number; rivers: ReadonlyArray<ChannelArrays>; riverPools: Uint8Array; minArea?: number; pinned?: (north: number, east: number) => number }): { streams: StreamLine[]; report: StreamReport; headAt: Float64Array } {
   const t0 = performance.now();
   const { d, mask, rivers } = p;
+  streamDebug.route = p.route;
   const minArea = p.minArea ?? STREAM_AREA;
   const n = d.n;
   const R = RASTER_N;
@@ -430,6 +464,9 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
    * Steepest descent from raster point `start`, never into `own` pool. Returns the course (raster indices, start
    * first) and what it reached. (report.floods counts the climbs over a pit's sill.)
    */
+  /** Lines a trace may not join or step onto while set (a pond's outlet: the stream filling it and every line upstream
+   * of that, so its water never runs back in). */
+  let avoid: Set<number> | null = null;
   const trace = (prefix: number[], own: number, level: number, checkFirst = false, climb = CLIMB_HEIGHT, wayOut = false, notLine = -1, connectR = CONNECT_R): { path: number[]; end: End } => {
     const st = ++stamp;
     const path = prefix.slice();
@@ -486,7 +523,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     }
     const reached = (k: number): End | null => {
       const o = occ[k];
-      if (o !== 0 && occLine(o) !== notLine) {
+      if (o !== 0 && occLine(o) !== notLine && !(avoid && avoid.has(occLine(o)))) {
         const j = joinAt(o);
         return j >= 0 ? { kind: 'channel', line: occLine(o), idx: j, pool: -1, ok: true } : { kind: 'sink', line: occLine(o), idx: occIdx(o), pool: -1 };
       }
@@ -509,7 +546,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       const pool = mask.poolAt(Math.floor(k / R), k % R);
       return pool >= 0 && pool !== own && !mask.pools[pool].drained && !canReach(mask.pools[pool].level);
     };
-    const blocked = (k: number): boolean => (notLine >= 0 && occ[k] !== 0 && occLine(occ[k]) === notLine && k !== path[0]) || visit.get(k) === st || (own >= 0 && mask.poolAt(Math.floor(k / R), k % R) === own) || byHome(k) || crosses(cur, k) || byHigherLake(k) || higherWater(k);
+    const blocked = (k: number): boolean => (notLine >= 0 && occ[k] !== 0 && occLine(occ[k]) === notLine && k !== path[0]) || (avoid !== null && occ[k] !== 0 && avoid.has(occLine(occ[k]))) || visit.get(k) === st || (own >= 0 && mask.poolAt(Math.floor(k / R), k % R) === own) || byHome(k) || crosses(cur, k) || byHigherLake(k) || higherWater(k);
     // The direction of the last step (index into RING), -1 before the first.
     let dir = -1;
     for (let step = 0; step < MAX_STEPS; step++) {
@@ -525,7 +562,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         for (let a = 0; a < 8; a++) {
           const q = (ci + DI[a]) * R + cj + DJ[a];
           const o = occ[q];
-          if (o === 0 || visit.get(q) === st || occLine(o) === notLine) continue;
+          if (o === 0 || visit.get(q) === st || occLine(o) === notLine || (avoid && avoid.has(occLine(o)))) continue;
           const j = joinAt(o);
           if (j < 0) continue;
           visit.set(q, st);
@@ -653,7 +690,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         const qj = kj + b;
         if (qi < 1 || qj < 1 || qi >= R - 1 || qj >= R - 1) continue;
         const o = occ[qi * R + qj];
-        if (o === 0 || occLine(o) === notLine || lineAt(occLine(o)).level[occIdx(o)] > level) continue;
+        if (o === 0 || occLine(o) === notLine || (avoid && avoid.has(occLine(o))) || lineAt(occLine(o)).level[occIdx(o)] > level) continue;
         const d = Math.hypot(a, b);
         if (d <= CR && (!best || d < best.d)) best = { d, q: qi * R + qj };
       }
@@ -673,6 +710,22 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
 
   /** The line `line` (river or stream) as arrays. */
   const lineAt = (line: number): ChannelArrays => (line < nR ? rivers[line] : streams[line - nR]);
+  /** A stand-in for an outlet not built (its lake or pond has no way out but back into a stream filling it): two
+   * samples in its water at raster point k, so the streams after it keep their ids - each one's wander is seeded by it. */
+  const standIn = (id: number, k: number): void => {
+    const n0 = ORIGIN + Math.floor(k / R) * LAKE_RASTER;
+    const e0 = ORIGIN + (k % R) * LAKE_RASTER;
+    const lv = mask.pools[id].level;
+    const f2 = (a: number, b: number): Float64Array => Float64Array.from([a, b]);
+    streams.push({ north: f2(n0, n0 + 1), east: f2(e0, e0 + 1), level: f2(lv, lv), halfWidth: f2(0, 0), s: f2(0, Math.SQRT2), area: f2(1, 1), breach: f2(0, 0), cut: f2(0, 0), joins: -1, joinS: 0, end: 'lake', pool: id, held: 2, chainS: -1, endK: -1, continued: false });
+    report.traced++;
+  };
+  /** Line L and every stream whose water runs into it (its joins lead there). */
+  const upstreamOf = (L: number): Set<number> => {
+    const set = new Set<number>([L]);
+    for (let q = 0; q < streams.length; q++) for (let x = streams[q].joins, g = 0; x >= nR && g < 400; x = streams[x - nR].joins, g++) if (x === L) set.add(nR + q);
+    return set;
+  };
 
   /** Build a stream from its traced course and record it. */
   /**
@@ -1169,7 +1222,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
    * none is found within OUTLET_FLOOD points.
    */
   const outletHeap = new MinHeap(4096);
-  const outletPath = (id: number): { path: number[]; end: End | null } | null => {
+  const outletPath = (id: number, skip: Set<number> | null = null, maxJoin = Infinity): { path: number[]; end: End | null } | null => {
     const pool = mask.pools[id];
     const ground = (k: number): number => {
       const g = mask.rasterGround(Math.floor(k / R), k % R);
@@ -1198,6 +1251,9 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       if (!own.has(k)) {
         const o = occ[k];
         let end: End | null = null;
+        // (A pond's outlet: never into the stream filling it or a line upstream of that (`skip`), nor water standing over
+        // the pond's by more than JOIN_TOL (`maxJoin`): those are walls to it.)
+        if (o !== 0 && ((skip && skip.has(occLine(o))) || lineAt(occLine(o)).level[occIdx(o)] > maxJoin)) continue;
         if (o !== 0) end = { kind: 'channel', line: occLine(o), idx: occIdx(o), pool: -1 };
         else {
           const other = mask.poolAt(Math.floor(k / R), k % R);
@@ -1244,9 +1300,25 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     // The lowest way out of the lake over the ground (a priority flood from its water, minimax): to the first point
     // lower than its water, a channel, another lake or the sea. Its sill may stand over the water (the lake was flooded
     // on the ground without its gullies): the stream cuts a notch through it.
-    const out = outletPath(id);
+    // (Never into a stream ending in this lake, or one running into that: round T, no outlet loops back.)
+    let fill: Set<number> | null = null;
+    for (let q = 0; q < streams.length; q++) {
+      const L = streams[q];
+      const m = L.north.length - 1;
+      if (L.end !== 'lake' || mask.poolAt(Math.round((L.north[m] - ORIGIN) / LAKE_RASTER), Math.round((L.east[m] - ORIGIN) / LAKE_RASTER)) !== id) continue;
+      fill ??= new Set<number>();
+      for (const x of upstreamOf(nR + q)) fill.add(x);
+    }
+    const out = outletPath(id, fill);
     if (!out) {
       report.outletNone++;
+      // (Its only way out was back into a stream filling it: no outlet. A stand-in of two samples in its water keeps the
+      // streams after it on their ids - each one's wander is seeded by its id.)
+      const o0 = fill ? outletPath(id) : null;
+      if (o0) {
+        standIn(id, o0.path[0]);
+        (report.pondWhy ??= {}).lakeLoopClosed = (report.pondWhy.lakeLoopClosed ?? 0) + 1;
+      }
       continue;
     }
     if (out.end && out.end.kind === 'lake') report.outletToLake++;
@@ -1260,7 +1332,9 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     // The pond's catchment drains through its main pool; a sub-basin's is a share of it.
     const a0 = main ? pondArea(pool.lake) : Math.min(pondArea(pool.lake), minArea);
     // (Straight into another lake or onto the sea: the short reach between, its end in that water.)
+    avoid = fill;
     const t = out.end ? { path: out.path.slice(1), end: { ...out.end, ok: true } } : trace(out.path.slice(1), id, pool.level);
+    avoid = null;
     report.outlets++;
     report.outletSteps += t.path.length;
     build(t.path, t.end, first, Math.max(1, a0), id);
@@ -1877,9 +1951,315 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
   // ground, up to its lowest sill) becomes a pond at its spill (LakeMask.addPond), and the pond's outlet runs on from
   // the sill as any lake's (outletPath, trace). A hollow too big (POND_MAX raster points) or deep (POND_DEEP) for that,
   // or by the home field, stays a sink.
+  /** The pond outlets built (pool, outlet stream index, the area it was built with, the lines known to fill it): their
+   * catchment is the pond's inflow, summed below. */
+  const pondOutlets: Array<{ pool: number; outlet: number; a0: number; fillers: number[] }> = [];
   {
     const nBefore = streams.length;
     const ponds: number[] = [];
+    const ew = (report.endWhy ??= {});
+    const why = (k: string): void => {
+      (report.pondWhy ??= {})[k] = (report.pondWhy[k] ?? 0) + 1;
+    };
+    const rasterOf = (north: number, east: number): number => Math.round((north - ORIGIN) / LAKE_RASTER) * R + Math.round((east - ORIGIN) / LAKE_RASTER);
+    /** A pond's outlet: from its water along `way` (raster points from the pond's last on it, then on to `end`), else by
+     * its lowest way out (outletPath) and on down (trace) - never into the stream filling it or a line upstream of that,
+     * nor water standing over the pond's by more than JOIN_TOL. None (the pond stays closed) where it finds no water. */
+    const pondOutlet = (id: number, j: number, level: number, fillers: number[], way: { path: number[]; end: End } | null): void => {
+      const st = streams[j];
+      const fill = upstreamOf(nR + j);
+      let first: { north: number; east: number; level: number };
+      let t: { path: number[]; end: End };
+      if (way) {
+        const kk = way.path[0];
+        first = { north: ORIGIN + Math.floor(kk / R) * LAKE_RASTER, east: ORIGIN + (kk % R) * LAKE_RASTER, level };
+        t = { path: way.path.slice(1), end: way.end };
+      } else {
+        const out = outletPath(id, fill, level + JOIN_TOL);
+        if (!out) {
+          why('closedNoWay');
+          const o0 = outletPath(id);
+          if (o0) standIn(id, o0.path[0]);
+          const ln = o0?.end?.line ?? -1;
+          (report.pondClosed ??= []).push(`pool ${id} (line ${nR + j}) at ${mask.pools[id].north.toFixed(0)},${mask.pools[id].east.toFixed(0)} level ${level.toFixed(1)}: no way out; unguarded it ended ${o0 ? (o0.end ? `${o0.end.kind} ${ln}${ln >= 0 ? ` (upstream of the filler: ${fill.has(ln)}; its water ${lineAt(ln).level[o0.end.idx].toFixed(1)})` : ''}` : 'on lower ground') : 'nowhere'}`);
+          return;
+        }
+        const kk = out.path[0];
+        first = { north: ORIGIN + Math.floor(kk / R) * LAKE_RASTER, east: ORIGIN + (kk % R) * LAKE_RASTER, level };
+        avoid = fill;
+        t = out.end ? { path: out.path.slice(1), end: { ...out.end, ok: true } } : trace(out.path.slice(1), id, level, false, CONT_CLIMB, true, -1, CONT_CONNECT_R);
+        avoid = null;
+        if (t.end.kind === 'sink' || t.end.kind === 'stuck') {
+          why('closedSank');
+          standIn(id, out.path[0]);
+          (report.pondClosed ??= []).push(`pool ${id} (line ${nR + j}) at ${mask.pools[id].north.toFixed(0)},${mask.pools[id].east.toFixed(0)} level ${level.toFixed(1)}: its way out sank (${t.end.why ?? ''}, ${t.path.length} points)`);
+          return;
+        }
+      }
+      const a0 = Math.max(1, st.area[st.area.length - 1]);
+      const before = streams.length;
+      build(t.path, t.end, first, a0, id);
+      if (streams.length === before) return;
+      if (streams[before].end === 'sink' || streams[before].end === 'stuck') {
+        // (It came short of the water it reached: not kept, nor its marks; the pond stays closed.)
+        streams.pop();
+        for (let q = 0; q < occ.length; q++) if (occ[q] !== 0 && occLine(occ[q]) === nR + before) occ[q] = 0;
+        report.traced--;
+        why('closedShort');
+        if (!way) standIn(id, rasterOf(first.north, first.east));
+        return;
+      }
+      pondOutlets.push({ pool: id, outlet: before, a0, fillers });
+    };
+    /**
+     * FILL_DEAD_ENDS: stream j, which the pond pass leaves dead, fills its hollow from the pit its water was held at (the
+     * first sample at its last level - a trace that climbed out of a hollow keeps the hollow's level along the notch it
+     * cut uphill - then steepest descent) up to its real way out. `undo` takes back what the pond pass made for it first.
+     * Whether it was handled.
+     */
+    const deadEnd = (j: number, undo: (() => void) | null): boolean => {
+      if (undo) undo();
+      const st = streams[j];
+      const lvEnd = st.level[st.level.length - 1];
+      let ip = st.level.length - 1;
+      for (let i = 0; i < st.level.length; i++)
+        if (st.level[i] <= lvEnd + 0.05) {
+          ip = i;
+          break;
+        }
+      let kPit = rasterOf(st.north[ip], st.east[ip]);
+      for (let step = 0; step < 400; step++) {
+        const ci = Math.floor(kPit / R);
+        const cj = kPit % R;
+        let nb = -1;
+        let low = G(kPit);
+        for (let a = 0; a < 8; a++) {
+          const qi = ci + DI[a];
+          const qj = cj + DJ[a];
+          if (qi < 1 || qj < 1 || qi >= R - 1 || qj >= R - 1) continue;
+          const q = qi * R + qj;
+          if ((occ[q] !== 0 && occLine(occ[q]) !== nR + j) || mask.poolAt(qi, qj) >= 0) continue;
+          if (G(q) < low) {
+            low = G(q);
+            nb = q;
+          }
+        }
+        if (nb < 0) break;
+        kPit = nb;
+      }
+      fillDetail = '';
+      const r = fillPond(j, kPit, ip);
+      (report.filled ??= []).push(nR + j);
+      why(`fill-${r}`);
+      ew[nR + j] = `${ew[nR + j] ?? ''}; fill: ${r}${fillDetail ? ` (${fillDetail})` : ''}`;
+      return r !== 'skip';
+    };
+    /**
+     * Stream j's hollow, from raster point k0 (its pit): a priority flood in from the water about it (FILL_WINDOW raster
+     * steps each way: another line's water - never its own nor a line joining it upstream - a lake, the sea; the window's
+     * edge as no way out), each point's height the lowest its water could spill at. Water a pond flows into lies no
+     * higher than its level plus JOIN_TOL (canReach). The pond: the points under the spill joined to the pit; the stream
+     * ends where it first comes into its water (its tributaries joining it past there end where they come in), and the
+     * pond's outlet runs along the flood's way out. A lake's outlet whose way out is back into its own lake: closed
+     * (LAKE_BACK_CLOSED). Over POND_KEEP km² with its sill POND_SILL_CUT m or less over the pit: no pond, the stream cuts
+     * through the sill along the way out instead.
+     */
+    let fillDetail = '';
+    const fillPond = (j: number, k0: number, ip: number): 'pond' | 'cut' | 'closed' | 'skip' => {
+      const st = streams[j];
+      const up = upstreamOf(nR + j);
+      const ci0 = Math.floor(k0 / R);
+      const cj0 = k0 % R;
+      const fill = new Map<number, number>();
+      const par = new Map<number, number>();
+      const out = new Map<number, End | null>();
+      const raise = LAKE_RAISE && st.pool >= 0;
+      // (In a window a quarter the size first, then half, then whole: where the way out found in a smaller one ends in
+      // water, not at its edge, no water beyond could be reached lower - its way would cross that edge.)
+      let W = FILL_WINDOW >> 2;
+      const way: number[] = [];
+      for (;;) {
+      fill.clear();
+      par.clear();
+      out.clear();
+      const hp = new MinHeap(4 * (2 * W + 1) * (2 * W + 1) + 64);
+      for (let a = -W; a <= W; a++)
+        for (let b = -W; b <= W; b++) {
+          const qi = ci0 + a;
+          const qj = cj0 + b;
+          if (qi < 1 || qj < 1 || qi >= R - 1 || qj >= R - 1) continue;
+          const k = qi * R + qj;
+          let e: End | null | undefined;
+          let h = G(k);
+          const o = occ[k];
+          const pl = mask.poolAt(qi, qj);
+          if (o !== 0 && !up.has(occLine(o))) {
+            const lv = lineAt(occLine(o)).level[occIdx(o)];
+            e = { kind: 'channel', line: occLine(o), idx: occIdx(o), pool: -1, ok: true };
+            h = Math.max(Math.min(h, lv), lv - JOIN_TOL);
+          } else if (pl >= 0 && !mask.pools[pl].drained && o === 0 && !(raise && pl === st.pool)) {
+            const lv = mask.pools[pl].level;
+            e = { kind: 'lake', line: -1, idx: 0, pool: pl, ok: true };
+            h = Math.max(Math.min(h, lv), lv - JOIN_TOL);
+          } else if (h <= 0.5) e = { kind: 'sea', line: -1, idx: 0, pool: -1, ok: true };
+          else if (Math.abs(a) === W || Math.abs(b) === W) e = null;
+          if (e === undefined) continue;
+          fill.set(k, h);
+          par.set(k, -1);
+          out.set(k, e);
+          hp.push(k, h);
+        }
+      while (hp.size > 0) {
+        const k = hp.pop();
+        const h = fill.get(k) as number;
+        const ci = Math.floor(k / R);
+        const cj = k % R;
+        for (let a = 0; a < 8; a++) {
+          const qi = ci + DI[a];
+          const qj = cj + DJ[a];
+          if (Math.abs(qi - ci0) > W || Math.abs(qj - cj0) > W || qi < 1 || qj < 1 || qi >= R - 1 || qj >= R - 1) continue;
+          const q = qi * R + qj;
+          if (fill.has(q) || byHome(q)) continue;
+          const hq = Math.max(h, G(q));
+          fill.set(q, hq);
+          par.set(q, k);
+          hp.push(q, hq);
+        }
+      }
+      if (!fill.has(k0)) return 'skip';
+      // The way out: k0 to the water it reaches.
+      way.length = 0;
+      for (let k = k0, g = 0; k >= 0 && g < 4 * W; k = par.get(k) as number, g++) way.push(k);
+      if (out.get(way[way.length - 1]) || W >= FILL_WINDOW) break;
+      W = Math.min(FILL_WINDOW, W * 2);
+      }
+      const top = fill.get(k0) as number;
+      const e = out.get(way[way.length - 1]);
+      if (!e) return 'skip';
+      if (e.kind === 'lake' && e.pool === st.pool) {
+        // A lake's outlet whose hollow drains only back into its own lake: no outlet (LAKE_BACK_CLOSED), cut back to its
+        // first samples in the lake.
+        if (!LAKE_BACK_CLOSED) return 'skip';
+        let n = 0;
+        while (n < st.north.length && mask.at(st.north[n], st.east[n]) > -Infinity) n++;
+        truncate(st, j, Math.max(2, n));
+        const lake = mask.pools[st.pool].level;
+        for (let i = 0; i < st.north.length; i++) {
+          st.level[i] = lake;
+          st.cut[i] = 0;
+          st.breach[i] = 0;
+        }
+        st.end = 'lake';
+        return 'closed';
+      }
+      const level = top - POND_DROP;
+      // The pond: the points under its water joined to k0 (not other lines' points, nor another lake's).
+      const pts: number[] = [];
+      const gs: number[] = [];
+      const seen = new Set<number>([k0]);
+      const stack = [k0];
+      while (stack.length) {
+        const k = stack.pop() as number;
+        const pl = mask.poolAt(Math.floor(k / R), k % R);
+        if (G(k) >= level || (occ[k] !== 0 && occLine(occ[k]) !== nR + j && !raise) || (pl >= 0 && !(raise && pl === st.pool))) continue;
+        pts.push(k);
+        gs.push(G(k));
+        if (pts.length > POND_MAX) return 'skip';
+        const ci = Math.floor(k / R);
+        const cj = k % R;
+        for (let a = 0; a < 8; a++) {
+          const q = (ci + DI[a]) * R + cj + DJ[a];
+          if (!seen.has(q) && fill.has(q)) {
+            seen.add(q);
+            stack.push(q);
+          }
+        }
+      }
+      if (pts.length === 0 || top - G(k0) > POND_DEEP) return 'skip';
+      if (!BIG_POND_KEEP && pts.length * (LAKE_RASTER / 1000) ** 2 > POND_KEEP && top - G(k0) <= POND_SILL_CUT) {
+        fillDetail = `${(pts.length * (LAKE_RASTER / 1000) ** 2).toFixed(2)} km2 not kept: its sill ${(top - G(k0)).toFixed(1)} m over the pit`;
+        // Too big a lake, on a low sill: the stream runs on from its pit through the hollow and over the sill along the
+        // way out, in a notch through it.
+        const before = streams.length;
+        truncate(st, j, Math.max(2, ip + 1));
+        const m = st.north.length - 1;
+        const a0 = st.area[m];
+        build(way, e, { north: st.north[m], east: st.east[m], level: st.level[m] }, a0, -1, a0);
+        if (streams.length === before) return 'skip';
+        if (streams[before].end === 'sink' || streams[before].end === 'stuck') {
+          streams.pop();
+          for (let q = 0; q < occ.length; q++) if (occ[q] !== 0 && occLine(occ[q]) === nR + before) occ[q] = 0;
+          report.traced--;
+          return 'skip';
+        }
+        st.end = 'channel';
+        st.joins = nR + before;
+        st.joinS = 0;
+        st.continued = true;
+        conts.push({ old: j, cont: before, at0: a0 });
+        return 'cut';
+      }
+      // The stream ends where it first comes into the pond's water; or, where its course never does, it runs on into it
+      // in a straight reach from its last sample that has one crossing nothing of its course before it.
+      const ptsSet = new Set(pts);
+      const inThis = (n: number, e2: number): boolean => ptsSet.has(rasterOf(n, e2));
+      let cutAt = -1;
+      for (let i = 0; i < st.north.length && cutAt < 0; i++) if (inThis(st.north[i], st.east[i])) cutAt = i;
+      let runFrom = -1;
+      let runTo = -1;
+      if (cutAt < 0) {
+        for (let i = st.north.length - 1; i > 0 && runFrom < 0; i--) {
+          let bd = Infinity;
+          for (const q of pts) {
+            const tn = ORIGIN + Math.floor(q / R) * LAKE_RASTER;
+            const te = ORIGIN + (q % R) * LAKE_RASTER;
+            const d = Math.hypot(tn - st.north[i], te - st.east[i]);
+            if (d < bd && !crossesOwn(st, tn, te, i, 1)) {
+              bd = d;
+              runTo = q;
+            }
+          }
+          if (runTo >= 0) runFrom = i;
+        }
+        if (runFrom < 0) return 'skip';
+      }
+      fillDetail = `${(pts.length * (LAKE_RASTER / 1000) ** 2).toFixed(2)} km2, its sill ${(top - G(k0)).toFixed(1)} m over the pit`;
+      let sill = way[0];
+      for (const k of way) if (G(k) > G(sill) && !out.get(k)) sill = k;
+      if (raise) mask.drainPond(mask.pools[st.pool].lake);
+      const id = mask.addPond(pts, gs, level, sill);
+      ponds.push(id, pts.length);
+      const fillers = [j];
+      if (cutAt >= 0) {
+        const sCut = st.s[cutAt];
+        // (Its tributaries that join it past there end where they first come into the pond's water, if they do.)
+        for (let oj = 0; oj < streams.length; oj++) {
+          const o = streams[oj];
+          if (o.joins !== nR + j || o.joinS <= sCut) continue;
+          let oi = -1;
+          for (let i = 0; i < o.north.length && oi < 0; i++) if (inThis(o.north[i], o.east[i])) oi = i;
+          if (oi > 0) {
+            truncate(o, oj, oi + 1);
+            o.end = 'lake';
+            o.joins = -1;
+            o.level[oi] = Math.min(o.level[oi], level);
+            fillers.push(oj);
+          }
+        }
+        if (st.north.length > Math.max(2, cutAt + 1)) truncate(st, j, Math.max(2, cutAt + 1));
+      } else {
+        truncate(st, j, runFrom + 1);
+        appendTo(st, ORIGIN + Math.floor(runTo / R) * LAKE_RASTER, ORIGIN + (runTo % R) * LAKE_RASTER, level);
+      }
+      st.end = 'lake';
+      const me = st.north.length - 1;
+      st.level[me] = Math.min(st.level[me], level);
+      // The outlet: along the flood's way from the pond's last point on it to the water it reaches.
+      let w0 = 0;
+      while (w0 < way.length - 1 && mask.poolAt(Math.floor(way[w0 + 1] / R), way[w0 + 1] % R) === id) w0++;
+      pondOutlet(id, j, level, fillers, { path: way.slice(w0), end: e });
+      return 'pond';
+    };
     for (let j = 0; j < nBefore; j++) {
       const st = streams[j];
       if (st.end !== 'sink' || st.joins >= 0) continue;
@@ -1947,7 +2327,6 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         }
       }
       if (ok && sill < 0) (report.pondWhy ??= {}).nosill = (report.pondWhy.nosill ?? 0) + 1;
-      const ew = (report.endWhy ??= {});
       const why0 = ew[nR + j] ?? '';
       if (!ok || sill < 0) {
         // (Too big or deep a hollow to fill: it joins water beside it, if any.)
@@ -2013,9 +2392,12 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
             }
           }
         }
+        // (Still dead: FILL_DEAD_ENDS.)
+        if (FILL_DEAD_ENDS && st.end === 'sink' && st.joins < 0) deadEnd(j, null);
         // (A raster artefact: no water would stand here. The stream runs on over the sill.)
         continue;
       }
+      const snap = FILL_DEAD_ENDS ? mask.pondState() : null;
       const id = mask.addPond(pts, gs, level, sill);
       ponds.push(id, pts.length);
       st.end = 'lake';
@@ -2083,18 +2465,22 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
             ew[nR + j] = `${why0}; pond: filled (${pts.length} points), every way in crosses its own course; ${cutAt > 0 ? `cutting it back into the pond would take ${(cutLen / 1000).toFixed(1)} of its ${(st.s[st.s.length - 1] / 1000).toFixed(1)} km` : `none of it within ${2 * LAKE_RASTER} m`}`;
             (report.pondWhy ??= {}).allCross = (report.pondWhy.allCross ?? 0) + 1;
             st.end = 'sink';
+            // (Still dead: FILL_DEAD_ENDS, in place of this pond; else the pond as it was.)
+            if (snap) {
+              if (deadEnd(j, () => {
+                mask.restorePonds(snap);
+                ponds.length -= 2;
+              })) continue;
+              mask.addPond(pts, gs, level, sill);
+              ponds.push(id, pts.length);
+            }
           }
         }
       }
       const me = st.north.length - 1;
       st.level[me] = Math.min(st.level[me], level);
-      // The outlet, from the pond's lowest way out.
-      const out = outletPath(id);
-      if (!out) continue;
-      const kk = out.path[0];
-      const first = { north: ORIGIN + Math.floor(kk / R) * LAKE_RASTER, east: ORIGIN + (kk % R) * LAKE_RASTER, level };
-      const t = out.end ? { path: out.path.slice(1), end: { ...out.end, ok: true } } : trace(out.path.slice(1), id, level, false, CONT_CLIMB, true, -1, CONT_CONNECT_R);
-      build(t.path, t.end, first, Math.max(1, st.area[st.area.length - 1]), id);
+      // The outlet, from the pond's lowest way out (round T: never back into the stream filling it).
+      pondOutlet(id, j, level, [j], null);
     }
     report.ponds = ponds;
   }
@@ -2139,6 +2525,33 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       const P = streams[L.joins - nR];
       for (let i = 0; i < P.s.length; i++) if (P.s[i] >= L.joinS - 1e-6) P.area[i] += delta;
       L = P;
+    }
+  }
+  // A pond's outlet carries what runs into its pond: every line ending in its water, each once (round T: not the
+  // filling stream's catchment as it stood when the pond was made - with the outlet looping back that doubled it).
+  // Higher ponds first, so a pond's outlet running into a lower pond is in that one's inflow.
+  {
+    const poolOfEnd = (L: StreamLine): number => {
+      const m = L.north.length - 1;
+      return mask.poolAt(Math.round((L.north[m] - ORIGIN) / LAKE_RASTER), Math.round((L.east[m] - ORIGIN) / LAKE_RASTER));
+    };
+    const order = pondOutlets.slice().sort((a, b) => mask.pools[b.pool].level - mask.pools[a.pool].level || a.pool - b.pool);
+    for (const po of order) {
+      const into = new Set<number>(po.fillers);
+      for (let q = 0; q < streams.length; q++) if (q !== po.outlet && streams[q].end === 'lake' && poolOfEnd(streams[q]) === po.pool) into.add(q);
+      into.delete(po.outlet);
+      let inflow = 0;
+      for (const q of into) inflow += streams[q].area[streams[q].area.length - 1];
+      const delta = Math.max(1, inflow) - po.a0;
+      if (!(Math.abs(delta) > 1e-9)) continue;
+      let L = streams[po.outlet];
+      for (let i = 0; i < L.area.length; i++) L.area[i] = Math.max(1, L.area[i] + delta);
+      for (let guard = 0; L.joins >= nR && guard < 100; guard++) {
+        const P = streams[L.joins - nR];
+        for (let i = 0; i < P.s.length; i++) if (P.s[i] >= L.joinS - 1e-6) P.area[i] = Math.max(1, P.area[i] + delta);
+        L = P;
+      }
+      report.pondInflow = (report.pondInflow ?? 0) + 1;
     }
   }
   /** The furthest down each stream another joins it, m. */
