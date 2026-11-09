@@ -76,6 +76,10 @@ const AT_THE_SURFACE = true;
 /** ... only for a lake the line ends in or stays in: not one it passes, coming to it, running along it and leaving it
  * for good more than this under its level, m. */
 const LEAVE_BELOW = 1;
+/** heightfield.ts FIELD_RAISE (holdUnder): a stream's water is raised no more than this over another stream's within both
+ * half-widths and RAISE_BESIDE_REACH of it, m. */
+const RAISE_BESIDE = 1;
+const RAISE_BESIDE_REACH = 20;
 /** ... not over its last this much, m (into its mouth). */
 const STEEP_MOUTH = 150;
 /** A hanging valley's lip lies where the alpine uplift (seededLayout.ts) is over this: high in the ranges. */
@@ -1519,6 +1523,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       let lowered = 0;
       type HeldLine = { north: Float64Array; east: Float64Array; level: Float64Array; cut: Float64Array; breach: Float64Array; halfWidth: Float64Array; s: Float64Array };
       const raisedLine = new Uint8Array(allLines.length);
+      const beside: ChannelNear[] = [];
       // Its cut, how far its water runs under the ground its channel is carved into (the shaped ground there), and its
       // breach from that - no wider than before: the channel index lists each segment out to the breach's reach as it
       // was built, before the airfields were sited. Then its flow.
@@ -1554,8 +1559,16 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
           // channel into it, blended into their flats after: heightfield.ts fieldTrim, fieldUnder.)
           // (Or raised where a blend into a flat raises the ground over it, to under that ground as blended - over the
           // ground the channel is carved into before the blend, which the blend then raises over it: heightfield.ts
-          // fieldOver.)
-          const u = over ? over(g, r.north[i], r.east[i]) : -Infinity;
+          // fieldOver - but no more than RAISE_BESIDE over another stream's water beside it: two streams side by side,
+          // one raised, stood a wall apart - seed 777777 line 734 3 m over 1727, their banks 8 m apart, under KHLT.)
+          let u = over ? over(g, r.north[i], r.east[i]) : -Infinity;
+          if (u > r.level[i] + 0.01) {
+            const nh = network.channels(r.north[i], r.east[i], beside);
+            for (let q = 0; q < nh; q++) {
+              const o = beside[q];
+              if (o.line !== li && o.kind === 1 && o.dist < o.halfWidth + r.halfWidth[i] + RAISE_BESIDE_REACH) u = Math.min(u, Math.max(r.level[i], o.level + RAISE_BESIDE));
+            }
+          }
           const raise = u > r.level[i] + 0.01;
           const t = under(g, r.north[i], r.east[i]);
           const lower = !raise && t < r.level[i] - 0.01;

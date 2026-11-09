@@ -5,6 +5,7 @@ import { it } from 'vitest';
 import { hydrology, naturalHeight, terrainHeight } from '../../../../src/world/terrain/heightfield';
 import { setWorldSeed } from '../../../../src/world/worldSeed';
 import { LAKE_RASTER, RASTER_N, DOMAIN_HALF } from '../../../../src/world/terrain/drainage';
+import { streamDebug } from '../../../../src/world/terrain/streams';
 const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
 it('pool map', () => {
   setWorldSeed(Number(env.PM_SEED ?? 7));
@@ -23,7 +24,7 @@ it('pool map', () => {
       const ri = ci + a, rj = cj + b;
       const n = O + ri * LAKE_RASTER, e = O + rj * LAKE_RASTER;
       const p = mask.poolAt(ri, rj);
-      const g = naturalHeight(n, e);
+      const g = env.PM_ROUTE ? streamDebug.route!(n, e) : naturalHeight(n, e);
       const rg = mask.rasterGround(ri, rj);
       const st = near(n, e) ? '*' : ' ';
       row1 += (p >= 0 ? String(p) : '.').padStart(5) + st;
