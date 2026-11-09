@@ -379,6 +379,8 @@ export interface StreamReport {
   pondInflow?: number;
   /** Ponds left closed by the outlet rule, and why (probes). */
   pondClosed?: string[];
+  /** Each pond outlet's inflow: the lines filling it, each with its area at its end and what it lost to the pond's water. */
+  pondInflowDetail?: string[];
   pondWhy?: Record<string, number>;
   /** Streams that ended in a hollow run on as a continuation. */
   continued?: number;
@@ -2107,6 +2109,20 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
   /** The pond outlets built (pool, outlet stream index, the area it was built with, the lines known to fill it): their
    * catchment is the pond's inflow, summed below. */
   const pondOutlets: Array<{ pool: number; outlet: number; a0: number; fillers: number[] }> = [];
+  /** What a stream filling a pond gathered along the course it lost when cut back into the pond's water (its own
+   * catchment there, before the network's sum: that ground drains into the pond all the same), km², by stream index. */
+  const lostArea = new Map<number, number>();
+  /** A tributary cut into its filler's pond (fillPond): the filler, and how the network's sum below would have counted it
+   * there (summed; or not, the filler's own catchment holding it already - max: never narrower than it; held). */
+  const tribOf = new Map<number, { to: number; rule: 'sum' | 'max' | 'held' }>();
+  /** Stream q cut back to its first n samples: what it gathered past them goes into lostArea. */
+  const cutInto = (q: number, n: number): void => {
+    const st = streams[q];
+    if (n >= st.north.length) return;
+    const a = st.area[st.area.length - 1] - st.area[n - 1];
+    if (a > 0) lostArea.set(q, (lostArea.get(q) ?? 0) + a);
+    truncate(st, q, n);
+  };
   {
     const nBefore = streams.length;
     const ponds: number[] = [];
@@ -2334,10 +2350,13 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         // Too big a lake, on a low sill: the stream runs on from its pit through the hollow and over the sill along the
         // way out, in a notch through it.
         const before = streams.length;
+        const aWas = st.area[st.area.length - 1];
         truncate(st, j, Math.max(2, ip + 1));
         const m = st.north.length - 1;
         const a0 = st.area[m];
-        build(way, e, { north: st.north[m], east: st.east[m], level: st.level[m] }, a0, -1, a0);
+        // (Carrying what it gathered past its pit too: that ground drains into the hollow it now runs through.)
+        const aCont = Math.max(a0, aWas);
+        build(way, e, { north: st.north[m], east: st.east[m], level: st.level[m] }, aCont, -1, aCont);
         if (streams.length === before) return 'skip';
         if (streams[before].end === 'sink' || streams[before].end === 'stuck') {
           streams.pop();
@@ -2392,16 +2411,20 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
           let oi = -1;
           for (let i = 0; i < o.north.length && oi < 0; i++) if (inThis(o.north[i], o.east[i])) oi = i;
           if (oi > 0) {
-            truncate(o, oj, oi + 1);
+            // (As the network's sum would have taken it into stream j: see "Catchment summed down the network".)
+            const held = o.chainS >= 0 && st.chainS >= 0 && o.joinS <= st.chainS + 1e-6;
+            const max = (o.chainS >= 0 && st.chainS < 0) || (st.chainS >= 0 && o.joinS <= st.chainS + 1e-6);
+            tribOf.set(oj, { to: j, rule: held ? 'held' : max ? 'max' : 'sum' });
+            cutInto(oj, oi + 1);
             o.end = 'lake';
             o.joins = -1;
             o.level[oi] = Math.min(o.level[oi], level);
             fillers.push(oj);
           }
         }
-        if (st.north.length > Math.max(2, cutAt + 1)) truncate(st, j, Math.max(2, cutAt + 1));
+        if (st.north.length > Math.max(2, cutAt + 1)) cutInto(j, Math.max(2, cutAt + 1));
       } else {
-        truncate(st, j, runFrom + 1);
+        cutInto(j, runFrom + 1);
         appendTo(st, ORIGIN + Math.floor(runTo / R) * LAKE_RASTER, ORIGIN + (runTo % R) * LAKE_RASTER, level);
       }
       st.end = 'lake';
@@ -2610,7 +2633,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
           // sill to end in another; it stays a sink.)
           const cutLen = cutAt > 0 ? st.s[st.s.length - 1] - st.s[cutAt] : 0;
           if (cutAt > 0 && cutLen <= CUT_BACK && cutLen <= 0.5 * st.s[st.s.length - 1]) {
-            truncate(st, j, cutAt + 1);
+            cutInto(j, cutAt + 1);
             if (into >= 0) appendTo(st, ORIGIN + Math.floor(into / R) * LAKE_RASTER, ORIGIN + (into % R) * LAKE_RASTER, level);
             (report.pondWhy ??= {}).cutBack = (report.pondWhy.cutBack ?? 0) + 1;
             done = true;
@@ -2693,8 +2716,20 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       const into = new Set<number>(po.fillers);
       for (let q = 0; q < streams.length; q++) if (q !== po.outlet && streams[q].end === 'lake' && poolOfEnd(streams[q]) === po.pool) into.add(q);
       into.delete(po.outlet);
+      // Each with what it gathered along the course it lost to the pond's water (lostArea); a tributary cut into the pond
+      // from its filler's course counted as the network's sum would have counted it into the filler (tribOf).
+      const total = (q: number): number => streams[q].area[streams[q].area.length - 1] + (lostArea.get(q) ?? 0);
+      const own = new Map<number, number>();
+      for (const q of into) if (!(tribOf.has(q) && into.has(tribOf.get(q)!.to))) own.set(q, total(q));
+      for (const q of into) {
+        const t = tribOf.get(q);
+        if (!t || !own.has(t.to)) continue;
+        if (t.rule === 'sum') own.set(t.to, own.get(t.to)! + total(q));
+        else if (t.rule === 'max') own.set(t.to, Math.max(own.get(t.to)!, total(q)));
+      }
       let inflow = 0;
-      for (const q of into) inflow += streams[q].area[streams[q].area.length - 1];
+      for (const a of own.values()) inflow += a;
+      (report.pondInflowDetail ??= []).push(`pool ${po.pool} outlet ${nR + po.outlet}: ${[...into].map((q) => `${nR + q} A ${streams[q].area[streams[q].area.length - 1].toFixed(1)} + lost ${(lostArea.get(q) ?? 0).toFixed(1)}${tribOf.has(q) ? ` (cut from ${nR + tribOf.get(q)!.to}: ${tribOf.get(q)!.rule})` : ''}`).join(', ')} -> ${inflow.toFixed(1)} (built with ${po.a0.toFixed(1)})`);
       const delta = Math.max(1, inflow) - po.a0;
       if (!(Math.abs(delta) > 1e-9)) continue;
       let L = streams[po.outlet];
