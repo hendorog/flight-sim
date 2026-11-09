@@ -704,6 +704,12 @@ let legacyHydro: Hydrology;
 let fields: readonly Airfield[] = [];
 /** Round T: hold a seeded world's streams under the ground the airfields cut (holdUnder); the samples it lowered. */
 const FIELD_HOLD = true;
+/** Round T: a seeded world's ground trimmed under the airfields' approaches before its network carves it (sampleTerrain),
+ * the blends into their flats still after. */
+const FIELD_FIRST = true;
+/** The least a stream's carved banks stand over its water where an airfield's blend flattens them after the carve
+ * (fieldUnder), m. */
+const HOLD_BANK = 1;
 let fieldHeld = 0;
 /** The streams' samples FIELD_HOLD lowered (probes). */
 export const fieldHeldCount = (): number => fieldHeld;
@@ -722,21 +728,11 @@ function nearField(north: number, east: number): boolean {
   const across = -dn * RW_SIN + de * RW_COS;
   return Math.abs(along) - HALF_LEN < APPROACH_LENGTH && Math.abs(across) < 2 * (300 + 0.12 * APPROACH_LENGTH);
 }
-/** The ground h at a point as sampleTerrain shapes it for the airfields after the network's carve: the home field's
- * approaches, a generated field's approaches and flat area, the blend into the home field (the same arithmetic). */
-function fieldTrim(h: number, north: number, east: number): number {
-  const dn = north - RW.center.north;
-  const de = east - RW.center.east;
-  const along = dn * RW_COS + de * RW_SIN;
-  const across = -dn * RW_SIN + de * RW_COS;
-  const ox = Math.max(Math.abs(along) - HALF_LEN, 0);
-  const oy = Math.max(Math.abs(across) - HALF_WID, 0);
-  const dRect = Math.sqrt(ox * ox + oy * oy);
-  if (dRect <= FLAT) return ELEV;
-  let gf: Airfield | null = null;
-  let gAlong = 0;
-  let gAcross = 0;
-  let gRect = Infinity;
+/** A generated field within reach of a point (sampleTerrain: they are spaced so at most one is) and the point in its
+ * runway's coordinates (fieldAt), or null. */
+const fieldAt = { f: null as Airfield | null, along: 0, across: 0, rect: Infinity };
+function fieldNear(north: number, east: number): Airfield | null {
+  fieldAt.f = null;
   for (const f of isPresent() ? fields : []) {
     const fn = north - f.north;
     const fe = east - f.east;
@@ -744,15 +740,19 @@ function fieldTrim(h: number, north: number, east: number): number {
     if (fn * fn + fe * fe > reach * reach) continue;
     const c = Math.cos(f.heading);
     const sn = Math.sin(f.heading);
-    gAlong = fn * c + fe * sn;
-    gAcross = -fn * sn + fe * c;
-    const fx = Math.max(Math.abs(gAlong) - f.length / 2, 0);
-    const fy = Math.max(Math.abs(gAcross) - f.width / 2, 0);
-    gRect = Math.sqrt(fx * fx + fy * fy);
-    gf = f;
+    fieldAt.along = fn * c + fe * sn;
+    fieldAt.across = -fn * sn + fe * c;
+    const fx = Math.max(Math.abs(fieldAt.along) - f.length / 2, 0);
+    const fy = Math.max(Math.abs(fieldAt.across) - f.width / 2, 0);
+    fieldAt.rect = Math.sqrt(fx * fx + fy * fy);
+    fieldAt.f = f;
     break;
   }
-  if (gf && gRect <= gf.flatMargin) return gf.elevation;
+  return fieldAt.f;
+}
+/** Ground h trimmed under the airfields' approaches (sampleTerrain): the home field's under APPROACH_GRADIENT from its
+ * runway's ends, a generated field's (`gf`, the point in its runway's coordinates) the same. */
+function approachTrim(h: number, along: number, across: number, gf: Airfield | null, gAlong: number, gAcross: number): number {
   const beyond = Math.abs(along) - HALF_LEN;
   if (beyond > 0 && beyond < APPROACH_LENGTH) {
     const halfW = 300 + 0.12 * beyond;
@@ -772,9 +772,41 @@ function fieldTrim(h: number, north: number, east: number): number {
         h -= w * 0.5 * (excess + Math.sqrt(excess * excess + 400));
       }
     }
-    h = gf.elevation + (h - gf.elevation) * smoother(gf.flatMargin, gf.flatMargin + gf.blend, gRect);
   }
-  return ELEV + (h - ELEV) * smoother(FLAT, FLAT + BLEND, dRect);
+  return h;
+}
+/** The ground h at a point as a seeded world's network carves it near the airfields: trimmed under their approaches
+ * (FIELD_FIRST; the blends into their flats come after the carve). */
+function fieldTrim(h: number, north: number, east: number): number {
+  const dn = north - RW.center.north;
+  const de = east - RW.center.east;
+  const gf = fieldNear(north, east);
+  return approachTrim(h, dn * RW_COS + de * RW_SIN, -dn * RW_SIN + de * RW_COS, gf, fieldAt.along, fieldAt.across);
+}
+/** The highest a stream's water may stand at a point by the airfields, levelled on ground g there: 1 m under that
+ * ground trimmed under the approaches (the channel is carved into it), and where a blend into a flat follows the carve -
+ * pulling the banks towards the field's elevation - no higher than leaves its banks (HOLD_BANK over the water as carved)
+ * over the water when blended; under a flat itself, 1 m under it. */
+function fieldUnder(g: number, north: number, east: number): number {
+  const dn = north - RW.center.north;
+  const de = east - RW.center.east;
+  const along = dn * RW_COS + de * RW_SIN;
+  const across = -dn * RW_SIN + de * RW_COS;
+  const ox = Math.max(Math.abs(along) - HALF_LEN, 0);
+  const oy = Math.max(Math.abs(across) - HALF_WID, 0);
+  const dRect = Math.sqrt(ox * ox + oy * oy);
+  if (dRect <= FLAT) return ELEV - 1;
+  const gf = fieldNear(north, east);
+  if (gf && fieldAt.rect <= gf.flatMargin) return gf.elevation - 1;
+  let t = approachTrim(g + 1, along, across, gf, fieldAt.along, fieldAt.across) - 1;
+  // (Blended, a bank b over water t stands at E + (t + b - E) * k: over t while t <= E + b k / (1 - k).)
+  if (gf) {
+    const k = smoother(gf.flatMargin, gf.flatMargin + gf.blend, fieldAt.rect);
+    if (k < 1 && t > gf.elevation) t = Math.min(t, gf.elevation + (HOLD_BANK * k) / (1 - k));
+  }
+  const k = smoother(FLAT, FLAT + BLEND, dRect);
+  if (k < 1 && t > ELEV) t = Math.min(t, ELEV + (HOLD_BANK * k) / (1 - k));
+  return t;
 }
 /** The home runway checked on the finished ground of the last seeded world (homeSiting.ts siteRunway); null at seed 0. */
 export let homeRecheck: RunwayFit | null = null;
@@ -914,7 +946,7 @@ function buildWater(): void {
     setGeneratedAirfields(fields);
     // Round T (FIELD_HOLD): the streams' water held under the ground the airfields' approaches and flats cut (sampleTerrain),
     // which the streams, traced first, were not levelled on (seed 777777 line 720 stood 50 m over an approach).
-    if (FIELD_HOLD) fieldHeld = presentHydro.holdUnder?.(fieldTrim, nearField) ?? 0;
+    if (FIELD_HOLD) fieldHeld = presentHydro.holdUnder?.(fieldTrim, fieldUnder, nearField) ?? 0;
     return;
   } else {
     erosion = null;
@@ -1424,6 +1456,14 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
     if (maskLevel > -Infinity) out.standing = Math.max(out.standing, maskLevel);
   }
 
+  // A seeded world's ground is trimmed under the airfields' approaches (FIELD_FIRST) before its network carves it, not
+  // after: its streams' water is held under that trimmed ground (holdUnder), each in its own channel cut into it.
+  // (Trimmed after the carve, a stream's bed and banks were lowered again under water levelled on the trimmed ground:
+  // seed 777777 line 720 stood up to 24 m over both banks in an approach.) The blends into the flats stay after the
+  // carve, which may cut far below a field's elevation by it (a valley's walls).
+  const trimFirst = FIELD_FIRST && !!presentHydro.network;
+  if (trimFirst) h = approachTrim(h, along, across, gf, gAlong, gAcross);
+
   h = presentHydro.network ? carveNetwork(north, east, h, out) : isPresent() ? carveRiver(north, east, h, out) : carveLegacyRiver(north, east, h, out);
 
   // Approach corridors: keep terrain under a gradient well below the 3 degree glide path from both ends.
@@ -1433,7 +1473,7 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
     const w = (1 - smooth(halfW, halfW * 1.8, Math.abs(across))) * (1 - smooth(APPROACH_LENGTH * 0.85, APPROACH_LENGTH, beyond));
     // Obstacle-clear zone (no trees) for the first few kilometres of each approach.
     out.approach = w * (1 - smooth(1500, 3000, beyond));
-    if (w > 0) {
+    if (w > 0 && !trimFirst) {
       const excess = h - (ELEV + APPROACH_GRADIENT * beyond);
       // Smooth max(excess, 0) over a 20 m band so the trimmed surface has no crease.
       h -= w * 0.5 * (excess + Math.sqrt(excess * excess + 400));
@@ -1448,7 +1488,7 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
       const halfW = 150 + 0.12 * gBeyond;
       const w = (1 - smooth(halfW, halfW * 1.8, Math.abs(gAcross))) * (1 - smooth(gf.approachLength * 0.85, gf.approachLength, gBeyond));
       out.approach = Math.max(out.approach, w * (1 - smooth(800, 1600, gBeyond)));
-      if (w > 0) {
+      if (w > 0 && !trimFirst) {
         const excess = h - (gf.elevation + APPROACH_GRADIENT * gBeyond);
         h -= w * 0.5 * (excess + Math.sqrt(excess * excess + 400));
       }

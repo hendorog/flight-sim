@@ -90,10 +90,10 @@ export interface Hydrology {
   faults?: ReadonlyArray<import('./faults').Fault>;
   /** A seeded world's nearest channel (river or stream) and its flow at a point. Absent at seed 0. */
   queryFlow?(north: number, east: number, out: FlowHit): FlowHit;
-  /** A seeded world: hold every stream's water under the ground `trim` makes of the ground it was levelled on, where
-   * `near` (the airfields' approaches and flats, cut after the streams were traced); its flow worked out again. Returns
-   * the samples lowered. Absent at seed 0. */
-  holdUnder?(trim: (h: number, north: number, east: number) => number, near: (north: number, east: number) => boolean): number;
+  /** A seeded world: where `near` (the airfields' approaches and flats, shaped after the streams were traced), hold every
+   * stream's water at or under `under` of the ground it was levelled on, its cut taken against `trim` of that ground
+   * (what the network's carve cuts into); its flow worked out again. Returns the samples lowered. Absent at seed 0. */
+  holdUnder?(trim: (h: number, north: number, east: number) => number, under: (h: number, north: number, east: number) => number, near: (north: number, east: number) => boolean): number;
   /** The falls within `radius` m of a point, nearest first (indices into `falls`); returns how many. Absent at seed 0. */
   fallsNear?(north: number, east: number, radius: number, out: number[]): number;
   /** How a seeded world's streams were traced (streams.ts), for probes. Absent at seed 0. */

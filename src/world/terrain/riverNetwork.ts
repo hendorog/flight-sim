@@ -1381,24 +1381,41 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     falls,
     faults,
     queryFlow,
-    holdUnder(trim, near) {
+    holdUnder(trim, under, near) {
       let lowered = 0;
       for (let li = nR; li < allLines.length; li++) {
-        const r = allLines[li] as { north: Float64Array; east: Float64Array; level: Float64Array; cut: Float64Array; halfWidth: Float64Array; s: Float64Array };
+        const r = allLines[li] as { north: Float64Array; east: Float64Array; level: Float64Array; cut: Float64Array; breach: Float64Array; halfWidth: Float64Array; s: Float64Array };
         const m = r.level.length;
+        // (The ground each sample was levelled on, and its water, before.)
+        let og: Float64Array | null = null;
+        let was: Float64Array | null = null;
         let changed = false;
         for (let i = 0; i < m; i++) {
           if (!near(r.north[i], r.east[i])) continue;
-          // (Under the ground it was levelled on, as trimmed.)
-          const t = trim(r.level[i] + r.cut[i] + 1, r.north[i], r.east[i]) - 1;
-          if (!(t < r.level[i] - 0.01)) continue;
-          r.cut[i] = Math.max(0, r.cut[i] - (r.level[i] - t));
-          r.level[i] = t;
+          const g = r.level[i] + r.cut[i];
+          // (Under that ground as the airfields shape it - trimmed under their approaches before the network carves the
+          // channel into it, blended into their flats after: heightfield.ts fieldTrim, fieldUnder.)
+          const t = under(g, r.north[i], r.east[i]);
+          const lower = t < r.level[i] - 0.01;
+          if (!lower && !(trim(g, r.north[i], r.east[i]) < g - 0.01)) continue;
+          og ??= Float64Array.from(r.level, (v, q) => v + r.cut[q]);
+          was ??= Float64Array.from(r.level);
           changed = true;
-          lowered++;
+          if (lower) r.level[i] = t;
         }
-        if (!changed) continue;
+        if (!changed || !og || !was) continue;
         for (let i = 1; i < m; i++) r.level[i] = Math.min(r.level[i], r.level[i - 1]);
+        // Its cut, how far its water runs under the ground its channel is carved into (the shaped ground there), and its
+        // breach from that - no wider than before: the channel index lists each segment out to the breach's reach as it
+        // was built, before the airfields were sited.
+        for (let i = 0; i < m; i++) {
+          const lowerHere = r.level[i] < was[i] - 1e-9;
+          if (lowerHere) lowered++;
+          const tg = trim(og[i], r.north[i], r.east[i]);
+          if (!lowerHere && !(tg < og[i] - 0.01)) continue;
+          r.cut[i] = Math.max(0, tg - r.level[i]);
+          r.breach[i] = Math.min(r.breach[i], breachOfCut(r.cut[i]));
+        }
         const f = flowOf(r, lipsOf[li]);
         flows[li].gradient.set(f.gradient);
         flows[li].steepness.set(f.steepness);
