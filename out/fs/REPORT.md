@@ -1059,3 +1059,257 @@ What a pilot sees:
 | `671eaf2` | checker fix: no pond outlet runs into a lake upstream of its filler; outletLoops counts cycles through lakes |
 | `09bd446` | checker fix: approaches trimmed before the network's carve, held streams in their own channels (FIELD_FIRST) |
 | (this) | report and picture notes corrected to the shipped code; finalS.sh reruns steepWater with the long timeout |
+
+## Round T repairs: pond inflow, streams into standing water, line 720 by KPMH, slow tests (`f654e1c` .. `cc7f23a`)
+
+The round-T checkers found four regressions at `3f9d795` (code `09bd446`). Each is fixed in its own commit.
+
+Before and after:
+- **Before** is `3f9d795`. Its pictures are verifyT2's `-F` renders (`out/fs/verifyT2/pictures`, the same code)
+  and this round's `-R0` renders of a copy of it (`out/fs/trees/R0`).
+- **After** pictures are `-R1` / `-R2` / `-R3`, rendered from copies of each commit (`out/fs/trees/R1..R3`).
+
+Where things are:
+- Probes: `out/fs/R/probes`. Logs: `out/fs/R`. Pictures and crops: `out/fs/R/pictures`.
+- Renders used port 5222: the shot tool's own vite, one shot at a time, now stopped. A render whose log says
+  "preload timed out" (machine under other jobs' load) is not used as evidence. Those are `xR692-R3`, `fly7-final-R3`,
+  `xB720-high-R0` and `x567-entry-R2`; `fly7-abeam-R3` and `xR720-low-R0` are used only where they look complete.
+- Final battery: `out/fs/finalR` (`finalS.sh finalR suite`, then `extrasR.sh` = extrasU.sh into finalR).
+
+### Short version
+
+| item | verdict | what a pilot sees |
+|---|---|---|
+| 1. pond inflow double count | **fixed** | 602's outlet and river 232 are drawn for 49.6-51 km², not 70-72; slightly narrower water in the wooded corridor |
+| 2. trench and water wall under standing water | **partly: fixed for 602 and wherever the banks hold, about half the cases (70 streams raised; shore steps > 1 m 98 -> 47 and trench > 3 m 27.8 -> 8.8 km over four seeds); not fixed for the 53 blocked runs, among them round T's named pool 26 (567, 15 m under its pond) and 738** | at 602 the dark line across the lake is gone, and the inflow meets the lake level in a shallow channel; the blocked inflows look as before |
+| 3. line 720 by KPMH | **dry reach fixed; ladder and sawtooth not fixed** | the stream flows in its own channel beside the runway all the way; the stepped pools and the serrated bank on the approach reach are unchanged |
+| 4. slow tests | **done** | - |
+
+### 1. Pond inflow (`f654e1c`): fixed
+
+**What was wrong.** A pond outlet's inflow added the filler's lost area (what it gathered along the course the pond
+drowned) on top of its end area after the network's sum. 602's end had already been raised to its tributary
+1853's 26.6 km² by the max rule, so the sum was max(6.1, 26.6) + 43.5 = 70.1. It should be
+max(6.1 + 43.5, 26.6) = 49.6.
+
+**The fix.** The sum now mirrors each stream's end with its lost area counted as its own catchment (`endLost`, with
+the same sum, max and continuation steps). The inflow takes the difference (`lostGain`).
+
+**Numbers** (`out/fs/R/pondIn-item1.log`, `receivers-item1.log`, the same at the final code in `receivers-final.log`):
+
+| | before | after |
+|---|---|---|
+| outlet 2181 (seed 1 pool 82) | 70.1..71.6 km², hw 8.6 m | 49.6..51.2 km², hw 7.6 m |
+| river 232 below the junction, 0 / 0.5 / 1.0 / 1.5 / 2.0 / 2.5 km | 71.6 for 3 km (hw 8.7 m) | 51.2 / 51.2 / 51.2 / 51.2 / 52.1 / 53.3 |
+| f3, about the same places (verifyT2 receivers.txt) | 49 / 49 / 49.3 / 51.1 / 52.7 / 54.1 | |
+
+The check outlets are unchanged: 716's 2250 50.9 km², seed 7 pool 26's 2621 51.8, 1414's 2188 59.1, 738's 2185 60.7,
+789's 2299 64.4, 769's 2297 118.5, and every other pond outlet on seeds 1 / 42 / 777777 / 7. drawnGate is unchanged.
+
+**Picture.** `cmp-r602-outlet-R0vsR1.png` (`r602-outlet-R0/-R1`) looks from 600 m at the outlet and river 232's wooded
+corridor south-west of the pond. The water ribbon in the trees is a little narrower; nothing else changed (0.10 % of
+pixels, all along that corridor).
+
+### 2. Streams into standing water (`527cde0`): fixed where the banks hold, not for the blocked inflows
+
+**The rule** (riverNetwork.ts `AT_THE_SURFACE`, after the pitches). Where a stream runs into a lake or pond
+(LakeMask's domain):
+- Its water there stands at the lake's surface, with no cut and no breach, so there is no channel under the lake's
+  bed.
+- On the way in, the lake backs its channel up to that level. The whole reach is raised or none of it.
+- It is raised only where every sample's banks hold the level: the lower natural bank, at its half-width + 25 m, no
+  more than 2 m under it, or in the lake.
+- A run whose backwater is blocked keeps all its levels, inside the water too. Water may not rise downstream: raising
+  only the inside made lines rise downstream (seededWorld failed on five seeds), and an unconditional backwater put
+  overGround > 10 m at 52 / 76 / 119.
+- Streams joining a raised reach get the same backwater. Falls and lips on a reach that is now level are removed.
+
+The terrain also no longer paints a channel's bed, banks or bank trees under a seeded world's lake water
+(tileBuilder.ts). verifyT2's "dead-straight dark line" across 602's lake was this paint as much as the trench: with
+the trench gone and the paint still on, the line was still there.
+
+**Seed 1, 602.** Line 1853 ran 12.2 m under the pond (173.1 vs 185.3 m) in a dead-straight trench 14-16 m deep. It ran
+430 m through the shore's tree belt (natural ground 185.4-191 m), then 820 m under the lake. It now stands at 185.3 m
+from s 4711. Through the tree belt its channel is 1.6 m deep. Under the lake the ground is the lake's bed (it was cut
+3-11 m into it). See `tail1853-v1.log`.
+- `cmp-x602-drown-FvsR2.png` (500 m over the lake): the dark line from the east shore across the water is gone. Only
+  a faint shallow groove about 200 m long remains at the mouth, the stream's bed where the lake is shallow.
+- `cmp-x602-face2-R0vsR2.png` (about 40 m over the wood, down the tail to the lake): before, a deep straight canal
+  with dark steep walls, its water well under the lake. After, a shallow straight channel whose water is level with
+  the lake and runs into it. The course is still dead-straight: truncate's tail to 602's stub is unchanged.
+- `x602-1853` (330 m) and `x602-mouth` (2 km): the inflow is hidden in its tree belt in both.
+- `s1-602` (4 km): the same as before (0.06 %).
+
+**Every seed** (`underLake.test.ts`; streams; seeds 1 / 42 / 777777 / 7; `underLake-before.log` -> `underLake-item2.log`):
+
+| | before | after |
+|---|---|---|
+| channel carved > 3 m under a lake's bed, under water | 4.64 / 9.68 / 8.38 / 5.06 km | 2.28 / 2.57 / 3.33 / 0.64 km |
+| ... > 1 m | 7.17 / 13.85 / 10.77 / 8.53 km | 3.53 / 5.21 / 4.96 / 2.97 km |
+| stream water > 3 m under the surface inside a lake | 17.88 / 32.60 / 25.99 / 18.63 km | 4.43 / 5.72 / 6.79 / 2.69 km |
+| shore steps (water under the surface on the way in) > 1 m | 19 / 26 / 29 / 24 | 13 / 11 / 13 / 10 |
+| ... > 5 m | 12 / 19 / 20 / 15 | 10 / 9 / 12 / 5 |
+| streams raised (km of samples) | - | 12 / 22 / 17 / 19 (17.4 / 36.4 / 41.7 / 25.9 km) |
+| blocked runs (the remaining steps and trenches) | - | 14 / 13 / 15 / 11 |
+
+The rivers are unchanged. Their trench is 0 / 0.48 / 0.08 / 0 km, and seed 777777's river 15 runs 3.1 m under lake 1
+for 6.6 km.
+
+**Not fixed: the blocked inflows.** The stream pass filled a pond at each of these streams' ends, on its routing
+ground, and the pond stands over the stream's banks, so raising the water would stand it over them.
+- Most of these streams climbed out of their hollow through a notch: their cut on the last kilometre is up to 97 m,
+  and the water in the notch kept the hollow's level.
+- The rest run in a valley whose banks are lower than that pond.
+- Seed 1: 1793 (26.1 m step), 1265 (25.6), 729 (20.9), 510 (19.2), 590, 1268, **738** (4.5), 1760.
+- Seed 42: 557, 569, 702, 479, 797, 719, 494, 514.
+- Seed 777777: 1814 (53.8), 2157 (38.3), 646, 1640, 2193, 818, 694, 796, 2075, 2255.
+- Seed 7: 571, **567** (15.3), 2611, 781, 2338, 610, 2392, 478, 2170.
+
+**738 and 567 are round T's own FILL_DEAD_ENDS ponds**, and pool 26 (567) is one of the named cases. So the
+claim that those named dead ends "end in water" holds only in that the line ends in the pond's domain. 567's water
+reaches the pond 15 m under its surface, in a notch 18-20 m deep. That is how it was before this repair.
+- `x567-pond26-R0/-R2` (100 m up, 700 m off): two tree-lined corridors run to the pond. The notch is under the
+  trees and no wall shows. The two renders are the same (0.09 %).
+- `x567-entry-R0` (18 m over the field at the notch's end): a small pool ringed by trees in a field. The R2 render
+  of that camera is degraded, and the pond itself is out of shot, so this picture neither shows nor rules out a
+  wall at the shore.
+- `x729-shore-R0/-R2`: the same (0.05 %); the notch is hidden in its tree belt.
+
+Fixing these needs the pond pass to see the drawn ground, not the routing ground: these ponds stand over the notch
+that drains them. That is a pond-pass change with lake ripple, not made here.
+
+**Gates.** overGround > 10 m stays 8 / 58 / 35. drawnGate (i) stays 96.0 / 95.7 / 95.6 %, outletLoops and cycles 0,
+seededWorld 21 / 21. endsGate is unchanged apart from the climbed reaches: 148.8 / 222.7 / 301.1 / 227.4 ->
+148.8 / 220.5 / 295.7 / 224.8 km.
+
+### 3. Line 720 by KPMH (`d2e6c40`): the dry reach is fixed; the ladder and the sawtooth are not
+
+**Cause of the dry reach.** It was the blend into the field's flat, not the approach trim. 720 runs about 165 m off
+the runway's centreline: 142-156 m from the runway rectangle, inside flatMargin 70 + blend 320. There the blend
+weight is 0.08-0.12. The blend follows the network's carve, so it pulled the carved bed and banks up to the field's
+elevation (405.7 m). fieldUnder had held the water at 404.6 m, so the bed stood over the water.
+
+**The fix, option (a).** After the blends, a seeded world's streams are cut again into the blended ground with
+carveNetwork's bed and banks (heightfield.ts `keepChannels`, `FIELD_CHANNEL`). It is weighted by how far the blends
+moved the ground as carved: nothing where they left it, all of it from 1 m. The flats themselves are untouched (no
+traced line crosses one), and so is seed 0. Siting is unchanged (option (b) was not needed), so no seed board
+changes: the airfields, seededWorld and landmarks tests pass and homeCheck is 8/8.
+
+**Numbers.**
+- Line 720, every 10 m from s 1400 to 2700: dry at its centre 1130 m -> 0 m. Beside the runway its water is 1.1-1.5 m
+  under the banks (404.6 m against 405.7-406.0 m). At the SE end, where it falls to 388.5 m in the blend, it is 2-3 m
+  under them (`line720-fine-1400-before.log` / `-after.log`).
+- verifyT2's dryNear (water hidden under the ground within a field's reach): 1674 / 395 / 87 -> 120 / 115 / 87 m on
+  seeds 777777 / 42 / 1. 720 goes 1111 -> 0, 734 397 -> 0, 1727 47 -> 0, seed 42 692 280 -> 0. What is left is
+  rivers 5, 7, 39 and 106 at 0.2-0.9 m, and seed 1 line 435's head (`dryNear-item3.log`).
+
+**Pictures.**
+- `cmp-xR720-zoom-FvsR3.png`: before, the white water stops at the runway's NW end and a pale dry bed runs beside the
+  runway for about 1 km. After, dark water runs on in its channel past the runway and beyond.
+- `cmp-xR720-low-R0vsR3.png` (115 m over the runway, looking SE): before, a pale dry bed; after, a blue stream in its
+  own channel with grass banks. The dark gash on the slope to the right is in both.
+- `cmp-xR734-zoom-FvsR3.png` (KHLT): 734's water is drawn again (dryNear 397 -> 0 m). It shows as pale and white
+  streaks in the channel, and from this zoom it is not settled whether that reads as a stream or as a pale scar. The
+  channel's straight course and corners are as before.
+- **The pale "sheet" is not water.** In `777777-B720-R3`, `xR720-low-R3` and the cockpit view `fly7-abeam-R3` the
+  clear zone reads as a mown, pale-green clearing with feathered edges: no reflection, no blue. From B720's angle its
+  whitish tint still reads somewhat like a haze band.
+- `cmp-B720-bank-FvsR3.png`: the zigzag reach by the runway (top left) now has water in it. **The ladder of
+  rectangular pools and the serrated right bank on the approach reach are unchanged.** That reach has blend weight
+  1.0, so it is not the blend.
+  - The fine profile there (`line720-fine-before.log`, every 5 m from s 550 to 1600) shows flat pools (samples 134-136,
+    145-146 and 156, 40-130 m long) between steeper runs. The water is 1-2.5 m under its banks and wet throughout.
+  - An A/B with the held line's pitch units off (`777777-B720-R3dbg.png`, `cmp-B720-bank-R3vsDbg.png`, debug tree,
+    not shipped) changes only two small spots, so it is not the pitch units.
+  - The cause was not found. The likeliest is the held level's staircase: holdUnder's running minimum of a target
+    that rises and falls as the stream weaves across the approach corridor. That is not verified.
+
+### 4. Slow tests (`cc7f23a`): done
+
+**The suite.** This branch's suite has always been tests/terrain, tests/world, tests/era and tests/career (745 tests,
+as in finalS.sh). Here it was run with vitest's default file parallelism, which makes it the "full parallel suite".
+A whole-repo `npx vitest run` was started first. It finished 56 of 457 files in 22 minutes, with timeouts in
+aircraft, rotorcraft and fauna files this branch does not touch. It was stopped, and those files are left alone
+(`wholerepo-partial.log`).
+
+**Run 1, no change** (`suiteP-1.log`): 20 of 745 failed, 19 of them "timed out in 5000ms", in nine files. Their slowest
+test ran to completion in this many seconds:
+
+| file | slowest test | limit set |
+|---|---|---|
+| tests/terrain/airfields.test.ts | 23.8 s | testTimeout 60 s |
+| tests/terrain/steepWater.test.ts | 23.0 s | 60 s |
+| tests/terrain/seededWorld.test.ts | 22.8 s | 60 s |
+| tests/terrain/waterFlow.test.ts | 22.2 s | 60 s |
+| tests/terrain/bedrock.test.ts | 22.1 s | 60 s |
+| tests/career/landmarks.test.ts | 25.2 s | 60 s |
+| tests/career/system.test.ts | 21.8 s | 60 s |
+| tests/terrain/rills.test.ts | 13.5 s | 30 s |
+| tests/career/jobsW4.test.ts | 6.9 s | 20 s |
+
+**Run 2** (`suiteP-2.log`): all nine passed. tests/career/jobs.test.ts then failed a beforeAll on the 10 s hook default,
+so it gets hookTimeout 60 s.
+
+**Run 3, all ten** (`suiteP-3.log`): every test under these limits passed. The slowest were 55.1 s (system, seed 7),
+52.3 s (steepWater) and 24.6 s (rills), so 60 s and 30 s are the margin chosen, not a minimum. Run 3 ran under other
+jobs' load on the machine (another worktree's vitest and Chrome renders) and was 40 % slower than run 1. That load
+also broke tests this commit leaves alone: pre-existing 30 s / 60 s limits (features, worldSeed, the rills and
+seededWorld determinism tests) and era/career tests that pass in runs 1 and 2.
+
+**Left alone.** tests/terrain/heightfield.test.ts "is fast enough for the physics" fails under parallel load on its
+assertion (10.1 µs against 10 µs). That is not a time limit.
+
+**Validation.**
+- The nine testTimeout files were validated by runs 2 and 3, and jobs.test.ts by run 3.
+- Run 4, at the final commit (`suiteP-4.log`, on a quieter machine): **745 / 745**. The slowest tests under the new
+  limits were 22.9 s (airfields), 23.9 s (landmarks) and 16.1 s (system, seed 7).
+- The battery's suite (`--no-file-parallelism`, below) also passed 745 / 745.
+
+### Battery (`out/fs/finalR`, the code at `d2e6c40`; tests at `cc7f23a`) against round T's final (`out/fs/UF`)
+
+| gate | round T final (UF) | after the repairs (finalR) | rule | |
+|---|---|---|---|---|
+| dead ends, endsGate IG_MIN 10 (seed 7 too) | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 | 0 | held |
+| outlet loops; cycles through lakes | 0; 0 | 0; 0 | 0 | held |
+| overGround > 10 m | 8 / 58 / 35 | 8 / 58 / 35 | <= 8 / 58 / 35 | held |
+| steps > 100 m; > 50 m | 0; 40 / 15 / 43 | 0; 40 / 15 / 43 | 0 | held |
+| riverZero | 0.2 / 2.2 / 0.0 km | 0.2 / 2.2 / 0.0 km | no worse | held |
+| lakes | 71 / 74 / 61 | 71 / 74 / 61 (ponds made and their sizes unchanged) | the same | held |
+| drawnGate (i); (ii); (iii) | 96.0 / 95.7 / 95.6 %; 0 / 1 / 0; 0 | 96.0 / 95.7 / 95.6 %; 0 / 1 / 0; 0 | (i) >= 95.6 | held |
+| wallsGate class 4 (water > 10 m over its centre ground) | 0.2 / 0.6 / 1.1 km | 0.2 / 0.6 / 1.1 km | no worse | held |
+| heldOver (> 3 m over both banks by the fields) | 4 / 0 / 18 | 4 / 0 / 18 | no worse | held |
+| bankHeight > 10 m | 92 / 121 / 90 | 92 / 121 / 90 | no worse | held |
+| waterWalls old; corrected | 1856 / 1906 / 1740; 1118 / 835 / 1215 | the same | reported | held |
+| homeCheck | 8/8 | 8/8 | 8/8 | held |
+| moved.py (f3 courses) | 3 / 2 / 6 | 3 / 2 / 6, the same lines | reported | held |
+| gullyGate, rillGate, cornerGate, creaseGate, paintedLoops | | identical logs | no worse | held |
+| climbed reaches (endsGate, reported) | 148.8 / 222.7 / 301.1 / 227.4 km | 148.8 / 220.5 / 295.7 / 224.8 km | reported | less |
+| seed boxes b; pits10 (validate) | 1.27 / 1.26 / 1.35; 2.92 / 1.89 / 1.97 | 1.27 / 1.26 / 1.35; 2.92 / 1.89 / 1.94 | b <= 1.3 (seed 42) | held |
+| seededWorld; airfields tests; presentGuard (seed 0) | 21 / 21; 6 / 6; passes | 21 / 21; 6 / 6; passes, tests/fixtures and tests/era untouched (never re-pinned) | all | held |
+| suite (finalS.sh: four directories, --no-file-parallelism) | 736 / 745 (9 time budgets) | **745 / 745**; the seven slow files' rerun with --testTimeout=120000 80 / 80 | 738 / 745 | met |
+| build time (phaseTimes alone, median of 3, seeds 42 / 1 / 777777) | | not measured cleanly: the machine carried other worktrees' jobs throughout. Interleaved medians (`out/fs/R/phase.log`) were 5.9 / 5.6 / 5.7 s before (`out/fs/trees/R0`) and 6.0 / 5.9 / 6.0 s after (R3), about 40 % over round T's quiet 4.1 s, and single runs varied by up to 1.9 s | reported | |
+
+### Left
+
+- **Item 2's blocked inflows** (53 runs over the four seeds, including FILL_DEAD_ENDS ponds 567 / pool 26 and 738).
+  These are streams that climbed out of their hollow through a notch into a pond the stream pass filled on its routing
+  ground. The fix belongs in the pond pass.
+- **1853's tail** to 602's stub is still a dead-straight 430 m channel through the shore's wood (truncate's run-on to
+  a cut-back filler's new end). It is now shallow and at the lake's level.
+- **720's approach reach**: the ladder of stepped pools and the serrated right bank (cause not found; not the blend,
+  not the pitch units). The zigzag square-cornered channel by the runway is still there, now with water in it.
+- Seed 1's 2188 -> 692 is still +61 km² over f3 at the junction (verifyT2). 1414 is not an f3 line; not looked at here.
+- tests/terrain/heightfield.test.ts's speed assertion under parallel load.
+- Seed 777777's river 15 runs 3.1 m under lake 1 for 6.6 km (rivers are outside item 2's rule).
+- Not rendered: a river through a drainage lake after item 2's paint change (no channel bed, banks or bank trees
+  painted under any seeded lake's water, rivers included). River 15 through lake 1 is the case to look at.
+
+### Commits
+
+| commit | what |
+|---|---|
+| `f654e1c` | item 1: a pond's inflow counts a filler's drowned course as its own catchment, ahead of the streams joining it |
+| `527cde0` | item 2: streams into standing water stand at its surface (where their banks hold it); no channel paint under a lake |
+| `d2e6c40` | item 3: a traced stream keeps its channel through a field's blend into its flat |
+| `cc7f23a` | item 4: time limits for the ten files that ran over their budget in a full parallel suite run |
+| (this) | report |
