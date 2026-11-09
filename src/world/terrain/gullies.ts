@@ -151,3 +151,16 @@ export function gullyNear(g: GullyNet, north: number, east: number, minArea: num
     }
   return out;
 }
+
+/** Whether chain node q runs in a V the pass cut: the slopes' ground a node either side across its flow stands at least
+ * `rise` m over it (on a valley's floor, where the routing runs straight along the lattice, it does not). */
+export function inV(g: GullyNet, q: number, rise = 10): boolean {
+  const d = g.dir[q];
+  if (!d) return false;
+  const di = SLOPE_DI[d - 1];
+  const dj = SLOPE_DJ[d - 1];
+  const a = q + dj * g.n - di;
+  const b = q - dj * g.n + di;
+  if (a < 0 || b < 0 || a >= g.h.length || b >= g.h.length) return false;
+  return g.h[a] - g.h[q] > rise && g.h[b] - g.h[q] > rise;
+}

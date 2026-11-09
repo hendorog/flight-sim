@@ -12,11 +12,14 @@ import * as THREE from 'three';
 import { hydrology } from './heightfield';
 import { RILL_AREA, RILL_AREA_TOP, RILL_HEAD, RILL_LOOK_CAP, RILL_PATCH, RILL_RANGE, RILL_TEX, RILL_TEXEL, RILL_WET_RAMP, rillSize, RILL_WET_AREA } from './rills';
 import { BED_A, BED_B, WATER_A0, WATER_SHARE0 } from './streams';
+import { ROCK_HW, ROCK_SMALL } from './bedrock';
 import { RIVER_AREA } from './drainage';
 
 /** Water this wide (m) opens the canopy over a painted stream's bed and carries it through the fields: from the first,
  * fully from the second (A about 0.15 and 1.2 km², streams.ts channelHalfWidth). */
 export const RILL_OPEN = [0.6, 2.0];
+/** Nothing drawn for a painted stream reaches further than this times its bed's half-width (streams.ts bedWidth). */
+export const BAND_MAX = 1.6;
 /** A painted stream's bed turns to the traced streams' pale stones over this catchment, km² (to the hand-off,
  * gullies.ts CHAIN_AREA 10): the switch from one to the other shows no change of colour. */
 export const RILL_BIG = [2, 8];
@@ -132,20 +135,26 @@ if (tDist < ${f(RILL_FADE_FAR)}) {
     // stretch), and turf or rock bridges it here and there, so it is no even band (an even pale band across a steep
     // slope read as a track).
     float nr2 = textureGrad(tNoise, rot2(tXZ, 0.4) * ${f(1 / 31)}, tRillDx * ${f(9 / 31)}, tRillDy * ${f(9 / 31)}).g;
-    float bh = rillBedHalf(rl.y) * (0.8 + 0.25 * nD.g + 0.2 * nr.g) * mix(1.0, 1.6 * (0.4 + 1.2 * nr2), tRillSteep);
+    // (Everything drawn for it - bed, notch, damp margin - within BAND_MAX of its bed's law (rillBedHalf), and its
+    // strength by its water's width as the traced channels' (bedrock.ts ROCK_HW): a thin thread, not a broad band.)
+    float bLaw = rillBedHalf(rl.y);
+    float bMax = ${f(BAND_MAX)} * bLaw;
+    float bStrength = mix(${f(ROCK_SMALL)}, 1.0, smoothstep(${f(ROCK_HW[0])}, ${f(ROCK_HW[1])}, rillWaterHalf(rl.y)));
+    float bh = min(bLaw * (0.8 + 0.25 * nD.g + 0.2 * nr.g) * mix(1.0, 1.6 * (0.4 + 1.2 * nr2), tRillSteep), bMax);
     float dr = rl.x + wob * mix(0.6, 1.2, tRillSteep) * bh;
     tRillBed = rillCover(dr, bh, fpA) * fade * mix(1.0, smoothstep(0.33, 0.5, nr2 + 0.3 * (nr.b - 0.5)), 0.9 * tRillSteep);
     // A strip of wetter, greener herbage along the line, from nothing along a thread to a few channels wide along the
     // bigger reaches, stronger down the line; it thins out into the cover around it rather than ending at an edge.
-    float mh = (bh * (2.2 + 2.0 * lk) + 0.8) * (0.75 + 0.5 * nr.b);
-    tRillDamp = rillCover(rl.x + wob * 1.5 * bh, mh, fpA + 0.3 * mh) * fade * smoothstep(0.0, 0.04, lk) * mix(0.6, 1.0, smoothstep(0.0, 0.5, lk));
+    float mh = min((bh * (2.2 + 2.0 * lk) + 0.8) * (0.75 + 0.5 * nr.b), bMax);
+    tRillDamp = rillCover(rl.x + wob * 1.5 * bh, mh, fpA + 0.3 * mh) * fade * smoothstep(0.0, 0.04, lk) * mix(0.6, 1.0, smoothstep(0.0, 0.5, lk)) * bStrength;
+    tRillBed *= bStrength;
     tRillWaterW = rillWaterHalf(rl.y);
     tRillWet = rillCover(dr, tRillWaterW * (0.8 + 0.4 * nr.a), fpA) * fade;
     // The channel is cut into the slope: its banks lean in toward the line (one lit, one shaded), out to a notch wider
     // and deeper down the line; faded as the notch narrows under a pixel.
-    float nh = bh * 2.5 + 3.0 * lk;
+    float nh = min(bh * 2.5 + 3.0 * lk, bMax);
     float bank = smoothstep(0.3 * bh, 0.9 * bh, rl.x) * (1.0 - smoothstep(0.6 * nh, nh, rl.x));
-    tRillBank = an * bank * fade * clamp(nh / fpA - 0.5, 0.0, 1.0) * (0.8 + 1.6 * lk) * (1.0 + 0.6 * tRillSteep);
+    tRillBank = an * bank * fade * clamp(nh / fpA - 0.5, 0.0, 1.0) * (0.8 + 1.6 * lk) * (1.0 + 0.6 * tRillSteep) * bStrength;
   }
 }
 `;

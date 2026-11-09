@@ -28,7 +28,7 @@
 import { hydrology, makeSample, sampleTerrain, snowShiftM, type TerrainSample } from './heightfield';
 import type { FlowHit } from './hydrology';
 import { gnoise } from './noise';
-import { gullyNear, gullyNet, type GullyHit } from './gullies';
+import { gullyNear, gullyNet, inV, type GullyHit } from './gullies';
 import { bedWidth, waterShare } from './streams';
 import { worldSeed } from '../worldSeed';
 import { era } from '../era/eraState';
@@ -79,7 +79,10 @@ const TAPER = 10;
 //   - that cell's near catchment reads the flow within AREA_R, and a cell's flow reads the ground within SPILL_R + 1;
 //   - a segment end's taper follows the flow TAPER steps down.
 const SEG_M = SPILL_R + 2;
-const USE_M = SEG_M + SPILL_R + 4;
+/** The lines are smoothed again over this many cells either way along their course (WIDE_SMOOTH x RILL_CELL m), so
+ * no corner of the ground's coarser valleys (the threshold hillslopes' 250 m chains) shows as a right angle. */
+const WIDE_SMOOTH = 6;
+const USE_M = SEG_M + SPILL_R + 4 + WIDE_SMOOTH;
 const PERSIST_M = USE_M + SPILL_R;
 const OWN_M = PERSIST_M + FADE;
 /** Cells of raster around the core. */
@@ -496,7 +499,9 @@ function sizeOf(g: RillGraph, i: number, extra = 0): number {
     const gn = gullyNet();
     if (gn) {
       gullyNear(gn, (g.gy0 + ((i / g.nx) | 0)) * RILL_CELL, (g.gx0 + (i % g.nx)) * RILL_CELL, km2, CHAIN_REACH, chainHit);
-      if (chainHit.area > km2) km2 = chainHit.area;
+      // (Only a chain in a V the pass cut: on a valley's floor the chains run straight along the lattice, and the
+      // water there spreads over the floor rather than running down them.)
+      if (chainHit.area > km2 && inV(gn, chainHit.node)) km2 = chainHit.area;
     }
   }
   let s = rillSize(km2);
@@ -694,13 +699,39 @@ export function rillSegments(g: RillGraph, x0: number, y0: number, x1: number, y
     fE.set(i, e / w);
     fN.set(i, n / w);
   };
+  // Wide: the final points averaged along the course over WIDE_SMOOTH cells either way (weights falling linearly),
+  // up the main donors and down the flow while it stays a line.
+  const wE = new Map<number, number>();
+  const wN = new Map<number, number>();
+  const wide = (i: number): void => {
+    if (wE.has(i)) return;
+    final(i);
+    let se = (WIDE_SMOOTH + 1) * fE.get(i)!;
+    let sn = (WIDE_SMOOTH + 1) * fN.get(i)!;
+    let sw = WIDE_SMOOTH + 1;
+    for (const dir of [-1, 1]) {
+      let c = i;
+      for (let k = 1; k <= WIDE_SMOOTH; k++) {
+        const nx2 = dir < 0 ? up(c) : down(c);
+        if (nx2 < 0 || !chan[nx2]) break;
+        c = nx2;
+        final(c);
+        const w = WIDE_SMOOTH + 1 - k;
+        se += w * fE.get(c)!;
+        sn += w * fN.get(c)!;
+        sw += w;
+      }
+    }
+    wE.set(i, se / sw);
+    wN.set(i, sn / sw);
+  };
   const out: RillSegment[] = [];
   for (let y = y0; y < y1; y++)
     for (let x = x0; x < x1; x++) {
       const i = y * nx + x;
       if (!chan[i] || hider(i) >= 0) continue;
       let j = to[i];
-      final(i);
+      wide(i);
       const s0 = sizeAt(i);
       // (Into a strand beside a bigger line: on into that line.)
       if (j >= 0 && chan[j] && near(i, j) && hider(j) >= 0) {
@@ -708,11 +739,11 @@ export function rillSegments(g: RillGraph, x0: number, y0: number, x1: number, y
         if (r !== i && hider(r) < 0) j = r;
       }
       if (j >= 0 && chan[j]) {
-        final(j);
-        out.push({ e0: fE.get(i)!, n0: fN.get(i)!, e1: fE.get(j)!, n1: fN.get(j)!, s0, s1: sizeAt(j) });
-      } else if (j >= 0) {
+        wide(j);
+        out.push({ e0: wE.get(i)!, n0: wN.get(i)!, e1: wE.get(j)!, n1: wN.get(j)!, s0, s1: sizeAt(j) });
+      } else if (j >= 0 && g.net[j]) {
         // Into the network: on to the channel's centreline (or the lake's cell).
-        out.push({ e0: fE.get(i)!, n0: fN.get(i)!, e1: atE(j), n1: atN(j), s0, s1: s0 });
+        out.push({ e0: wE.get(i)!, n0: wN.get(i)!, e1: atE(j), n1: atN(j), s0, s1: s0 });
       }
     }
   if (stats) stats.msLines += performance.now() - t0;
