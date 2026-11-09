@@ -426,3 +426,59 @@ came from the streams it had dropped.
   - `seed=777777&camPos=22500,-31189,1350&camLook=23700,-31189,774`
 
 The pictures were shot on port 5205 because the coordinator's fs server held 5204. 5205 is stopped.
+
+## Round D (after the owner's flight at 17f4f20): what is drawn follows catchment (`ec6115a` .. `9a0d141`)
+
+The owner saw identical dark ribbons crossing a valley's fields, with no sign of catchment and no visible join. They
+had three causes, each confirmed by switching one layer off at a time:
+1. **The traced streams' broad breach floor.** Its half-width was 12 + 1.2 × cut m: 24–96 m wide on 1–5 m of water.
+2. **The terrain shader's channel block** (bare rock, gravel bed, bank strip, reeds), drawn at full strength along a
+   1 m torrent.
+3. **The painted rills.**
+   - Their damp margin and notch reached 2–4 × past a bed sized by a chain's catchment, even on valley floors.
+   - Their water and bed were drawn at full strength 1–3 px wide.
+   - They were smoothed over only 32 m, so the 250 m chains' corners showed.
+
+**Fixes:**
+- Non-outlet breaches are capped at the bed half-width; stream banks reach the bed's edge.
+- Below a junction, a receiver is never narrower than what joins it.
+- The channel block's strength scales with the water's width: 0.15 at 1.5 m half-width, full at 6 m.
+- Painted rills:
+  - nothing is drawn wider than 1.6 × the bed law;
+  - their strength scales with water width the same way;
+  - they fade out where the pixel can't hold the band;
+  - they are smoothed over about 100 m;
+  - they take a chain's catchment only in a V.
+- Dead ends:
+  - a stream stopped beside higher water runs in to it, up to 2 km away;
+  - otherwise it runs on from the lower ground beside it;
+  - a real hollow is flooded as a pond at its sill, with an outlet. Ponds added: 8 / 18 / 16 per seed
+    (5.1 / 10.4 / 8.1 km²).
+
+**Gate D, traced streams (17f4f20 → 9a0d141; seeds 1 / 42 / 777777):**
+- (i) drawn width within ×0.6–1.6 of the bed law: 3.2 / 3.7 / 3.4 % → **95.9 / 95.8 / 95.5 %** (p50 1.25).
+- (ii) receiver under 0.8 × the joining stream: 106 / 96 / 112 → **1 / 1 / 0**.
+- (iii) breaches wider than the bed: about 100k samples a seed → **0**.
+- (iv) sink ends in hills and mountains: 62 / 68 / 76 → **5 / 2 / 2**.
+
+**Gate D, painted network (rillGate, 20 patches a seed; 2ebf85e → 9a0d141):**
+- (i) band in the coordinator's view, measured as pixels changed against a rills-off render within 12 px of the course:
+  - 1–3 km²: 6.9 → **0.4** px (projected bed law 1.2 px);
+  - 3–10 km²: 5.1 → **2.6** px (law 3.7 px).
+- (ii) wet ends more than 30 m from water: 8 / 11 / 10 → **8 / 10 / 10** of 117–132. Not met: these end in hollows of
+  the detail ground away from any water.
+- (iii) right-angle turns: 13.2 / 12.0 / 12.0 → **11.7 / 9.1 / 13.1 per 100 km**. Not met: the D8 raster on flat
+  floors still runs straight with corners.
+
+**Other gates at 9a0d141 (final11):**
+- Steps over 50 m 39 / 15 / 43, over 100 m 0 / 0 / 0.
+- Water over ground > 10 m 9 / 58 / 36.
+- River over a dry bank > 10 m: 1930 / 2008 / 1859, against f3's 1692 / 1824 / 1605. Worse, from the water raise
+  in `bbe5199`.
+- Unfed river heads 19 / 20 / 16.
+- Unchanged: riverZero, lakes, homeCheck (8/8), edges, NaN.
+- Seed-42 box passes (31.0°, 594 m, b 1.16, pits 1.89).
+- f3 courses: moved.py 1 / 0 / 3 lines.
+- Suite 742/745, the three failures time budgets (200 boards, landmarks, airfields seed 7); all six affected files
+  pass 76/76 with `--testTimeout=120000`.
+- World build 3.9–4.0 s per thread (node).

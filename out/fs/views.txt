@@ -45,3 +45,5 @@ s42-junction-1789 seed=42&camPos=-64811,-231,640&camLook=-64469,-469,402
 s777777-junction-1172 seed=777777&camPos=69659,-9059,372&camLook=69031,-8844,133
 owner-box seed=42&camPos=-12900,-43000,1050&camLook=-14100,-41900,700
 face-close seed=42&camPos=-13300,-41700,1150&camLook=-14150,-41300,1050
+down-view seed=42&camPos=-12600,-40800,1300&camLook=-13600,-41700,600
+v1-view seed=42&camPos=-11700,-40700,1000&camLook=-12718,-41720,600
