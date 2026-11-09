@@ -46,17 +46,21 @@ it('scan', () => {
     if (h > 50) wall50++;
     if (h > worst) { worst = h; worstAt = at; }
   };
+  // (Round T: the edges over 10 m kept, with the dry neighbour's place, for the corrected count below.)
+  const rwalls: Array<[number, number, number, number]> = [];
+  let rowNorth = 0;
   const rcheck = (R: number, row: ReturnType<typeof mk>, x: number, at: string) => {
     if (row.r[x] > -Infinity || row.w[x] > -Infinity) return;
     rEdges++;
     const h = R - row.g[x];
     if (h > 2) rwall2++;
-    if (h > 10) rwall10++;
+    if (h > 10) { rwall10++; rwalls.push([R, row === cur ? rowNorth : rowNorth + STEP, -HALF + x * STEP, row.g[x]]); }
     if (h > rworst) { rworst = h; rworstAt = at; }
   };
   for (let y = 0; y < n; y++) {
     fillRow(cur, y);
     const north = HALF - y * STEP;
+    rowNorth = north;
     // horizontal-run boundary between prev row and cur row
     let run = 0;
     for (let x = 0; x <= n; x++) {
@@ -93,6 +97,21 @@ it('scan', () => {
   console.log(`SCAN seed ${seed} +-${HALF / 1000} km at ${STEP} m: lake shore edges ${shoreEdges}; walls >2 m ${wall2} (${(100 * wall2 / Math.max(1, shoreEdges)).toFixed(2)} %), >10 m ${wall10}, >50 m ${wall50}; worst ${worst.toFixed(1)} m at ${worstAt}`);
   console.log(`  top walls: ${walls.slice(0, 12).map(([h, a]) => `${h.toFixed(0)}@${a}`).join(' ')}`);
   console.log(`  river bank edges ${rEdges}: river over dry neighbour >2 m ${rwall2} (${(100 * rwall2 / Math.max(1, rEdges)).toFixed(2)} %), >10 m ${rwall10}; worst ${rworst.toFixed(1)} m at ${rworstAt}`);
+  // Corrected (round T): the sea (the neighbour's ground at 0.5 m or under: the sea stands at 0) is wet, not a dry
+  // neighbour; of the rest, the channel's own fall (a channel point within 100 m of the dry neighbour whose water is
+  // no more than 10 m over its ground: the water beside it has come down to it) is reported apart from the rest.
+  {
+    let sea = 0, fall = 0, rest = 0;
+    const restAt: Array<[number, string]> = [];
+    for (const [R, pn, pe, g] of rwalls) {
+      if (g <= 0.5) { sea++; continue; }
+      let isFall = false;
+      for (let a = 0; a < 16 && !isFall; a++) for (const rad of [50, 100]) { sampleTerrain(pn + rad * Math.cos((a * Math.PI) / 8), pe + rad * Math.sin((a * Math.PI) / 8), s); if (s.river > -Infinity && s.river <= g + 10 && s.river < R - 5) { isFall = true; break; } }
+      if (isFall) fall++; else { rest++; restAt.push([R - g, `${pn},${pe}`]); }
+    }
+    restAt.sort((a, b) => b[0] - a[0]);
+    console.log(`  corrected (sea wet): river over a dry neighbour > 10 m ${rwall10 - sea} (sea mouths ${sea} left out), of which the channel's own fall ${fall}, the rest ${rest}; worst rest ${restAt.slice(0, 6).map(([h, a]) => `${h.toFixed(0)}@${a}`).join(' ')}`);
+  }
   console.log(`  straight axis-aligned shoreline runs >=600 m: ${runs.length} (>=1 km ${runs.filter((r) => r >= 1000).length}, >=2 km ${runs.filter((r) => r >= 2000).length}); longest ${runs.slice(0, 8).join(', ')} m; on a 1 km lattice line (+-60 m): E-W ${latH}/${runsH.length}, N-S ${latV}/${runsV.length}`);
   setWorldSeed(0);
 });

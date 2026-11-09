@@ -44,7 +44,11 @@ it('stream turns', () => {
       if (r.joins !== undefined && r.joins >= 0 && r.s[m - 1] > 150) {
         const T = L[r.joins];
         if (T && T.s.length > 2) {
-          const j = at(T, r.joinS ?? 0), j1 = Math.min(T.s.length - 1, at(T, (r.joinS ?? 0) + 100) + 1);
+          // (hydrology.rivers carries no joinS: the junction is the receiver's sample nearest the stream's last point,
+          // as invVjunctionsMouths / cornerGate find it.)
+          let js = 0, bd = Infinity;
+          for (let q = 0; q < T.s.length; q++) { const d = Math.hypot(T.north[q] - r.north[m - 1], T.east[q] - r.east[m - 1]); if (d < bd) { bd = d; js = T.s[q]; } }
+          const j = at(T, js), j1 = Math.min(T.s.length - 1, at(T, js + 100) + 1);
           const a = at(r, r.s[m - 1] - 100);
           let dh = Math.abs(heading(T, j, j1) - heading(r, a, m - 1)); if (dh > Math.PI) dh = 2 * Math.PI - dh;
           if (chain) { mouths++; if (dh > Math.PI / 3) sharp++; }
