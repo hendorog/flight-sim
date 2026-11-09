@@ -1711,8 +1711,9 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     const nBefore = streams.length;
     for (let j = 0; j < nBefore; j++) {
       const st = streams[j];
-      // (A lake's outlet too: it may sink below its lake as any stream may.)
-      if (st.end !== 'sink' || st.joins >= 0 || st.endK < 0) continue;
+      // (Not a lake's outlet: run on from its end, the trace keeps beside its lake's shore, under its water, round to a
+      // way out - a channel ringing the lake. Its hollow is filled as a pond below.)
+      if (st.end !== 'sink' || st.joins >= 0 || st.pool >= 0 || st.endK < 0) continue;
       const lvl = st.level[st.level.length - 1];
       // (From the raster point at its last point: a stream that sank short of water standing over its own was cut back.)
       const m = st.north.length - 1;
