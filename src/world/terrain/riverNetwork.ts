@@ -1515,10 +1515,33 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     falls,
     faults,
     queryFlow,
-    holdUnder(trim, under, near) {
+    holdUnder(trim, under, near, over) {
       let lowered = 0;
+      type HeldLine = { north: Float64Array; east: Float64Array; level: Float64Array; cut: Float64Array; breach: Float64Array; halfWidth: Float64Array; s: Float64Array };
+      const raisedLine = new Uint8Array(allLines.length);
+      // Its cut, how far its water runs under the ground its channel is carved into (the shaped ground there), and its
+      // breach from that - no wider than before: the channel index lists each segment out to the breach's reach as it
+      // was built, before the airfields were sited. Then its flow.
+      const settle = (li: number, og: Float64Array, was: Float64Array): void => {
+        const r = allLines[li] as HeldLine;
+        for (let i = 0; i < r.level.length; i++) {
+          const lowerHere = r.level[i] < was[i] - 1e-9;
+          const raiseHere = r.level[i] > was[i] + 1e-9;
+          if (lowerHere) lowered++;
+          if (raiseHere) raisedLine[li] = 1;
+          const tg = trim(og[i], r.north[i], r.east[i]);
+          if (!lowerHere && !raiseHere && !(tg < og[i] - 0.01)) continue;
+          r.cut[i] = Math.max(0, tg - r.level[i]);
+          r.breach[i] = Math.min(r.breach[i], breachOfCut(r.cut[i]));
+        }
+        const f = flowOf(r, lipsOf[li]);
+        flows[li].gradient.set(f.gradient);
+        flows[li].steepness.set(f.steepness);
+        flows[li].regime.set(f.regime);
+        flows[li].speed.set(f.speed);
+      };
       for (let li = nR; li < allLines.length; li++) {
-        const r = allLines[li] as { north: Float64Array; east: Float64Array; level: Float64Array; cut: Float64Array; breach: Float64Array; halfWidth: Float64Array; s: Float64Array };
+        const r = allLines[li] as HeldLine;
         const m = r.level.length;
         // (The ground each sample was levelled on, and its water, before.)
         let og: Float64Array | null = null;
@@ -1529,32 +1552,49 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
           const g = r.level[i] + r.cut[i];
           // (Under that ground as the airfields shape it - trimmed under their approaches before the network carves the
           // channel into it, blended into their flats after: heightfield.ts fieldTrim, fieldUnder.)
+          // (Or raised where a blend into a flat raises the ground over it, to under that ground as blended - over the
+          // ground the channel is carved into before the blend, which the blend then raises over it: heightfield.ts
+          // fieldOver.)
+          const u = over ? over(g, r.north[i], r.east[i]) : -Infinity;
+          const raise = u > r.level[i] + 0.01;
           const t = under(g, r.north[i], r.east[i]);
-          const lower = t < r.level[i] - 0.01;
-          if (!lower && !(trim(g, r.north[i], r.east[i]) < g - 0.01)) continue;
+          const lower = !raise && t < r.level[i] - 0.01;
+          if (!lower && !raise && !(trim(g, r.north[i], r.east[i]) < g - 0.01)) continue;
           og ??= Float64Array.from(r.level, (v, q) => v + r.cut[q]);
           was ??= Float64Array.from(r.level);
           changed = true;
           if (lower) r.level[i] = t;
+          else if (raise) r.level[i] = u;
         }
         if (!changed || !og || !was) continue;
+        // (Never over the water above it: a raise stops at it.)
         for (let i = 1; i < m; i++) r.level[i] = Math.min(r.level[i], r.level[i - 1]);
-        // Its cut, how far its water runs under the ground its channel is carved into (the shaped ground there), and its
-        // breach from that - no wider than before: the channel index lists each segment out to the breach's reach as it
-        // was built, before the airfields were sited.
-        for (let i = 0; i < m; i++) {
-          const lowerHere = r.level[i] < was[i] - 1e-9;
-          if (lowerHere) lowered++;
-          const tg = trim(og[i], r.north[i], r.east[i]);
-          if (!lowerHere && !(tg < og[i] - 0.01)) continue;
-          r.cut[i] = Math.max(0, tg - r.level[i]);
-          r.breach[i] = Math.min(r.breach[i], breachOfCut(r.cut[i]));
+        settle(li, og, was);
+      }
+      // A stream joining a reach so raised, under its water now, backs up to it (receivers first).
+      if (over) {
+        const seen = new Uint8Array(allLines.length);
+        const chain: number[] = [];
+        for (let l0 = nR; l0 < allLines.length; l0++) {
+          chain.length = 0;
+          for (let l = l0; l >= nR && l < allLines.length && !seen[l]; l = joinsOf(l)) {
+            seen[l] = 1;
+            chain.push(l);
+          }
+          for (let q = chain.length - 1; q >= 0; q--) {
+            const li = chain[q];
+            const j = joinsOf(li);
+            if (j < nR || !raisedLine[j]) continue;
+            const r = allLines[li] as HeldLine;
+            const m = r.level.length;
+            const mouth = levelOn(allLines[j], joinSOf(li));
+            if (!(r.level[m - 1] < mouth - 0.01)) continue;
+            const og = Float64Array.from(r.level, (v, k) => v + r.cut[k]);
+            const was = Float64Array.from(r.level);
+            for (let k = m - 1; k >= 0 && r.level[k] < mouth; k--) r.level[k] = mouth;
+            settle(li, og, was);
+          }
         }
-        const f = flowOf(r, lipsOf[li]);
-        flows[li].gradient.set(f.gradient);
-        flows[li].steepness.set(f.steepness);
-        flows[li].regime.set(f.regime);
-        flows[li].speed.set(f.speed);
       }
       return lowered;
     },

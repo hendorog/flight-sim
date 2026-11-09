@@ -714,6 +714,10 @@ const HOLD_BANK = 1;
  * (keepChannels): the blend follows the network's carve, and pulled a stream's carved bed and banks up to the field's
  * elevation over its water - seed 777777 line 720 ran dry for 1.1 km beside KPMH's runway. */
 const FIELD_CHANNEL = true;
+/** Round T repairs 2: where an airfield's blend into its flat raises the ground over a seeded world's stream, its water
+ * is raised with it (holdUnder, fieldOver): to RAISE_UNDER m under the ground as blended. */
+const FIELD_RAISE = true;
+const RAISE_UNDER = 1.5;
 let fieldHeld = 0;
 /** The streams' samples FIELD_HOLD lowered (probes). */
 export const fieldHeldCount = (): number => fieldHeld;
@@ -811,6 +815,32 @@ function fieldUnder(g: number, north: number, east: number): number {
   const k = smoother(FLAT, FLAT + BLEND, dRect);
   if (k < 1 && t > ELEV) t = Math.min(t, ELEV + (HOLD_BANK * k) / (1 - k));
   return t;
+}
+/**
+ * FIELD_RAISE: the least a stream's water should stand at by the airfields, levelled on ground g there, where a blend
+ * into a flat with its elevation E over the water raises the ground over it: so that the ground as blended stands no
+ * more than RAISE_UNDER m over it. The blend follows the carve, so a stream left at its level ran deep under the
+ * blended ground: buried (seed 777777 line 734 under KHLT's approach, 9 m), or, cut back into it (keepChannels), at the
+ * foot of a gully that deep (734), or under a cut bank of 4.4 m (720 by KPMH). Blended by k, ground h stands at
+ * E + (h - E) k: by its own ground (g trimmed under the approaches, t) the water stands at E + (t - E) k - RAISE_UNDER;
+ * where that ground stands higher, the carve leaves the banks BANK_HEIGHT over the water, and the water stands at
+ * E - (RAISE_UNDER - BANK_HEIGHT k) / (1 - k). The lower of the two; -Infinity where no blend raises the ground.
+ */
+function fieldOver(g: number, north: number, east: number): number {
+  const dn = north - RW.center.north;
+  const de = east - RW.center.east;
+  const along = dn * RW_COS + de * RW_SIN;
+  const across = -dn * RW_SIN + de * RW_COS;
+  const ox = Math.max(Math.abs(along) - HALF_LEN, 0);
+  const oy = Math.max(Math.abs(across) - HALF_WID, 0);
+  const dRect = Math.sqrt(ox * ox + oy * oy);
+  const gf = fieldNear(north, east);
+  const t = approachTrim(g, along, across, gf, fieldAt.along, fieldAt.across);
+  const under = (E: number, k: number): number => (k < 1 ? Math.min(E + (t - E) * k - RAISE_UNDER, E - (RAISE_UNDER - BANK_HEIGHT * k) / (1 - k)) : -Infinity);
+  let to = -Infinity;
+  if (gf && fieldAt.rect > gf.flatMargin) to = under(gf.elevation, smoother(gf.flatMargin, gf.flatMargin + gf.blend, fieldAt.rect));
+  if (dRect > FLAT) to = Math.max(to, under(ELEV, smoother(FLAT, FLAT + BLEND, dRect)));
+  return to;
 }
 /** The home runway checked on the finished ground of the last seeded world (homeSiting.ts siteRunway); null at seed 0. */
 export let homeRecheck: RunwayFit | null = null;
@@ -950,7 +980,8 @@ function buildWater(): void {
     setGeneratedAirfields(fields);
     // Round T (FIELD_HOLD): the streams' water held under the ground the airfields' approaches and flats cut (sampleTerrain),
     // which the streams, traced first, were not levelled on (seed 777777 line 720 stood 50 m over an approach).
-    if (FIELD_HOLD) fieldHeld = presentHydro.holdUnder?.(fieldTrim, fieldUnder, nearField) ?? 0;
+    // (FIELD_RAISE: and raised where a blend into a flat raises the ground over it.)
+    if (FIELD_HOLD) fieldHeld = presentHydro.holdUnder?.(fieldTrim, fieldUnder, nearField, FIELD_RAISE ? fieldOver : undefined) ?? 0;
     return;
   } else {
     erosion = null;
@@ -1212,6 +1243,9 @@ let lakeCover = Infinity;
 /** The seeded world's lake over the sample point (LakeMask): its level (-Infinity: none) and edge field. */
 let maskLevel = -Infinity;
 let maskField = 0;
+/** FIELD_RAISE: how much an airfield's blend into its flat will raise the ground at the point sampleTerrain is working on
+ * (after the carve), m: a stream's banks are built up over its water (carveNetwork) only by what the blend leaves to do. */
+let blendLift = 0;
 const valleyNear: ValleyNear[] = [];
 const channelNear: ChannelNear[] = [];
 
@@ -1318,7 +1352,8 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
       // between the points it was traced on) a low bank is built up, at most STREAM_FILL (not in another channel's
       // water, nor at a mouth on the sea).
       if (d > w && out.river === -Infinity && c.level > 0.5 && dryS) {
-        const need = Math.min(c.level + 0.3 + 0.03 * (d - w), hNatural + STREAM_FILL) - h;
+        // (Less what an airfield's blend will raise it by: FIELD_RAISE.)
+        const need = Math.min(c.level + 0.3 + 0.03 * (d - w), hNatural + STREAM_FILL) - h - blendLift;
         if (need > 0) h += need * (1 - smooth(w + STREAM_SMOOTH[0] + 15, w + STREAM_SMOOTH[1], d)) * open;
       }
       if (d < w && h < c.level && open >= 1) out.river = Math.max(out.river, c.level);
@@ -1512,6 +1547,12 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
   // carve, which may cut far below a field's elevation by it (a valley's walls).
   const trimFirst = FIELD_FIRST && !!presentHydro.network;
   if (trimFirst) h = approachTrim(h, along, across, gf, gAlong, gAcross);
+  // (FIELD_RAISE: what the blends into the flats will raise the ground by here, a stream's banks built up the less.)
+  blendLift = 0;
+  if (FIELD_RAISE && trimFirst) {
+    if (gf && gf.elevation > h) blendLift = (1 - smoother(gf.flatMargin, gf.flatMargin + gf.blend, gRect)) * (gf.elevation - h);
+    if (ELEV > h) blendLift = Math.max(blendLift, (1 - smoother(FLAT, FLAT + BLEND, dRect)) * (ELEV - h));
+  }
 
   h = presentHydro.network ? carveNetwork(north, east, h, out) : isPresent() ? carveRiver(north, east, h, out) : carveLegacyRiver(north, east, h, out);
 

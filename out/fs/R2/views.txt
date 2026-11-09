@@ -1,0 +1,20 @@
+# Round T repairs 2 cameras (north,east,alt): verifyR1's (out/fs/verifyR1/pictures/views.txt, gates-code/views.txt).
+xR734 seed=777777&camPos=19400,31000,820&camLook=20002,31758,414&scenario=runway&tod=10
+xR734-low seed=777777&camPos=19780,31560,455&camLook=20004,31770,392&scenario=runway&tod=10
+k734-close seed=777777&camPos=19720,31420,500&camLook=20005,31708,384&scenario=runway&tod=10
+xR720 seed=777777&camPos=-14000,31700,800&camLook=-14675,32426,406&scenario=runway&tod=10
+xR720-low seed=777777&camPos=-14300,31950,520&camLook=-14800,32550,404&scenario=runway&tod=10
+xR720-side seed=777777&camPos=-14572,32553,425&camLook=-14688,32438,404&scenario=runway&tod=10
+xR720-along seed=777777&camPos=-14348,32212,425&camLook=-14899,32651,402&scenario=runway&tod=10
+xR720-obl-ne seed=777777&camPos=-14301,32755,585&camLook=-14656,32405,403&scenario=runway&tod=10
+xR720-comb seed=777777&camPos=-14713,32576,432&camLook=-14770,32520,402&scenario=runway&tod=10
+p720-se seed=777777&camPos=-14720,32480,520&camLook=-15010,32760,392&scenario=runway&tod=10
+777777-B720 seed=777777&camPos=-13202,31217,893&camLook=-13750,31259,513&scenario=runway&tod=10
+fly7-abeam seed=777777&scenario=cruise&at=-14148,30856,300,135&tod=10
+xR692 seed=42&camPos=29300,14700,480&camLook=29940,15408,81&scenario=runway&tod=10
+xR692-low seed=42&camPos=29720,15180,150&camLook=29940,15408,81&scenario=runway&tod=10
+x567-up seed=7&camPos=-14080,125120,75&camLook=-13880,125228,22&scenario=runway&tod=10
+x567-pond26 seed=7&camPos=-14330,124650,120&camLook=-13869,125231,22&scenario=runway&tod=10
+x567-over seed=7&camPos=-14350,124850,330&camLook=-13869,125231,27&scenario=runway&tod=10
+j2267-top seed=777777&camPos=-47560,-69060,520&camLook=-47495,-69005,206&scenario=runway&tod=10
+j2267-lo seed=777777&camPos=-47360,-68900,250&camLook=-47500,-69020,207&scenario=runway&tod=10

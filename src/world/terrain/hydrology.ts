@@ -92,8 +92,10 @@ export interface Hydrology {
   queryFlow?(north: number, east: number, out: FlowHit): FlowHit;
   /** A seeded world: where `near` (the airfields' approaches and flats, shaped after the streams were traced), hold every
    * stream's water at or under `under` of the ground it was levelled on, its cut taken against `trim` of that ground
-   * (what the network's carve cuts into); its flow worked out again. Returns the samples lowered. Absent at seed 0. */
-  holdUnder?(trim: (h: number, north: number, east: number) => number, under: (h: number, north: number, east: number) => number, near: (north: number, east: number) => boolean): number;
+   * (what the network's carve cuts into); its flow worked out again. Where `over` of that ground stands over its water
+   * (an airfield's blend raising the ground over it), the water is raised to it, never over the water above it, and a
+   * stream joining a reach so raised is backed up to it. Returns the samples lowered. Absent at seed 0. */
+  holdUnder?(trim: (h: number, north: number, east: number) => number, under: (h: number, north: number, east: number) => number, near: (north: number, east: number) => boolean, over?: (h: number, north: number, east: number) => number): number;
   /** The falls within `radius` m of a point, nearest first (indices into `falls`); returns how many. Absent at seed 0. */
   fallsNear?(north: number, east: number, radius: number, out: number[]): number;
   /** How a seeded world's streams were traced (streams.ts), for probes. Absent at seed 0. */
