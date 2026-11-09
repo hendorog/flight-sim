@@ -117,6 +117,30 @@ const BIG_POND_KEEP = false;
  */
 const LAKE_BACK_CLOSED = true;
 const LAKE_RAISE = false;
+/**
+ * Round T, square corners. A stream reaching a line's channel (its raster point within RIVER_TOUCH of it) joined it at
+ * the most upstream of the receiver's samples that marked that point: coming in from beside the receiver, it hooked
+ * back upstream to it (barbed: seed 42's line 517 into river 64 at 146 degrees). Where the way in from its last raster
+ * point points back up the receiver by more than BARB_ANGLE (less than the 120 degrees the gate counts: the smoothing
+ * turns the last reach further), it now joins downstream as water does: along a curve into the receiver (junction, as
+ * a chain off an open floor), else at the receiver's sample nearest its last point. Off (round T default): as before -
+ * on, it takes barbed mouths to 3.3/3.9/3.1 % (seeds 1/42/777777) and line 517's hook away, but drawnGate (i) on seed 42
+ * falls to 95.4 % (floor 95.6), streams' high banks rise 94/122/93 (limit 92/121/90) and 517's points in the owner's
+ * box move (out/fs/REPORT.md round T).
+ */
+const BARB_FIX = false;
+const BARB_ANGLE = (105 * Math.PI) / 180;
+/** Round T: a stream that is not a gully chain's, on the threshold slopes' open floor (no wall within V_SIDE either
+ * side across its flow), is laid as a curve through its raster points as a chain stream is there (FLOOR_SMOOTH), not
+ * pinned to them: no staircase of 250 m legs. Off (round T default): pinned as before - on, staircases 0.0/0.0/3.4 km and
+ * floor grid share 34/28/31 %, every must-not-regress gate held but three of the owner's box's 146 points on line 517
+ * moved more than 50 m (out/fs/REPORT.md round T). */
+const CURVE_FLOORS = false;
+/** ... with FLOOR_PASSES more smoothing passes at the raster's spacing there, each point kept within FLOOR_LAY m of its
+ * raster point (moved.py's 150 m: no f3 course moves for it). */
+const FLOOR_PASSES = 4;
+const FLOOR_LAY = 90;
+const FLOOR_KEEP_END = 3;
 /** A trace in a hollow on the threshold hillslopes follows their routing down at most this many raster steps. */
 const PASS_WALK = 400;
 /** A chain stream's samples between two of its points take the points' ground where the routing ground there is the
@@ -375,6 +399,13 @@ export interface StreamReport {
   crossSamples?: number;
   /** Chain streams joining their receiver curving downstream into it (build, junction). */
   junctions?: number;
+  /** Streams whose way into their receiver pointed back up it (BARB_FIX); of them, joined along a curve, or moved to
+   * the receiver's nearest sample down from where they reached it. */
+  barbed?: number;
+  barbedCurved?: number;
+  barbedMoved?: number;
+  /** Non-chain streams' raster points (probes): all, on an open floor (CURVE_FLOORS), pinned over 0.5 by the slopes. */
+  floorFree?: number[];
   /** Why each stream that ended in a hollow did not get out of it (by line: the river count plus its index), the
    * steps tried in turn (probes: sinkCases). */
   endWhy?: Record<number, string>;
@@ -904,7 +935,28 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         // A chain stream come off an open floor (or across one) joins its receiver as water does there: curving
         // downstream into it (a Y), not square across it (junction).
         const last = pn.length - 1;
-        if (pathArea && pathVee && last >= (first ? 1 : 0) && last - (first ? 1 : 0) === m - 1 && (end.cross || pathVee[m - 1] === 0)) {
+        // (BARB_FIX: whether the way in from its last point to the receiver's sample j points back up the receiver.)
+        const barbed = (jj: number): boolean => {
+          if (!BARB_FIX || last < 0 || L.s.length < 3) return false;
+          let fn = pn[last];
+          let fe = pe[last];
+          if (Math.hypot(L.north[jj] - fn, L.east[jj] - fe) < 50 && last > 0) {
+            fn = pn[last - 1];
+            fe = pe[last - 1];
+          }
+          const vn = L.north[jj] - fn;
+          const ve = L.east[jj] - fe;
+          const a = Math.max(0, Math.min(L.s.length - 2, jj));
+          const b = Math.min(L.s.length - 1, a + 2);
+          const tn = L.north[b] - L.north[a];
+          const te = L.east[b] - L.east[a];
+          const c = (vn * tn + ve * te) / ((Math.hypot(vn, ve) || 1) * (Math.hypot(tn, te) || 1));
+          return c < Math.cos(BARB_ANGLE);
+        };
+        const isBarbed = barbed(j);
+        let curved = false;
+        if (isBarbed) report.barbed = (report.barbed ?? 0) + 1;
+        if (last >= (first ? 1 : 0) && last - (first ? 1 : 0) === m - 1 && ((pathArea && pathVee && (end.cross || pathVee[m - 1] === 0)) || (isBarbed && !(pathVee && pathVee[m - 1] !== 0)))) {
           const jc = junction(pn, pe, last, end.line, j, G(path[m - 1]), run);
           if (jc) {
             j = jc.idx;
@@ -916,7 +968,24 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
               pa.push(NaN);
             }
             report.junctions = (report.junctions ?? 0) + 1;
+            curved = true;
+            if (isBarbed) report.barbedCurved = (report.barbedCurved ?? 0) + 1;
           }
+        }
+        if (isBarbed && !curved) {
+          // (No curve in: the receiver's sample nearest its last point, down from j, where the water there is no higher.)
+          let bd = Infinity;
+          let bj = j;
+          for (let q = j; q < L.s.length && L.s[q] - L.s[j] <= 2 * (RIVER_TOUCH + L.halfWidth[j]) + 250; q++) {
+            if (L.level[q] > L.level[j] + 1e-6 || mask.at(L.north[q], L.east[q]) > -Infinity) continue;
+            const d = Math.hypot(L.north[q] - pn[pn.length - 1], L.east[q] - pe[pe.length - 1]);
+            if (d < bd) {
+              bd = d;
+              bj = q;
+            }
+          }
+          if (bj !== j) report.barbedMoved = (report.barbedMoved ?? 0) + 1;
+          j = bj;
         }
         pn.push(L.north[j]);
         pe.push(L.east[j]);
@@ -952,9 +1021,66 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     // (A chain's points on an open floor are not: there it is laid as a curve through them, and so are the points of
     // its junction curve.)
     const off0 = first ? 1 : 0;
+    // (CURVE_FLOORS: a stream not a chain's, at a raster point of its course on the slopes' open floor - their ground
+    // standing under V_SIDE over it on both sides across its flow - is not pinned.)
+    // (Only a stream that joins a channel or the sea, and not a lake's outlet: one ending in a lake, or in a hollow the
+    // pond pass fills later, keeps its course as traced to where it comes into the water; an outlet - seed 42's line 517,
+    // the owner's winding stream, is one - keeps its course.)
+    const gnF = !pathArea && CURVE_FLOORS && p.pinned && pool < 0 && (end.kind === 'channel' || end.kind === 'sea') ? gullyNet() : null;
+    const openFloor = (q: number): boolean => {
+      if (!gnF || gnF.n !== R || m < 2 || q < 0 || q >= m) return false;
+      const k = path[q];
+      const nx = q + 1 < m ? path[q + 1] : path[q - 1];
+      const ki = Math.floor(k / R);
+      const kj = k % R;
+      const di = Math.floor(nx / R) - ki;
+      const dj = (nx % R) - kj;
+      if (Math.abs(di) > 1 || Math.abs(dj) > 1 || (di === 0 && dj === 0) || ki < 1 || kj < 1 || ki >= R - 1 || kj >= R - 1) return false;
+      const H = gnF.h;
+      const g0 = H[k];
+      return H[(ki + dj) * R + kj - di] - g0 < V_SIDE && H[(ki - dj) * R + kj + di] - g0 < V_SIDE;
+    };
+    // (Not its last FLOOR_KEEP_END raster points: where it ends - a junction, a lake's or pond's water - stays as traced.)
+    const free = gnF ? pn.map((_, i) => (i >= off0 && i - off0 < m - FLOOR_KEEP_END ? openFloor(i - off0) : false)) : null;
+    if (free && m >= 3) {
+      // (And where its course laid as a curve - the smoothing below with nothing pinned - keeps to ground no higher than
+      // FLOOR_RISE over its raster point's: a staircase of D8 legs down a channel whose floor is broad enough.)
+      let cn = pn.slice();
+      let ce = pe.slice();
+      for (let pass = 0; pass < 2 + FLOOR_PASSES; pass++) {
+        const n2 = cn.slice();
+        const e2 = ce.slice();
+        for (let i = 1; i < cn.length - 1; i++) {
+          n2[i] = 0.25 * cn[i - 1] + 0.5 * cn[i] + 0.25 * cn[i + 1];
+          e2[i] = 0.25 * ce[i - 1] + 0.5 * ce[i] + 0.25 * ce[i + 1];
+          const dn = n2[i] - pn[i];
+          const de = e2[i] - pe[i];
+          const dl = Math.hypot(dn, de);
+          if (dl > FLOOR_LAY) {
+            n2[i] = pn[i] + (dn * FLOOR_LAY) / dl;
+            e2[i] = pe[i] + (de * FLOOR_LAY) / dl;
+          }
+        }
+        cn = n2;
+        ce = e2;
+      }
+      for (let i = Math.max(1, off0); i < Math.min(pn.length - 1, off0 + m - FLOOR_KEEP_END); i++) {
+        if (free[i] || Math.hypot(cn[i] - pn[i], ce[i] - pe[i]) < 10) continue;
+        if (p.route(cn[i], ce[i]) <= G(path[i - off0]) + FLOOR_RISE) free[i] = true;
+      }
+    }
+    if (free) {
+      const fs = (report.floorFree ??= [0, 0, 0]);
+      for (let i = 0; i < pn.length; i++) {
+        fs[0]++;
+        if (free[i]) fs[1]++;
+        if (p.pinned && (p.pinned as (n: number, e: number) => number)(pn[i], pe[i]) > 0.5) fs[2]++;
+      }
+    }
     const pinOf = (i: number): number => {
       if (pathArea && pathVee && i >= off0 && i - off0 >= m) return 0;
       if (pathArea && pa[i] === pa[i]) return pathVee && i - off0 < pathVee.length ? pathVee[i - off0] : 1;
+      if (free && free[i]) return 0;
       return p.pinned ? (p.pinned as (n: number, e: number) => number)(pn[i], pe[i]) : 0;
     };
     const pin = p.pinned ? pn.map((_, i) => pinOf(i)) : null;
@@ -971,6 +1097,32 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       }
       sn = n2;
       se = e2;
+    }
+    // (CURVE_FLOORS: on an open floor, more passes at the raster's spacing - a staircase of single steps comes out as
+    // its diagonal - each point kept within FLOOR_LAY m of its raster point, and of where the two passes put it.)
+    if (free && free.some((x) => x)) {
+      const n0 = sn.slice();
+      const e0 = se.slice();
+      for (let pass = 0; pass < FLOOR_PASSES; pass++) {
+        const n2 = sn.slice();
+        const e2 = se.slice();
+        for (let i = 1; i < sn.length - 1; i++) {
+          if (!free[i]) continue;
+          n2[i] = 0.25 * sn[i - 1] + 0.5 * sn[i] + 0.25 * sn[i + 1];
+          e2[i] = 0.25 * se[i - 1] + 0.5 * se[i] + 0.25 * se[i + 1];
+          const dn = n2[i] - pn[i];
+          const de = e2[i] - pe[i];
+          const dl = Math.hypot(dn, de);
+          if (dl > FLOOR_LAY) {
+            n2[i] = pn[i] + (dn * FLOOR_LAY) / dl;
+            e2[i] = pe[i] + (de * FLOOR_LAY) / dl;
+          }
+        }
+        sn = n2;
+        se = e2;
+      }
+      void n0;
+      void e0;
     }
     const on: number[] = [];
     const oe: number[] = [];
@@ -1014,6 +1166,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         if (pathArea) oa.push(pa[i] + (pa[i + 1] - pa[i]) * t);
         oc.push(plain(i) && plain(i + 1));
         if (pathVee && pin) op.push(pin[i] + (pin[i + 1] - pin[i]) * t);
+        else if (free) op.push((free[i] ? 0 : 1) + ((free[i + 1] ? 0 : 1) - (free[i] ? 0 : 1)) * t);
         if (i < chainEnd) chainSamples++;
       }
     }
@@ -1025,7 +1178,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     oc.push(false);
     // A chain stream's open-floor reaches: the raster course (points 250 m apart, turning in 45 degree steps) laid as a
     // curve through them (FLOOR_SMOOTH passes at the samples' spacing), not as the raster's straight runs and corners.
-    if (pathVee && pin && op.length) {
+    if ((pathVee || (free && free.some((x) => x))) && pin && op.length) {
       op[0] = 1;
       op.push(1);
       for (let pass = 0; pass < FLOOR_SMOOTH; pass++) {

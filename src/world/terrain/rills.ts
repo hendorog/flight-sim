@@ -793,6 +793,34 @@ export function rillSegments(g: RillGraph, x0: number, y0: number, x1: number, y
       }
     return false;
   };
+  // (Round T: two pits' spills on flat ground can run over the same cells in opposite directions - each flood finds its
+  // lower cell through the other's way - and drawn along their ways they make a line out and back over itself. Such a
+  // spill is drawn as its chord, as before round S. A seeded world's only.)
+  const backOver = new Set<number>();
+  if (worldSeed() !== 0 && g.spill.size > 1) {
+    const N2 = nx * g.ny;
+    const edges = new Map<number, number>();
+    const edgesOf = (i: number, w: number[]): number[] => {
+      const out2: number[] = [];
+      let a = i;
+      for (const b of w) {
+        out2.push(a * N2 + b);
+        a = b;
+      }
+      return out2;
+    };
+    for (const [i, w] of g.spill) for (const e of edgesOf(i, w)) edges.set(e, i);
+    for (const [i, w] of g.spill)
+      for (const e of edgesOf(i, w)) {
+        const a = Math.floor(e / N2);
+        const b = e % N2;
+        const o = edges.get(b * N2 + a);
+        if (o !== undefined && o !== i) {
+          backOver.add(i);
+          backOver.add(o);
+        }
+      }
+  }
   const out: RillSegment[] = [];
   for (let y = y0; y < y1; y++)
     for (let x = x0; x < x1; x++) {
@@ -802,7 +830,7 @@ export function rillSegments(g: RillGraph, x0: number, y0: number, x1: number, y
       wide(i);
       const s0 = sizeAt(i);
       // (A pit's spill: along the flood's way.)
-      const way = j >= 0 && !near(i, j) ? g.spill.get(i) : undefined;
+      const way = j >= 0 && !near(i, j) && !backOver.has(i) ? g.spill.get(i) : undefined;
       // (Into a strand beside a bigger line - by a step or over a spill: on into that line.)
       if (j >= 0 && chan[j] && (near(i, j) || way) && hider(j) >= 0) {
         const r = root(j);
