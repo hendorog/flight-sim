@@ -3,11 +3,13 @@
 // on such a world; seed 0's water and river shaders are unchanged (presentGuard pins them). Where the water can also
 // freeze, the ice code follows the flow code so a frozen reach stays ice.
 import * as THREE from 'three';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { hydrology, setSnowShift } from '../../src/world/terrain/heightfield';
 import { REGIME } from '../../src/world/terrain/streams';
 import { createFallGeometries, createRiverNetworkGeometries, createWaterMaterial, waterFlows, waterFreezes, type WaterUniforms } from '../../src/world/terrain/water';
 import { setWorldSeed } from '../../src/world/worldSeed';
+// (Under a full parallel suite run its slowest test here takes up to about 22 s, over the 5 s default: round T repairs.)
+vi.setConfig({ testTimeout: 60_000 });
 
 interface FakeShader {
   uniforms: Record<string, { value: unknown }>;

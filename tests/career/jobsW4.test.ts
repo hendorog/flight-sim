@@ -13,7 +13,7 @@
 // smoke only while a medevac's site is the job's next point (never for another job, hidden once the pickup counts
 // or the job ends), and the plume rises in calm air and drifts downwind in a breeze.
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { loadAircraft } from '../../src/aircraft/registry';
 import type { AircraftDefinition } from '../../src/aircraft/types';
 import { CareerSystem, type CareerShell } from '../../src/career/CareerSystem';
@@ -50,6 +50,8 @@ import { airfields, HOME_AIRFIELD, type Airfield } from '../../src/world/airfiel
 import { setEra } from '../../src/world/era/eraState';
 import '../../src/world/terrain/heightfield';
 import { setWorldSeed } from '../../src/world/worldSeed';
+// (Under a full parallel suite run its slowest test here takes up to about 7 s, over the 5 s default: round T repairs.)
+vi.setConfig({ testTimeout: 20_000 });
 
 const HELI: MonitorAircraft = { helicopter: true, vneKt: 130, mainsBody: { x: 0, y: 0, z: 1.0 }, noseX: 2 };
 const DAYS = 6;

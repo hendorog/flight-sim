@@ -3,7 +3,7 @@
 // river network finite, every channel's water falling downstream, no channel crossing itself, every tributary ending on another river (or at
 // the sea), no channel near the runway; lakes holding water inside their hollows; the same seed giving the same world after another one.
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { AIRPORT } from '../../src/core/world';
 import { airfields } from '../../src/world/airfields';
 import { hydrology, makeSample, naturalHeight, sampleTerrain, terrainHeight } from '../../src/world/terrain/heightfield';
@@ -14,6 +14,8 @@ import { DEG } from '../../src/core/math';
 import type { ChannelNear } from '../../src/world/terrain/hydrology';
 import { layoutReport } from '../../src/world/terrain/seededLayout';
 import { setWorldSeed } from '../../src/world/worldSeed';
+// (Under a full parallel suite run its slowest test here takes up to about 23 s, over the 5 s default: round T repairs.)
+vi.setConfig({ testTimeout: 60_000 });
 
 const SEEDS = [1, 7, 42, 1234, 99991];
 

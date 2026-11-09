@@ -6,7 +6,7 @@
 // has every kind, seed 7 (no road network) has no villages or bridges; nothing outside the present day; the town
 // mask is left alone; nearestLandmark and landmarkWaypoint; and the strip's waypoint line shows a landmark's name.
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   AREA_NUDGE, LAKE_NAMES, lakeName, landmarks, landmarkWaypoint, nearestLandmark, RIVER_BEND, SUMMIT, type Landmark,
 } from '../../src/career/landmarks';
@@ -22,6 +22,8 @@ import { lakeRadius } from '../../src/world/terrain/hydrology';
 import { riverCrossings, villageSites } from '../../src/world/terrain/roads';
 import { townSite } from '../../src/world/terrain/townMask';
 import { setWorldSeed } from '../../src/world/worldSeed';
+// (Under a full parallel suite run its slowest test here takes up to about 25 s, over the 5 s default: round T repairs.)
+vi.setConfig({ testTimeout: 60_000 });
 
 const CLEAR = BOARD_RULES.scenicFieldClearM;
 

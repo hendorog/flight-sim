@@ -2,7 +2,7 @@
 // lattice is deterministic and sized from the bed's grain; the rocks in the bed stand on it at the lattice's places,
 // show its radius at the waterline and stand out of the water; no tree is planted on the bare rock; seed 0 has none.
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { hydrology, makeSample, sampleTerrain } from '../../src/world/terrain/heightfield';
 import { rockAtPoint, rockReach } from '../../src/world/terrain/bedrock';
 import { grainToUnit, stoneAt, stonePresence, unitToGrain, STONE_R_MAX, type ChannelStone } from '../../src/world/terrain/channelStones';
@@ -10,6 +10,8 @@ import { BOULDER_STRIDE, buildBoulderCell } from '../../src/world/terrain/vegeta
 import { buildTreeCell, TREE_STRIDE } from '../../src/world/terrain/vegetation/placement';
 import type { FlowHit } from '../../src/world/terrain/hydrology';
 import { setWorldSeed } from '../../src/world/worldSeed';
+// (Under a full parallel suite run its slowest test here takes up to about 23 s, over the 5 s default: round T repairs.)
+vi.setConfig({ testTimeout: 60_000 });
 
 afterAll(() => {
   setWorldSeed(0);

@@ -1,11 +1,13 @@
 // Hillside rills (rills.ts): patches built alone agree at their borders and do not depend on the window they were traced
 // in or on what was built before; seed 0 has none, and its terrain shader text carries none of their code.
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildRillPatch, RILL_PATCH, RILL_TEX, RILL_TEXEL, rillTexelCentre } from '../../src/world/terrain/rills';
 import { setWorldSeed } from '../../src/world/worldSeed';
 import { createTerrainMaterial, type TerrainUniforms } from '../../src/world/terrain/terrainMaterial';
 import type { TerrainTextures } from '../../src/world/terrain/textures';
+// (Under a full parallel suite run its slowest test here takes up to about 14 s, over the 5 s default: round T repairs.)
+vi.setConfig({ testTimeout: 30_000 });
 
 /** A hillside patch on seed 1 with rills over its borders, and its east and north neighbours. */
 const SEED = 1;

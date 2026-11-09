@@ -3,7 +3,7 @@
 // their gravel and silt), the stones lie by steep channels and falls only, out of the lakes, and the same cell gives
 // the same stones however and whenever it is built.
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { hydrology, makeSample, sampleTerrain } from '../../src/world/terrain/heightfield';
 import { bedRock, rockAt, rockReach, ROCK_STEEP_LO } from '../../src/world/terrain/bedrock';
 import { BOULDER_STEEP, BOULDER_STRIDE, buildBoulderCell } from '../../src/world/terrain/vegetation/boulders';
@@ -11,6 +11,8 @@ import { buildTile } from '../../src/world/terrain/tileBuilder';
 import { steepnessOf } from '../../src/world/terrain/streams';
 import type { FlowHit } from '../../src/world/terrain/hydrology';
 import { setWorldSeed } from '../../src/world/worldSeed';
+// (Under a full parallel suite run its slowest test here takes up to about 22 s, over the 5 s default: round T repairs.)
+vi.setConfig({ testTimeout: 60_000 });
 
 afterAll(() => {
   setWorldSeed(0);
