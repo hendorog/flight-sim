@@ -62,6 +62,13 @@ const CONFLUENCE_GRADIENT = 0.3;
 const CHAIN_CONFLUENCE = 0.75;
 /** A stream's water narrows to this share of its width down a reach of gradient (m/m) from the first to the second. */
 const STEEP_SLOT = 0.45;
+/** A stream's water is raised towards the drawn ground where it runs more than RAISE_CUT m under the ground it was
+ * traced on, to RAISE_DEPTH under the natural ground at most. */
+const RAISE_CUT = 2;
+const RAISE_DEPTH = 1.2;
+/** ... and to at most this much over the lower of the ground either side, RAISE_SIDE m beyond its channel's half-width. */
+const RAISE_BANK = 2;
+const RAISE_SIDE = 25;
 const STEEP_NARROW = [0.05, 0.2];
 /** ... not over its last this much, m (into its mouth). */
 const STEEP_MOUTH = 150;
@@ -942,11 +949,42 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // Its end at the water of the line it joins (final: that line came first).
     if (st.joins >= 0) st.level[st.level.length - 1] = Math.min(st.level[st.level.length - 1], levelOn(lineOf(st.joins), st.joinS));
     for (let i = 1; i < st.level.length; i++) st.level[i] = Math.min(st.level[i], st.level[i - 1]);
-    // (Its water stays where it was traced, under the ground it runs through, and the terrain carves its channel down
-    // to it - a notch through a spur's nose. Round D raised it towards the drawn ground off a face's convexity (bbe5199);
-    // off a nose the ground falls away either side and the raised water stood over it, perched: waterWalls' river over
-    // a dry neighbour > 10 m went from 1627 / 1782 / 1541 to 1930 / 2008 / 1859. Round S: the ground agrees with the
-    // water, not the water with the ground.)
+    // A stream not leaving a lake runs as high as the drawn ground lets it: where its water runs well under the ground
+    // it was traced on (its level a straight line between the raster points, under a convex face or a spur's nose),
+    // it is raised to the running minimum of the natural ground there (looked at only there), never over it and never
+    // rising downstream. What cut is left is a sill it wears through, in a notch of its bed's width (below).
+    // (Never over the lower of its banks, RAISE_BANK m over it at most: off a spur's nose the ground falls away either
+    // side, and water raised to the nose's ground would stand over the ground beside it - a perched reach. Not dropped
+    // altogether: without the raise seed 777777's 110 m step at 21500,-144000 comes back, and seed 1 has two more
+    // points of water over the ground at a held mouth; out/fs/REPORT.md round S.)
+    if (st.pool < 0) {
+      const m = st.level.length;
+      let run = Infinity;
+      for (let i = 0; i < m - 1; i++) {
+        let top = st.level[i];
+        if (st.cut[i] > RAISE_CUT) {
+          top = Math.min(st.level[i] + st.cut[i], natural(st.north[i], st.east[i]) - RAISE_DEPTH);
+          if (top > st.level[i]) {
+            const a = Math.max(0, i - 1);
+            const b = Math.min(m - 1, i + 1);
+            const tn = st.north[b] - st.north[a];
+            const te = st.east[b] - st.east[a];
+            const tl = Math.hypot(tn, te) || 1;
+            const off = channelHalfWidth(st.area[i]) + RAISE_SIDE;
+            const left = natural(st.north[i] - (te / tl) * off, st.east[i] + (tn / tl) * off);
+            const right = natural(st.north[i] + (te / tl) * off, st.east[i] - (tn / tl) * off);
+            top = Math.max(st.level[i], Math.min(top, Math.min(left, right) + RAISE_BANK));
+          }
+        }
+        run = Math.min(run, top);
+        if (run > st.level[i]) {
+          const raise = run - st.level[i];
+          st.level[i] = run;
+          st.cut[i] = Math.max(0, st.cut[i] - raise);
+          st.breach[i] = breachOfCut(st.cut[i]);
+        }
+      }
+    }
     const keep = new Uint8Array(st.level.length);
     // (An outlet's first samples keep its lake's level.)
     for (let i = 0; i < st.held - 1; i++) keep[i] = 1;
