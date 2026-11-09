@@ -32,6 +32,20 @@ it('sink cases', () => {
       console.log(`   why: ${why[li] ?? '(no note)'}`);
     });
     console.log(`seed ${seed}: ${n} sink ends in hills and mountains`);
+    // (SK_AT=seed@n,e;seed@n,e: the lines passing within 150 m of each point, and how they end.)
+    for (const at of (env.SK_AT ?? '').split(';')) {
+      const [sd, ne] = at.split('@');
+      if (Number(sd) !== seed || !ne) continue;
+      const [N, E] = ne.split(',').map(Number);
+      R.forEach((r, li) => {
+        let best = Infinity, bi = -1;
+        for (let i = 0; i < r.north.length; i++) { const d = Math.hypot(r.north[i] - N, r.east[i] - E); if (d < best) { best = d; bi = i; } }
+        if (best > Number(env.SK_R ?? 150)) return;
+        const m = r.north.length - 1;
+        const rr = r as unknown as { joins?: number };
+        console.log(`AT ${N},${E}: line ${li} kind ${r.kind} passes ${best.toFixed(0)} m off (sample ${bi} of ${m + 1}), ends ${r.end ?? '-'} at ${r.north[m].toFixed(0)},${r.east[m].toFixed(0)}${rr.joins !== undefined ? ` joins ${rr.joins}` : ''}, A ${r.area[m].toFixed(1)} (first NaN at ${Array.from(r.area).findIndex((v) => !(v === v))}, level NaN at ${Array.from(r.level).findIndex((v) => !(v === v))}, hw NaN at ${Array.from(r.halfWidth).findIndex((v) => !(v === v))}, s end ${Array.from(r.s.slice(-3)).map((v) => v.toFixed(1)).join("/")} area end ${Array.from(r.area.slice(-3)).map((v) => v.toFixed(1)).join("/")})`);
+      });
+    }
   }
   setWorldSeed(0);
 });
