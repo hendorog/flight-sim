@@ -710,6 +710,10 @@ const FIELD_FIRST = true;
 /** The least a stream's carved banks stand over its water where an airfield's blend flattens them after the carve
  * (fieldUnder), m. */
 const HOLD_BANK = 1;
+/** Round T repairs: a seeded world's traced streams keep their channels through an airfield's blend into its flat
+ * (keepChannels): the blend follows the network's carve, and pulled a stream's carved bed and banks up to the field's
+ * elevation over its water - seed 777777 line 720 ran dry for 1.1 km beside KPMH's runway. */
+const FIELD_CHANNEL = true;
 let fieldHeld = 0;
 /** The streams' samples FIELD_HOLD lowered (probes). */
 export const fieldHeldCount = (): number => fieldHeld;
@@ -1337,6 +1341,51 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
   return h;
 }
 
+/**
+ * FIELD_CHANNEL: the streams' channels (carveNetwork's bed and banks, kind 1) cut again into ground h an airfield's blend
+ * into its flat has pulled towards the field's elevation, by `w` (none where the blend leaves the ground as carved, all
+ * of it where it moved it by a metre or more). The blend's raised banks stand over the water (fieldUnder held it under
+ * them); without this the blended bed did too, and the stream vanished under it. Not in a lake's domain.
+ */
+function keepChannels(north: number, east: number, h: number, w: number, out: TerrainSample): number {
+  if (!(w > 0) || maskLevel > -Infinity) return h;
+  const net = presentHydro.network as NonNullable<Hydrology['network']>;
+  const nc = net.channels(north, east, channelNear);
+  let keep1 = -Infinity;
+  let keep2 = -Infinity;
+  let keepLine = -1;
+  for (let q = 0; q < nc; q++) {
+    const o = channelNear[q];
+    if (!(o.dist < o.halfWidth + CHANNEL_BANK + 20)) continue;
+    const v = o.level + BANK_HEIGHT;
+    if (v > keep1) {
+      keep2 = keep1;
+      keep1 = v;
+      keepLine = o.line;
+    } else if (v > keep2) keep2 = v;
+  }
+  let cut = h;
+  for (let j = 0; j < nc; j++) {
+    const c = channelNear[j];
+    if (c.kind !== 1) continue;
+    const d = c.dist;
+    const hw = c.halfWidth * (1 - smooth(0, 20, c.beyondSource));
+    if (hw <= 0.3) continue;
+    const keep = keepLine === c.line ? keep2 : keep1;
+    const kb = 0.5 + 0.3 * hw;
+    if (d < hw || c.level + 0.4 * (d - hw - 2.1 * streamBankWidth(hw, c.bed)) - 4 < cut + kb) {
+      const banks = smin(cut, c.level + streamBanks(d, hw, c.bed, c.s, c.side, c.line), kb);
+      cut = d > hw ? Math.max(Math.min(cut, keep), banks) : banks;
+    }
+  }
+  h += (Math.min(cut, h) - h) * w;
+  for (let j = 0; j < nc; j++) {
+    const c = channelNear[j];
+    if (c.kind === 1 && c.dist < c.halfWidth && h < c.level) out.river = Math.max(out.river, c.level);
+  }
+  return h;
+}
+
 /** Cross-section of the Late Cretaceous river's valley, carved about the channel: height above its water level at d. */
 function legacyRiverProfile(d: number, halfWidth: number): number {
   if (d < halfWidth) {
@@ -1482,6 +1531,7 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
 
   // A generated field: its approaches kept low and clear the same way (shorter and narrower), then its flat area.
   let gBlend = 1;
+  const hCarved = h;
   if (gf) {
     const gBeyond = Math.abs(gAlong) - gf.length / 2;
     if (gBeyond > 0 && gBeyond < gf.approachLength) {
@@ -1501,6 +1551,9 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
   const blend = smoother(FLAT, FLAT + BLEND, dRect);
   out.airportBlend = Math.min(blend, gBlend);
   out.ground = ELEV + (h - ELEV) * blend;
+  // (A seeded world's streams keep their channels through the blends, where the blends moved the ground as carved:
+  // FIELD_CHANNEL.)
+  if (FIELD_CHANNEL && presentHydro.network && out.airportBlend < 1) out.ground = keepChannels(north, east, out.ground, smooth(0.1, 1, Math.abs(out.ground - hCarved)), out);
   return out;
 }
 
