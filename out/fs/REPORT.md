@@ -778,7 +778,8 @@ cases (457, 567, 1521), nothing else.
   lakes; each is cut back to its samples in its lake. LAKE_RAISE (off) raises the lake to its real spill instead: lake 70
   becomes 4.44 km² at 283.4 m (+22 m), outlet into line 220 (`s42-450-T2raise.png`); lake 57 8.94 km² at 144.0 m.
 - Decision 3 (POND_KEEP 3 km², POND_SILL_CUT 15 m, BIG_POND_KEEP false): only seed 42's 716 makes a pond over 3 km²;
-  its sill stands 36 m over the pit, so the lake is kept.
+  its sill stands 36 m over the pit, so the lake is kept. The cut-through branch (a pond over 3 km² on a sill of 15 m or
+  less) fired on none of the four seeds: it is built but unexercised.
 
 Every pond the dead-end rule made: seed 1 602 1.00 km² at 35375,41141 (185.3 m; sill 11.7 m over the pit), 738 0.56 km²
 at 113861,128833 (24.2 m), 1414 1.44 km² at -42054,-62946 (322.9 m); seed 42 716 **9.69 km² at 132352,-123990** (198.9 m);
@@ -826,6 +827,9 @@ the same arithmetic), falling downstream, and works its flow out again (FIELD_HO
 W2 0.2 / 0.6 / 2.7 -> 0.2 / 0.6 / 1.2 km; line 720 is out of it (the rest are other causes: seed 777777 river 6 48.6 m at
 -107098,67358 over 308 m, streams 510, 1382, 561). The trim is a soft minimum, so the bed under 720 still lies up to 20 m
 under its water in the cut (deep water in a narrow channel; no water over the ground beside it: probe `gridAt`).
+Every thread holds the same: the airfields are sited only in heightfield.ts buildWater, which each thread runs itself
+(module load and onWorldSeed), and the hold follows the siting there. Known inaccuracy: holdUnder takes the drop off the
+sample's cut (as the raise does), so at a corridor's edge, where the trim is partial, the breach is understated.
 **The "sheet"** in 777777-B720 is the approach's cleared zone (approach > 0, no trees), not water: it is still in the
 after picture, and no stream fix will move it.
 
