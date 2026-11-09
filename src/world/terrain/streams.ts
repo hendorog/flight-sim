@@ -1750,8 +1750,8 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     report.continued = conts.length;
   }
   /** Whether a straight reach from stream st's end to (tn, te) crosses its own course. */
-  const crossesOwn = (st: StreamLine, tn: number, te: number): boolean => {
-    const m0 = st.north.length - 1;
+  const crossesOwn = (st: StreamLine, tn: number, te: number, upTo = -1): boolean => {
+    const m0 = upTo >= 0 ? upTo : st.north.length - 1;
     const ax = st.east[m0], ay = st.north[m0];
     for (let i = 0; i + 2 < m0; i++) {
       const cx = st.east[i], cy = st.north[i], dx = st.east[i + 1], dy = st.north[i + 1];
@@ -2049,11 +2049,32 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
                 }
               }
           }
+          // (Cut as little as it may: from the last of its samples after that from which a straight reach of at most
+          // two raster steps runs into the pond without crossing its course before it.)
+          let into = -1;
+          for (let i = st.north.length - 2; i > cutAt && into < 0 && cutAt > 0; i--) {
+            let bq = -1;
+            let bd = 2 * LAKE_RASTER;
+            for (const q of pts) {
+              const tn = ORIGIN + Math.floor(q / R) * LAKE_RASTER;
+              const te = ORIGIN + (q % R) * LAKE_RASTER;
+              const d = Math.hypot(tn - st.north[i], te - st.east[i]);
+              if (d < bd && !crossesOwn(st, tn, te, i)) {
+                bd = d;
+                bq = q;
+              }
+            }
+            if (bq >= 0) {
+              cutAt = i;
+              into = bq;
+            }
+          }
           // (Not where that would cut away most of it: there its course ran through the pond's hollow and on over a
           // sill to end in another; it stays a sink.)
           const cutLen = cutAt > 0 ? st.s[st.s.length - 1] - st.s[cutAt] : 0;
           if (cutAt > 0 && cutLen <= CUT_BACK && cutLen <= 0.5 * st.s[st.s.length - 1]) {
             truncate(st, j, cutAt + 1);
+            if (into >= 0) appendTo(st, ORIGIN + Math.floor(into / R) * LAKE_RASTER, ORIGIN + (into % R) * LAKE_RASTER, level);
             (report.pondWhy ??= {}).cutBack = (report.pondWhy.cutBack ?? 0) + 1;
             done = true;
           } else {
