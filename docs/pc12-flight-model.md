@@ -133,6 +133,35 @@ cliff to 78-79 KIAS). The full-reverse roll is 284 m, ratio 0.75. The keyboard c
 sensitive to the power map at 70 % Ng (an unchanged 255 shp there passes it: 76.0 KIAS at 1.74 m/s; 225 or 230 shp
 crashed it on a bounced, nose-low round-out at 91 KIAS).
 
+#### Idle runaway (2026-11-09)
+
+Owner: "the PC-12 has hardly any drag with the throttle at idle", which settled the question above: the propeller must
+drag at FLIGHT IDLE. The cause was in the turbine core, not the idle power: the power-turbine law
+`a - (a - 1) Np / Np_design` gives the same runaway speed (twice the design speed) at every gas power, so idle gas
+still drove the turbine at 1700 rpm. A turbine runs away where its blade speed approaches the speed of the gas leaving
+its nozzles, and that falls with the gas energy per kilogram. `powerTurbine.runaway` now gives the runaway speed
+against corrected Ng: the square root of the map's gas power per unit air flow (air flow as fuel / ITT rise), scaled
+to 0.88 of the design speed at flight idle (CALIBRATED on the 120 KIAS idle descent) and held there down to ground idle
+(the shape would put it at 0.61, below the 47E ground-idle Np), meeting the fixed law at 95 % Ng. The turbine's best
+power stays the map's power. Above 90 % Ng the power at 1700 rpm changes by under 1 %; at 80 % by about 10 %.
+In flight at FLIGHT IDLE the propeller now governs at 1700 rpm on a finer blade (12-26 deg) and drives the turbine
+(about -1 psi). `scripts/probes/pc12Idle.test.ts`, MTOW:
+
+| FLIGHT IDLE | Before | Now |
+| --- | --- | --- |
+| 100 KIAS clean | -594 ft/min, +945 N | -1035 ft/min, -1000 N |
+| 120 KIAS clean | -648 ft/min (22.3:1), +777 N | -1064 ft/min (13.5:1), -770 N |
+| 150 KIAS clean | -928 ft/min | -1339 ft/min |
+| 85 KIAS flaps 40 gear down | -1283 ft/min (7.9:1) | -1783 ft/min (5.6:1) |
+| Feathered, 120 KIAS | -878 ft/min (16.4:1) | unchanged |
+| Level, 150 -> 110 KIAS | 50 s (0.8 kt/s) | 32 s (1.2 kt/s) |
+| On the gate, FLIGHT IDLE: static thrust / Np | 3656 N / 1526 rpm | 2415 N / 1249 rpm |
+| On the gate, GROUND IDLE | 1693 N / 1051 rpm | 1646 N / 1036 rpm |
+| Half beta, GROUND IDLE, static | 1283 N, 5 kt unbraked | 993 N, stands still |
+
+The landing rolls, the flare, the approach torque, the cruise rows, the pusher and the reverse rows are unchanged
+inside their bands (conformance, flown tier).
+
 ### Blade angles
 
 The TCDS gives at the 42 in station (0.80 R): **"fine pitch 19° ±0.2; minimum on ground 17°; minimum in flight 6°;

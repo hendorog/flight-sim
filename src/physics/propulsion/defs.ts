@@ -287,6 +287,15 @@ export interface TurbineDef {
   powerTurbine: {
     /** Torque with the power turbine held still over its torque at the design speed, for the same gas power (about 2). */
     stallTorqueRatio: number;
+    /**
+     * The power turbine's runaway speed (where its torque falls to zero), fraction of the design speed, against the
+     * gas generator's corrected Ng. Weak gas leaves the turbine nozzles slowly, so at low Ng the turbine runs away at a
+     * lower speed, and above it the turbine absorbs power instead of giving it: a PT6 at flight idle in flight, its
+     * propeller held at the governed speed by the airflow, drags. The torque stays linear in speed, its best power
+     * stays the map's best (at half the runaway speed). Above the table, or absent, the fixed law of stallTorqueRatio
+     * (runaway at a / (a - 1)), which the table should meet at its last entry; negative torque only with the table.
+     */
+    runaway?: { ng: readonly number[]; speed: readonly number[] };
     /** Power-turbine and reduction-gearbox friction at the power-turbine shaft, N m: a constant and a part per 1000 power-turbine rpm. */
     friction: readonly [number, number];
     /** Fuel topping governor: above this power-turbine speed (fraction of ratedRpm) it takes `gain` Ng per unit overspeed off the FCU's set point. */

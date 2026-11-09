@@ -136,7 +136,18 @@ export const PT6A_67B: EngineDef = {
       warmItt: 560,
     },
     // Nf (fuel topping) governor at 109 % Np, 1853 rpm (47E-PROXY 7-11 p. 704).
-    powerTurbine: { stallTorqueRatio: 2, friction: [0.8, 0.1], topping: { np: PC12_NP_TOPPING / PC12_NP_GOVERNED, gain: 5 } },
+    powerTurbine: {
+      stallTorqueRatio: 2,
+      // Runaway speed against corrected Ng (owner, 2026-11-09: "hardly any drag with the throttle at idle"). Its
+      // shape is the spouting speed of the turbine's gas, the square root of the map's gas power per unit air flow
+      // (air flow as fuel / ITT rise), scaled to 0.88 at flight idle (CALIBRATED: an idle descent of about -1000
+      // ft/min at 120 KIAS clean, MTOW, the propeller held at 1700 rpm by the airflow and driving the power turbine) and
+      // held there down to ground idle, where the shape would put the runaway (0.61) below the 47E ground-idle Np. It
+      // meets the fixed law (2) at 95 % Ng; above 90 % it changes the power at 1700 rpm by under 1 %. ESTIMATE.
+      runaway: { ng: [0.55, 0.645, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95], speed: [0.88, 0.88, 1.14, 1.3, 1.53, 1.71, 1.89, 2] },
+      friction: [0.8, 0.1],
+      topping: { np: PC12_NP_TOPPING / PC12_NP_GOVERNED, gain: 5 },
+    },
     // Aft of the pitch-only travel the cam raises Ng to about 85 % at full reverse (CALIBRATED on the 47E maximum
     // reverse, 900 shp / 34.25 psi at Np 1650: ESTIMATE for the /47), the topping governor reset to 1650 rpm (47E 2-6).
     reversingCam: { maxReverseNg: 0.86, reverseNp: 1650 / PC12_NP_GOVERNED },
