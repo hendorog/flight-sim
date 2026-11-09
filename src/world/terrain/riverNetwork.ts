@@ -73,6 +73,9 @@ const STEEP_NARROW = [0.05, 0.2];
 /** Round T repairs: a stream's water where it runs into standing water (a lake, a pond) stands at the water's surface,
  * not under it (riverNetwork.ts, after the pitches): see "Into standing water". */
 const AT_THE_SURFACE = true;
+/** ... only for a lake the line ends in or stays in: not one it passes, coming to it, running along it and leaving it
+ * for good more than this under its level, m. */
+const LEAVE_BELOW = 1;
 /** ... not over its last this much, m (into its mouth). */
 const STEEP_MOUTH = 150;
 /** A hanging valley's lip lies where the alpine uplift (seededLayout.ts) is over this: high in the ranges. */
@@ -1165,7 +1168,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   // stream runs in - seed 777777 line 1814, 54 m) is not raised over its banks; it keeps its level up to the water
   // (`blocked`). Not an outlet's head in its own lake, nor the rivers. Falls and pitches left on a reach now level are
   // taken off.
-  const surfaceReport = { lines: 0, raised: 0, km: 0, falls: 0, blocked: 0, blockedStep: 0 };
+  const surfaceReport = { lines: 0, raised: 0, km: 0, falls: 0, blocked: 0, blockedStep: 0, passing: 0 };
   if (AT_THE_SURFACE) {
     const raisedLine = new Uint8Array(allLines.length);
     const lift = (c: LineArrays, li: number, i: number, to: number, inside: boolean): void => {
@@ -1211,7 +1214,23 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       for (let k = i - 1; k > k0; k--) lift(c, li, k, to, false);
       return true;
     };
-    for (let li = nR; li < allLines.length; li++) {
+    // (Receivers before the lines joining them - a stream's continuation before the stream it continues - so a mouth on
+    // a reach the pass raised finds it raised: in index order seed 777777 line 474 ran 8.4 m up into its continuation
+    // 2267's raised head.)
+    const order: number[] = [];
+    {
+      const seen = new Uint8Array(allLines.length);
+      const chain: number[] = [];
+      for (let l0 = nR; l0 < allLines.length; l0++) {
+        chain.length = 0;
+        for (let l = l0; l >= nR && l < allLines.length && !seen[l]; l = joinsOf(l)) {
+          seen[l] = 1;
+          chain.push(l);
+        }
+        for (let q = chain.length - 1; q >= 0; q--) order.push(chain[q]);
+      }
+    }
+    for (const li of order) {
       const c = allLines[li] as unknown as LineArrays;
       const st = traced.streams[li - nR];
       const m = c.level.length;
@@ -1231,7 +1250,21 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       for (; i < m; i++) {
         const lv = mask.at(c.north[i], c.east[i]);
         const inside = lv > -Infinity;
-        if (inside && !wasIn) runOk = c.level[i] >= lv - 0.01 || backwater(c, li, i, lv);
+        if (inside && !wasIn) {
+          // (Only a lake it ends in or stays in backs it up. A line that passes it - its water already under the lake's
+          // level as it comes to it, no lower when it leaves it for good, and under that level then: a notch along the
+          // lake's edge, as traced - keeps its levels. Seed 777777 line 2267 ran flat at 204.3 m along lake 212.7 m for
+          // 234 m and on for 10 km: the backwater stood the 5 km above it 8.4 m higher, over a step down where it left,
+          // and the stream joining its head, line 474, ran 8.4 m up into it.)
+          const pool = mask.poolHit;
+          let eLast = i;
+          for (let e = i + 1; e < m; e++) if (mask.at(c.north[e], c.east[e]) > -Infinity && mask.poolHit === pool) eLast = e;
+          const passes = i > 0 && eLast + 1 < m && c.level[i - 1] < lv - LEAVE_BELOW && c.level[i - 1] - c.level[eLast] < LEAVE_BELOW && c.level[eLast + 1] < lv - LEAVE_BELOW;
+          if (passes) {
+            runOk = false;
+            surfaceReport.passing++;
+          } else runOk = c.level[i] >= lv - 0.01 || backwater(c, li, i, lv);
+        }
         if (inside && runOk) {
           const to = i > 0 ? Math.min(lv, c.level[i - 1]) : lv;
           lift(c, li, i, Math.max(c.level[i], to), true);
