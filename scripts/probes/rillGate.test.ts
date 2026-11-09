@@ -67,7 +67,7 @@ it('rill gate', async () => {
           hydrology.queryRiver(s.n1, s.e1, hit);
           const lake = hydrology.lakeMask?.at(s.n1, s.e1, terrainHeight(s.n1, s.e1)) ?? -Infinity;
           const d = lake > -Infinity ? 0 : hit.dist - hit.halfWidth;
-          if (!(d <= 30)) { endsFar++; if (farAt.length < 6) farAt.push(`${s.n1.toFixed(0)},${s.e1.toFixed(0)} d ${Number.isFinite(d) ? d.toFixed(0) : 'inf'}`); }
+          if (!(d <= 30)) { endsFar++; if (farAt.length < Number(env.RG_FAR ?? 6)) farAt.push(`${s.n1.toFixed(0)},${s.e1.toFixed(0)} d ${Number.isFinite(d) ? d.toFixed(0) : 'inf'}`); }
         }
         // Turns: heading over 50 m before this segment's start and 50 m after it (following the main next segment).
         const back = (() => { let e = s.e0, n = s.n0, len = 0, k = K(e, n); for (let g2 = 0; g2 < 20 && len < 50; g2++) { const prev = toSeg.get(k); if (!prev) break; len += Math.hypot(prev.e1 - prev.e0, prev.n1 - prev.n0); e = prev.e0; n = prev.n0; k = K(e, n); } return len >= 40 ? [e, n] : null; })();

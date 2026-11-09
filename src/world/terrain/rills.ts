@@ -152,6 +152,9 @@ export interface RillSegment {
   n1: number;
   s0: number;
   s1: number;
+  /** The raster cell it runs to, and whether that cell is a strand hidden beside a bigger line (probes). */
+  cj?: number;
+  hid?: boolean;
 }
 
 /** Size code (0..1) of a catchment (km²): log scale from RILL_AREA to RILL_AREA_TOP. */
@@ -772,24 +775,47 @@ export function rillSegments(g: RillGraph, x0: number, y0: number, x1: number, y
     const L = pe.length - 1;
     for (let k = 0; k < L; k++) o.push({ e0: pe[k], n0: pn[k], e1: pe[k + 1], n1: pn[k + 1], s0: sa + ((sb - sa) * k) / L, s1: sa + ((sb - sa) * (k + 1)) / L });
   };
+  /** Whether a strand hidden beside a bigger line is drawn after all: a drawn line runs into it that cannot be sent
+   * on into the bigger line (its root is that line itself, or hidden in turn), so the strand is that line's own way on
+   * (else the line would stop dead at it, wet, far from any water). */
+  const entered = (c: number, depth: number): boolean => {
+    if (depth > MERGE_STEPS) return false;
+    const r = root(c);
+    const x = c % nx;
+    const y = (c / nx) | 0;
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        if ((dx === 0 && dy === 0) || x + dx < 0 || x + dx >= nx || y + dy < 0 || y + dy >= g.ny) continue;
+        const d = c + dy * nx + dx;
+        if (to[d] !== c || !chan[d]) continue;
+        if (hider(d) >= 0 && !entered(d, depth + 1)) continue;
+        if (r === d || hider(r) >= 0) return true;
+      }
+    return false;
+  };
   const out: RillSegment[] = [];
   for (let y = y0; y < y1; y++)
     for (let x = x0; x < x1; x++) {
       const i = y * nx + x;
-      if (!chan[i] || hider(i) >= 0) continue;
+      if (!chan[i] || (hider(i) >= 0 && !entered(i, 0))) continue;
       let j = to[i];
       wide(i);
       const s0 = sizeAt(i);
-      // (Into a strand beside a bigger line: on into that line.)
-      if (j >= 0 && chan[j] && near(i, j) && hider(j) >= 0) {
+      // (A pit's spill: along the flood's way.)
+      const way = j >= 0 && !near(i, j) ? g.spill.get(i) : undefined;
+      // (Into a strand beside a bigger line - by a step or over a spill: on into that line.)
+      if (j >= 0 && chan[j] && (near(i, j) || way) && hider(j) >= 0) {
         const r = root(j);
         if (r !== i && hider(r) < 0) j = r;
       }
-      const way = j === to[i] && !near(i, j) ? g.spill.get(i) : undefined;
       if (j >= 0 && chan[j]) {
         wide(j);
         if (way) pushWay(out, wE.get(i)!, wN.get(i)!, way, wE.get(j)!, wN.get(j)!, s0, sizeAt(j));
-        else out.push({ e0: wE.get(i)!, n0: wN.get(i)!, e1: wE.get(j)!, n1: wN.get(j)!, s0, s1: sizeAt(j) });
+        if (way) {
+          out[out.length - 1].cj = j;
+          out[out.length - 1].hid = hider(j) >= 0;
+        }
+        else out.push({ e0: wE.get(i)!, n0: wN.get(i)!, e1: wE.get(j)!, n1: wN.get(j)!, s0, s1: sizeAt(j), cj: j, hid: hider(j) >= 0 });
       } else if (j >= 0 && g.net[j]) {
         // Into the network: on to the channel's centreline (or the lake's cell).
         if (way) pushWay(out, wE.get(i)!, wN.get(i)!, way, atE(j), atN(j), s0, s0);
