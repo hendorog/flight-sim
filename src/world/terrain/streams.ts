@@ -2718,11 +2718,17 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
   report.tracePhases.push(performance.now() - t0);
   // --- Catchment summed down the network: each stream's own (its source and what it gathers), plus every stream
   // that joins it from its confluence on (latest first: a stream only ever joins one traced before it).
+  // (endLost: each stream's end as the same sum gives it with what it lost to a pond's water (lostArea) counted in its
+  // own catchment, ahead of the streams joining it - the pond's inflow below. Summed after it, a tributary the sum
+  // took by its max rule was counted on top of the drowned course that already held it: seed 1 pond 602's outlet read
+  // 70.1 km2 for max(6.1 + 43.5, 26.6) = 49.6.)
+  const endLost = Float64Array.from(streams, (st, q) => st.area[st.area.length - 1] + (lostArea.get(q) ?? 0));
   for (let j = streams.length - 1; j >= 0; j--) {
     const st = streams[j];
     if (st.joins >= nR) {
       const P = streams[st.joins - nR];
       const add = st.area[st.area.length - 1];
+      const pj = st.joins - nR;
       // (Run on as a continuation: its catchment is carried over below, whole.)
       if (st.continued) continue;
       // (A chain joining a chain stream on its chain: the chain's catchment holds its water already, and so does the
@@ -2733,9 +2739,11 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       // receiver is never narrower than what joins it below the junction, not summed with it.)
       if ((st.chainS >= 0 && P.chainS < 0) || (P.chainS >= 0 && st.joinS <= P.chainS + 1e-6)) {
         for (let i = 0; i < P.s.length; i++) if (P.s[i] >= st.joinS - 1e-6) P.area[i] = Math.max(P.area[i], add);
+        endLost[pj] = Math.max(endLost[pj], endLost[j]);
         continue;
       }
       for (let i = 0; i < P.s.length; i++) if (P.s[i] >= st.joinS - 1e-6) P.area[i] += add;
+      endLost[pj] += endLost[j];
     }
   }
   // (A continuation carries what its stream gathered after it was traced - the streams that joined it since - on down
@@ -2746,12 +2754,16 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     if (!(delta > 0)) continue;
     let L = streams[cont];
     for (let i = 0; i < L.area.length; i++) L.area[i] += delta;
+    endLost[cont] += delta;
     for (let guard = 0; L.joins >= nR && guard < 100; guard++) {
       const P = streams[L.joins - nR];
       for (let i = 0; i < P.s.length; i++) if (P.s[i] >= L.joinS - 1e-6) P.area[i] += delta;
+      endLost[L.joins - nR] += delta;
       L = P;
     }
   }
+  // (What each stream's end gains by counting its lost course as its own, over the network's sum: 0 for most.)
+  const lostGain = Float64Array.from(streams, (st, q) => endLost[q] - st.area[st.area.length - 1]);
   // A pond's outlet carries what runs into its pond: every line ending in its water, each once (round T: not the
   // filling stream's catchment as it stood when the pond was made - with the outlet looping back that doubled it).
   // Higher ponds first, so a pond's outlet running into a lower pond is in that one's inflow.
@@ -2761,9 +2773,11 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       const into = new Set<number>(po.fillers);
       for (let q = 0; q < streams.length; q++) if (q !== po.outlet && streams[q].end === 'lake' && poolOfEnd(streams[q]) === po.pool) into.add(q);
       into.delete(po.outlet);
-      // Each with what it gathered along the course it lost to the pond's water (lostArea); a tributary cut into the pond
-      // from its filler's course counted as the network's sum would have counted it into the filler (tribOf).
-      const total = (q: number): number => streams[q].area[streams[q].area.length - 1] + (lostArea.get(q) ?? 0);
+      // Each with what it gathered along the course it lost to the pond's water (lostArea), as its own catchment ahead of
+      // the streams joining it (lostGain: max(own + lost, a tributary the sum took by its max), never on top of that
+      // tributary); a tributary cut into the pond from its filler's course counted as the network's sum would have
+      // counted it into the filler (tribOf).
+      const total = (q: number): number => streams[q].area[streams[q].area.length - 1] + lostGain[q];
       const own = new Map<number, number>();
       for (const q of into) if (!(tribOf.has(q) && into.has(tribOf.get(q)!.to))) own.set(q, total(q));
       for (const q of into) {
@@ -2774,7 +2788,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       }
       let inflow = 0;
       for (const a of own.values()) inflow += a;
-      (report.pondInflowDetail ??= []).push(`pool ${po.pool} outlet ${nR + po.outlet}: ${[...into].map((q) => `${nR + q} A ${streams[q].area[streams[q].area.length - 1].toFixed(1)} + lost ${(lostArea.get(q) ?? 0).toFixed(1)}${tribOf.has(q) ? ` (cut from ${nR + tribOf.get(q)!.to}: ${tribOf.get(q)!.rule})` : ''}`).join(', ')} -> ${inflow.toFixed(1)} (built with ${po.a0.toFixed(1)})`);
+      (report.pondInflowDetail ??= []).push(`pool ${po.pool} outlet ${nR + po.outlet}: ${[...into].map((q) => `${nR + q} A ${streams[q].area[streams[q].area.length - 1].toFixed(1)} + lost ${(lostArea.get(q) ?? 0).toFixed(1)}${lostGain[q] > 0.05 && Math.abs(lostGain[q] - (lostArea.get(q) ?? 0)) > 0.05 ? ` (counted +${lostGain[q].toFixed(1)}: own + lost against what joined it)` : ''}${tribOf.has(q) ? ` (cut from ${nR + tribOf.get(q)!.to}: ${tribOf.get(q)!.rule})` : ''}`).join(', ')} -> ${inflow.toFixed(1)} (built with ${po.a0.toFixed(1)})`);
       const delta = Math.max(1, inflow) - po.a0;
       if (!(Math.abs(delta) > 1e-9)) continue;
       let L = streams[po.outlet];
