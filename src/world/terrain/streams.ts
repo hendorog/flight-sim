@@ -90,8 +90,8 @@ const POND_DROP = 0.5;
 /** A stream stopped beside water over its own runs in to it from within this many raster steps (joinBeside). */
 const JOIN_REACH = 8;
 /** A stream whose every way into the pond it filled crosses its own course is cut back into the pond by at most this
- * much of its course, m (and half of it). */
-const CUT_BACK = 3000;
+ * much of its course, m (and half of it): less than moved.py's 0.5 km, so no f3 course is lost to it. */
+const CUT_BACK = 450;
 /** A trace in a hollow on the threshold hillslopes follows their routing down at most this many raster steps. */
 const PASS_WALK = 400;
 /** A chain stream's samples between two of its points take the points' ground where the routing ground there is the
