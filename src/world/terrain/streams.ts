@@ -1751,10 +1751,10 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     report.continued = conts.length;
   }
   /** Whether a straight reach from stream st's end to (tn, te) crosses its own course. */
-  const crossesOwn = (st: StreamLine, tn: number, te: number, upTo = -1): boolean => {
+  const crossesOwn = (st: StreamLine, tn: number, te: number, upTo = -1, skip = 2): boolean => {
     const m0 = upTo >= 0 ? upTo : st.north.length - 1;
     const ax = st.east[m0], ay = st.north[m0];
-    for (let i = 0; i + 2 < m0; i++) {
+    for (let i = 0; i + skip < m0; i++) {
       const cx = st.east[i], cy = st.north[i], dx = st.east[i + 1], dy = st.north[i + 1];
       if (Math.max(cx, dx) < Math.min(ax, te) - 1 || Math.min(cx, dx) > Math.max(ax, te) + 1 || Math.max(cy, dy) < Math.min(ay, tn) - 1 || Math.min(cy, dy) > Math.max(ay, tn) + 1) continue;
       const d1 = (te - ax) * (cy - ay) - (tn - ay) * (cx - ax);
@@ -2060,7 +2060,8 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
               const tn = ORIGIN + Math.floor(q / R) * LAKE_RASTER;
               const te = ORIGIN + (q % R) * LAKE_RASTER;
               const d = Math.hypot(tn - st.north[i], te - st.east[i]);
-              if (d < bd && !crossesOwn(st, tn, te, i)) {
+              // (Against every segment but the one into sample i: the reach in may not hook back across its last ones.)
+              if (d < bd && !crossesOwn(st, tn, te, i, 1)) {
                 bd = d;
                 bq = q;
               }

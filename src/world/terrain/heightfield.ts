@@ -982,12 +982,6 @@ const BANK_HEIGHT = 1.3;
  * Cross-section of the river valley about its axis: height above the river's water level at distance d. The flat
  * floodplain (the meander belt) rises a little toward its edges, then the valley walls steepen with distance.
  */
-/** A perched river's floodplain is filled up to its floor at most this much, m, and the fill comes off over this far
- * beyond the floodplain's edge, m (carveNetwork). */
-const FLOOD_FILL = 40;
-const FLOOD_FILL_FADE = 120;
-/** ... leaving this much of the dip (a floodplain carved a little under its floor, as smin does, stays as it was), m. */
-const FLOOD_SLACK = 2;
 function valleyProfile(d: number, floodplain: number): number {
   if (d < floodplain) return BANK_HEIGHT + 1.2 * smooth(0.5 * floodplain, floodplain, d);
   const b = d - floodplain;
@@ -1143,13 +1137,6 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     const t = clamp((d - f) / I, 0, 1);
     // (Where the ground stands as the threshold hillslopes' walls, they are only lowered: wallLift.)
     let carved = smin(h, wallLift(v.level + valleyProfile(d, f) + excess * t * t, h, (d - f) / I, I, v.gap, wallHere, wallStart(f, I, v.swing)), 4);
-    // (A seeded world's river held over its floor - the ground beside it lower than its water, perched: its floodplain
-    // is the river's own ground, built up to it (the cut signed: filled where under the floor, as cut where over it), at
-    // most FLOOD_FILL m and to FLOOD_SLACK under it, out to the floodplain's edge and off over FLOOD_FILL_FADE beyond.)
-    if (SEEDED && dryS && v.level > 0.5 && d < f + FLOOD_FILL_FADE) {
-      const need = v.level + valleyProfile(Math.min(d, f), f) - carved - FLOOD_SLACK;
-      if (need > 0) carved += Math.min(need, FLOOD_FILL) * (1 - smooth(f, f + FLOOD_FILL_FADE, d));
-    }
     if (hold > 0) carved += hold * Math.max(0, Math.min(h, holdLevel + 0.5) - carved);
     h += (carved - h) * (1 - smooth(f + I * 0.75, f + I, d));
   }
