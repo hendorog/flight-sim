@@ -850,6 +850,15 @@ Outlets after the fix:
 
 No course moved.
 
+**602's outlet is over the plan's f3 reference (≤ 50 km²).** It reads 70.1 km², made up of:
+- 6.1 km² at the stub's head;
+- 20.5 km² from the tributaries that now end at the stub;
+- 43.5 km² lost to the pond: the head's lattice catchment ramped in (about 38 km²) plus 11.4 km² of LATERAL_GAIN along a
+  5.7 km course that wound about within 1.3 km of its head.
+
+That lateral gain probably over-counts what the hollow drains. Whether a drowned course's gain should count as pond
+inflow at all is open. 716's head catchment counts the same way and lands on the plan's reference (50.9 against ≤ 51).
+
 **2. No loop through a lake (`671eaf2`).** The guard excluded only lines, so a pond's outlet could still end in a lake
 whose own outlet fills the pond. Seed 1: lake 48's outlet 434 fills pond 79 (2.5 m over lake 48), and pond 79's outlet
 2178 ran back into lake 48.
