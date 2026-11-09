@@ -18,6 +18,6 @@ python3 out/fs/tools2/moved.py out/fs/lines-f3 out/fs/lines-$T > $O/moved.log
 echo BATTERY-DONE >> $O/gates.out
 if [ "$2" = suite ]; then
   timeout 5400 npx vitest run --no-file-parallelism tests/terrain tests/world tests/era tests/career > $O/suite.log 2>&1
-  timeout 2400 npx vitest run tests/career/landmarks.test.ts tests/career/system.test.ts tests/terrain/airfields.test.ts tests/terrain/seededWorld.test.ts tests/terrain/bedrock.test.ts tests/terrain/waterFlow.test.ts --testTimeout=120000 2>&1 | grep -E "Test Files|Tests  " > $O/suite-longtimeout.log
+  timeout 2400 npx vitest run tests/career/landmarks.test.ts tests/career/system.test.ts tests/terrain/airfields.test.ts tests/terrain/seededWorld.test.ts tests/terrain/bedrock.test.ts tests/terrain/waterFlow.test.ts tests/terrain/steepWater.test.ts --testTimeout=120000 2>&1 | grep -E "Test Files|Tests  " > $O/suite-longtimeout.log
 fi
 echo ALL-DONE >> $O/gates.out

@@ -1,0 +1,7 @@
+medians of 3 alone (total ms / streams ms), seeds 42 / 1 / 777777
+base        s42: 4117 / 566 | s1: 3978 / 541 | s777777: 4086 / 594
+tree-final  s42: 4198 / 581 | s1: 4016 / 573 | s777777: 4134 / 627
+tree-U      s42: 4176 / 570 | s1: 4023 / 572 | s777777: 4178 / 625
+delta tree-final vs base: s42: total +81, streams +15 | s1: total +38, streams +32 | s777777: total +48, streams +33
+delta tree-U vs base: s42: total +59, streams +4 | s1: total +45, streams +31 | s777777: total +92, streams +31
+delta tree-U vs tree-final: s42: total -22 | s1: total +7 | s777777: total +44
