@@ -92,7 +92,10 @@ a chop to idle never flames out (the minimum-flow stop sits above the lean blow-
 
 **Free power turbine.** Torque = (gas power / design speed) × (a − (a−1)·Np/Np_design), where
 a = `stallTorqueRatio` (about 2). This gives the most torque with the turbine stalled and the map power at its
-design speed. The PT and gearbox friction is a constant plus a part per rpm.
+design speed. The PT and gearbox friction is a constant plus a part per rpm. With `powerTurbine.runaway` the speed where the torque falls to
+zero is a table against corrected Ng instead of a/(a−1) of the design speed: torque = (gas power / design speed) ×
+(a²/((a−1)·r))·(1 − w/r), w = Np/Np_design, r the runaway speed. It agrees with the fixed law at r = a/(a−1), keeps the
+turbine's best power at the map's, and goes negative above r (the windmilling propeller driving the turbine).
 
 **Topping governor.** Above `topping.np` × design speed it takes Ng off the set point. This is the backup for a
 failed propeller governor.
@@ -243,10 +246,11 @@ passes 20 psi; the limit is the helix twist, whose inner third stays at a positi
    shaft; the valve takes the blades through it in about 0.4 s and the topping reset holds Np.
 6. **Torque limiter dynamics.** The cap is the steady solution (no pneumatic lag); transients overshoot only by the
    gas generator's fuel ratio. The MOR and the limiter's failure modes are not modelled.
-7. **Power-turbine characteristic** — open (T2 request). The power turbine's stall-torque law is fixed, so a lightly
-   loaded free turbine cannot show its low runaway speed at idle; the MD 500E carries a 20 kW power-turbine loss
-   (instead of the gear train's 4-5 kW) to hold both ground idle (N2 59 %) and an unloaded idle N2 below the set
-   point. A characteristic that depends on gas power would let that loss come down.
+7. **Power-turbine characteristic** — available, used by the PC-12 only. `powerTurbine.runaway` (optional) gives the
+   runaway speed against corrected Ng; below it the torque is linear in speed with the map's best power, beyond it
+   negative (the propeller drives the turbine: the drag of a PT6 at flight idle in flight; docs/pc12-flight-model.md
+   "Idle runaway"). Without it the fixed stall-torque law, unchanged. Not yet applied: the C208 (the same shallow
+   idle descent) and the MD 500E, whose 20 kW power-turbine loss stands in for a low idle runaway.
 
 ## Not modelled yet (next steps)
 
