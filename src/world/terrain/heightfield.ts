@@ -1376,22 +1376,49 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
   return h;
 }
 
+/** FIELD_CHANNEL: a stream's banks cut again through an airfield's blend rise at this slope (keepChannels). */
+const FIELD_BANK_SLOPE = 0.35;
+/** ... and keeps the ground over another stream's water this far beyond it (keepChannels), m. */
+const FIELD_KEEP = 6;
 /**
- * FIELD_CHANNEL: the streams' channels (carveNetwork's bed and banks, kind 1) cut again into ground h an airfield's blend
- * into its flat has pulled towards the field's elevation, by `w` (none where the blend leaves the ground as carved, all
- * of it where it moved it by a metre or more). The blend's raised banks stand over the water (fieldUnder held it under
- * them); without this the blended bed did too, and the stream vanished under it. Not in a lake's domain.
+ * A stream's banks as cut again through an airfield's blend (keepChannels): its bed and low strip as streamBanks, then
+ * an earth bank rising at FIELD_BANK_SLOPE - no rock walls, ledges or buttresses, which are a gorge's. (streamBanks'
+ * walls cut into the blended ground, a mown field, showed as a row of pale scallops along seed 777777 line 720's far
+ * bank by KPMH, and as a V gully 30 m across at 734 under KHLT's approach.)
  */
-function keepChannels(north: number, east: number, h: number, w: number, out: TerrainSample): number {
-  if (!(w > 0) || maskLevel > -Infinity) return h;
+function fieldBanks(d: number, halfWidth: number, bed: number): number {
+  if (d < halfWidth) {
+    const t = d / halfWidth;
+    return -(0.5 + 0.2 * halfWidth) * (1 - t * t);
+  }
+  const b = d - halfWidth;
+  const bank = streamBankWidth(halfWidth, bed);
+  if (b < bank) return 0.5 * smooth(0, bank, b);
+  return 0.5 + FIELD_BANK_SLOPE * (b - bank);
+}
+
+/**
+ * FIELD_CHANNEL: the streams' channels (kind 1) cut again into ground h an airfield's blend into its flat (weight k
+ * towards its elevation E) has pulled towards the field's elevation: carveNetwork's bed, then earth banks (fieldBanks).
+ * The blend's raised banks stand over the water (fieldUnder held it under them, fieldOver raised it under them);
+ * without this the blended bed did too, and the stream vanished under it. By how far the blend moved the ground at the
+ * stream's water ((1 - k) |E - level|, smooth along the stream): none where it leaves it, all of it from a metre. Not in
+ * a lake's domain.
+ */
+function keepChannels(north: number, east: number, h: number, k: number, E: number, out: TerrainSample): number {
+  if (!(k < 1) || maskLevel > -Infinity) return h;
   const net = presentHydro.network as NonNullable<Hydrology['network']>;
   const nc = net.channels(north, east, channelNear);
   let keep1 = -Infinity;
   let keep2 = -Infinity;
   let keepLine = -1;
+  // (Its cut keeps the ground over another channel's water only on that channel's own banks, FIELD_KEEP m beyond its
+  // water: with earth banks either side the ground between two streams stands over both. carveNetwork's reach, CHANNEL_BANK
+  // + 20 m, held the ground over a stream the raise left lower - 1727 beside 734 under KHLT - to the other's water, a
+  // wall at its edge.)
   for (let q = 0; q < nc; q++) {
     const o = channelNear[q];
-    if (!(o.dist < o.halfWidth + CHANNEL_BANK + 20)) continue;
+    if (!(o.dist < o.halfWidth + FIELD_KEEP)) continue;
     const v = o.level + BANK_HEIGHT;
     if (v > keep1) {
       keep2 = keep1;
@@ -1400,6 +1427,7 @@ function keepChannels(north: number, east: number, h: number, w: number, out: Te
     } else if (v > keep2) keep2 = v;
   }
   let cut = h;
+  let w = 0;
   for (let j = 0; j < nc; j++) {
     const c = channelNear[j];
     if (c.kind !== 1) continue;
@@ -1408,9 +1436,10 @@ function keepChannels(north: number, east: number, h: number, w: number, out: Te
     if (hw <= 0.3) continue;
     const keep = keepLine === c.line ? keep2 : keep1;
     const kb = 0.5 + 0.3 * hw;
-    if (d < hw || c.level + 0.4 * (d - hw - 2.1 * streamBankWidth(hw, c.bed)) - 4 < cut + kb) {
-      const banks = smin(cut, c.level + streamBanks(d, hw, c.bed, c.s, c.side, c.line), kb);
+    if (d < hw || c.level + 0.3 * (d - hw - streamBankWidth(hw, c.bed)) - 4 < cut + kb) {
+      const banks = smin(cut, c.level + fieldBanks(d, hw, c.bed), kb);
       cut = d > hw ? Math.max(Math.min(cut, keep), banks) : banks;
+      w = Math.max(w, smooth(0.1, 1, (1 - k) * Math.abs(E - c.level)));
     }
   }
   h += (Math.min(cut, h) - h) * w;
@@ -1572,7 +1601,6 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
 
   // A generated field: its approaches kept low and clear the same way (shorter and narrower), then its flat area.
   let gBlend = 1;
-  const hCarved = h;
   if (gf) {
     const gBeyond = Math.abs(gAlong) - gf.length / 2;
     if (gBeyond > 0 && gBeyond < gf.approachLength) {
@@ -1594,7 +1622,7 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
   out.ground = ELEV + (h - ELEV) * blend;
   // (A seeded world's streams keep their channels through the blends, where the blends moved the ground as carved:
   // FIELD_CHANNEL.)
-  if (FIELD_CHANNEL && presentHydro.network && out.airportBlend < 1) out.ground = keepChannels(north, east, out.ground, smooth(0.1, 1, Math.abs(out.ground - hCarved)), out);
+  if (FIELD_CHANNEL && presentHydro.network && out.airportBlend < 1) out.ground = gf && gBlend < blend ? keepChannels(north, east, out.ground, gBlend, gf.elevation, out) : keepChannels(north, east, out.ground, blend, ELEV, out);
   return out;
 }
 
