@@ -70,6 +70,9 @@ const RAISE_DEPTH = 1.2;
 const RAISE_BANK = 2;
 const RAISE_SIDE = 25;
 const STEEP_NARROW = [0.05, 0.2];
+/** Round T repairs: a stream's water where it runs into standing water (a lake, a pond) stands at the water's surface,
+ * not under it (riverNetwork.ts, after the pitches): see "Into standing water". */
+const AT_THE_SURFACE = true;
 /** ... not over its last this much, m (into its mouth). */
 const STEEP_MOUTH = 150;
 /** A hanging valley's lip lies where the alpine uplift (seededLayout.ts) is over this: high in the ranges. */
@@ -1151,6 +1154,103 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     if (levelProbe.on) for (let li = 0; li < nR; li++) levelProbe.on('pitch', li, allLines[li]);
   }
   tPhase.push(performance.now());
+  // --- Into standing water (AT_THE_SURFACE): where a stream runs into a lake or pond (LakeMask's domain), its water
+  // there stands at the lake's surface - no channel cut, nor breach, under the lake's bed - and on the way in, where
+  // its water ran under that surface (a filled hollow's stream kept the level it was traced at in the hollow's notch;
+  // a tributary re-joined straight to its filler's stub), it is held up to it: the lake backs up its channel. (Seed 1
+  // pond 602: line 1853 ran 12 m under the pond's surface in a trench 14 m deep through the shore, its water a wall
+  // against the lake's.) Then the same backwater up any stream joining a reach so raised, under its water. Only where
+  // its banks hold the lake's level (RAISE_BANK over the lower, as the raise above): a stream whose valley runs under
+  // the lake's level beside it (a pond the stream pass filled on its routing ground, standing over the drawn ground the
+  // stream runs in - seed 777777 line 1814, 54 m) is not raised over its banks; it keeps its level up to the water
+  // (`blocked`). Not an outlet's head in its own lake, nor the rivers. Falls and pitches left on a reach now level are
+  // taken off.
+  const surfaceReport = { lines: 0, raised: 0, km: 0, falls: 0, blocked: 0, blockedStep: 0 };
+  if (AT_THE_SURFACE) {
+    const raisedLine = new Uint8Array(allLines.length);
+    const lift = (c: LineArrays, li: number, i: number, to: number, inside: boolean): void => {
+      const up = to - c.level[i];
+      if (!(up > 0) && !inside) return;
+      if (up > 0) c.level[i] = to;
+      c.cut[i] = inside ? 0 : Math.max(0, c.cut[i] - Math.max(0, up));
+      c.breach[i] = inside ? 0 : Math.min(c.breach[i], breachOfCut(c.cut[i]));
+      const p = pitchOf[li];
+      if (p) p.on[i] = 0;
+      if (!(up > 0.01)) return;
+      if (!raisedLine[li]) surfaceReport.lines++;
+      raisedLine[li] = 1;
+      surfaceReport.raised++;
+      if (i > 0) surfaceReport.km += (c.s[i] - c.s[i - 1]) / 1000;
+    };
+    /** Whether sample k's banks hold water at `to`: the lower of the natural ground either side, its half-width and
+     * RAISE_SIDE off its course, no more than RAISE_BANK under it (or in the lake's domain). */
+    const holds = (c: LineArrays, li: number, k: number, to: number): boolean => {
+      const m = c.level.length;
+      const a = Math.max(0, k - 1);
+      const b = Math.min(m - 1, k + 1);
+      const tn = c.north[b] - c.north[a];
+      const te = c.east[b] - c.east[a];
+      const tl = Math.hypot(tn, te) || 1;
+      const off = channelHalfWidth(channelArea[li][k]) + RAISE_SIDE;
+      // (A bank in the lake's domain holds: the lake's water stands there anyway.)
+      const bank = (pn: number, pe: number): number => (mask.at(pn, pe) > -Infinity ? Infinity : natural(pn, pe));
+      const left = bank(c.north[k] - (te / tl) * off, c.east[k] + (tn / tl) * off);
+      const right = bank(c.north[k] + (te / tl) * off, c.east[k] - (tn / tl) * off);
+      return to <= Math.min(left, right) + RAISE_BANK;
+    };
+    /** Upstream from sample i - 1 while the water stands under `to`: held up to it, the whole reach or none of it
+     * (water may not run uphill) - none where a bank on it would not hold `to`. Whether it was. */
+    const backwater = (c: LineArrays, li: number, i: number, to: number): boolean => {
+      let k0 = i - 1;
+      while (k0 >= 0 && c.level[k0] < to) k0--;
+      for (let k = i - 1; k > k0; k--) if (!holds(c, li, k, to)) {
+        surfaceReport.blocked++;
+        surfaceReport.blockedStep = Math.max(surfaceReport.blockedStep, to - c.level[i - 1]);
+        return false;
+      }
+      for (let k = i - 1; k > k0; k--) lift(c, li, k, to, false);
+      return true;
+    };
+    for (let li = nR; li < allLines.length; li++) {
+      const c = allLines[li] as unknown as LineArrays;
+      const st = traced.streams[li - nR];
+      const m = c.level.length;
+      // (Its mouth on a reach the pass raised: under the receiver's water now, it backs up.)
+      const j = joinsOf(li);
+      if (j >= nR && raisedLine[j]) {
+        const mouth = levelOn(allLines[j], joinSOf(li));
+        if (c.level[m - 1] < mouth - 0.01 && holds(c, li, m - 1, mouth) && backwater(c, li, m - 1, mouth)) lift(c, li, m - 1, mouth, false);
+      }
+      let i = 0;
+      // (An outlet's head in its own lake keeps its lake's level.)
+      if (st.pool >= 0) while (i < m && mask.at(c.north[i], c.east[i]) > -Infinity) i++;
+      let wasIn = i > 0;
+      // (Whether the run of samples in the water it is on came in at the surface: a run whose backwater is blocked
+      // keeps its levels, which may not rise downstream.)
+      let runOk = true;
+      for (; i < m; i++) {
+        const lv = mask.at(c.north[i], c.east[i]);
+        const inside = lv > -Infinity;
+        if (inside && !wasIn) runOk = c.level[i] >= lv - 0.01 || backwater(c, li, i, lv);
+        if (inside && runOk) {
+          const to = i > 0 ? Math.min(lv, c.level[i - 1]) : lv;
+          lift(c, li, i, Math.max(c.level[i], to), true);
+        }
+        wasIn = inside;
+      }
+    }
+    // (A fall or a lip whose drop the pass took away.)
+    const keepFall = (f: Fall): boolean => !raisedLine[f.line] || allLines[f.line].level[f.index] - allLines[f.line].level[Math.min(allLines[f.line].level.length - 1, f.index + 1)] > 0.5;
+    const kept = falls.filter(keepFall);
+    surfaceReport.falls = falls.length - kept.length;
+    falls.length = 0;
+    falls.push(...kept);
+    for (let li = nR; li < allLines.length; li++) {
+      if (!raisedLine[li]) continue;
+      const lv = allLines[li].level;
+      lipsOf[li] = lipsOf[li].filter((k) => lv[k] - lv[Math.min(lv.length - 1, k + 1)] > 0.5);
+    }
+  }
   // A stream's carved floor is its bed: no broad breach (a floor worn through a rim) but at a lake's outlet; where its
   // water runs well under the ground (a sill, a gorge below a fall) the notch is its bed's width (streams.ts bedWidth).
   for (let li = nR; li < allLines.length; li++) {
@@ -1195,6 +1295,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const streamReport: StreamReport = traced.report;
   streamReport.shape = shapeReport;
   streamReport.pitch = pitchReport;
+  (streamReport as unknown as { surface?: typeof surfaceReport }).surface = surfaceReport;
 
   // --- Indexes: every cell lists the segments (line, index) that can reach a point in it (the valley index above:
   // each axis segment is listed out to the largest reach of the segments near it along the river, as the query takes

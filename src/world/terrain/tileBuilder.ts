@@ -211,6 +211,10 @@ export function buildTile(req: TileRequest): TileData {
   const riverWidth = new Float64Array(n * n);
   const riverKnown = new Uint8Array(n * n);
   const approach = new Float64Array(n * n);
+  // (A seeded world's lake or pond: under its water no channel's bed, banks or bank trees are painted - its floor is
+  // silt, and a stream's painted bed showed through the water as a dark line across it: round T repairs, seed 1 pond
+  // 602's inflow.)
+  const lakeBed = !!hydrology.lakeMask;
   for (let gj = 0; gj < w; gj++) {
     const north = n0 + (gj - BORDER) * sp;
     for (let gi = 0; gi < w; gi++) {
@@ -234,7 +238,7 @@ export function buildTile(req: TileRequest): TileData {
             riverWidth[v] = riverScratch.halfWidth;
             riverKnown[v] = 1;
           }
-        } else if (Number.isFinite(sample.riverDist)) {
+        } else if (Number.isFinite(sample.riverDist) && !(lakeBed && sample.standing > 0.5 && sample.standing > sample.ground && !(sample.river > sample.ground))) {
           riverSigned[v] = sample.riverSigned;
           riverWidth[v] = sample.riverHalfWidth;
           riverKnown[v] = 1;
