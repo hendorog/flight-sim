@@ -1378,6 +1378,9 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
 
 /** FIELD_CHANNEL: a stream's banks cut again through an airfield's blend rise at this slope (keepChannels). */
 const FIELD_BANK_SLOPE = 0.35;
+/** ... cutting the ground down to it fully this far beyond its low strip, the cut fading out over twice as far
+ * (keepChannels), m. */
+const FIELD_BANK_WIDTH = 8;
 /** ... and keeps the ground over another stream's water this far beyond it (keepChannels), m. */
 const FIELD_KEEP = 6;
 /**
@@ -1437,7 +1440,12 @@ function keepChannels(north: number, east: number, h: number, k: number, E: numb
     const keep = keepLine === c.line ? keep2 : keep1;
     const kb = 0.5 + 0.3 * hw;
     if (d < hw || c.level + 0.3 * (d - hw - streamBankWidth(hw, c.bed)) - 4 < cut + kb) {
-      const banks = smin(cut, c.level + fieldBanks(d, hw, c.bed), kb);
+      // (The cut fades out beyond FIELD_BANK_WIDTH, meeting the ground as it slopes away: carried on at 0.35 it cut a
+      // hillside 75 m off 720's SE reach, and along a winding course - the nearest segment's level changing from one
+      // segment to the next - as a row of teeth.)
+      const fade = 1 - smooth(FIELD_BANK_WIDTH, 3 * FIELD_BANK_WIDTH, d - hw - streamBankWidth(hw, c.bed));
+      if (!(fade > 0)) continue;
+      const banks = cut + (smin(cut, c.level + fieldBanks(d, hw, c.bed), kb) - cut) * fade;
       cut = d > hw ? Math.max(Math.min(cut, keep), banks) : banks;
       w = Math.max(w, smooth(0.1, 1, (1 - k) * Math.abs(E - c.level)));
     }
