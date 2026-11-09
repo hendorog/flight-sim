@@ -25,7 +25,7 @@
 // vector to the nearest line point, the distance to it, and the line's size there: interpolating the vector is exact
 // across a straight line, so the shader draws lines far narrower than a texel without stair-steps (RillSystem.ts).
 
-import { hydrology, makeSample, sampleTerrain, snowShiftM, type TerrainSample } from './heightfield';
+import { hydrology, makeSample, sampleTerrain, slopeRouteDelta, snowShiftM, type TerrainSample } from './heightfield';
 import type { FlowHit } from './hydrology';
 import { gnoise } from './noise';
 import { gullyNear, gullyNet, inV, type GullyHit } from './gullies';
@@ -63,6 +63,8 @@ const AREA_R = 44;
 /** A pit spills to the first lower cell a flood from it reaches within SPILL_R cells rising at most SPILL_D m. */
 const SPILL_R = 10;
 const SPILL_D = 2;
+/** Corner-cutting passes over a spill's way (rillSegments). */
+const SPILL_ROUND = 3;
 /** A line goes on this many cells below the last cell that starts one (its catchment near it big and converging
  * enough), narrowing out: a rill running out onto an even slope or a fan fades there rather than running on as one of
  * many parallel lines. Looked for up the flow through neighbouring cells only. */
@@ -204,6 +206,8 @@ export interface RillGraph {
   /** Where a line's water meets the network: the point on the channel's centreline (or the cell). */
   endE: Map<number, number>;
   endN: Map<number, number>;
+  /** A pit's way over its spill to its receiver (the flood's cells, the receiver last). */
+  spill: Map<number, number[]>;
 }
 
 const scratch: TerrainSample = makeSample();
@@ -260,7 +264,8 @@ export function traceRillGraph(gx0: number, gy0: number, nx: number, ny: number,
             sampleTerrain(north, east, s);
             const i = y * BLOCK + x;
             b.ground[i] = s.ground;
-            b.route[i] = s.ground + RILL_TUNE.noise * (gnoise(east / ROUTE_WAVE + 31.7, north / ROUTE_WAVE - 12.3) + 0.5 * gnoise((3 * east) / ROUTE_WAVE - 7.1, (3 * north) / ROUTE_WAVE + 4.9));
+            // (Routed over the threshold hillslopes' fall lines, not the grid's facets: slopeRouteDelta.)
+            b.route[i] = s.ground + slopeRouteDelta(north, east) + RILL_TUNE.noise * (gnoise(east / ROUTE_WAVE + 31.7, north / ROUTE_WAVE - 12.3) + 0.5 * gnoise((3 * east) / ROUTE_WAVE - 7.1, (3 * north) / ROUTE_WAVE + 4.9));
             // (An airfield's flattened ground ends a line too: drained, not drawn.)
             if (s.standing > s.ground || s.river > s.ground || s.riverDist <= s.riverHalfWidth + NET_MARGIN || s.airportBlend < 1) b.net[i] = 1;
           }
@@ -286,6 +291,9 @@ export function traceRillGraph(gx0: number, gy0: number, nx: number, ny: number,
   // Steepest descent over the routing ground; pits spill over a bounded flood.
   const to = new Int32Array(N);
   const stamp = new Int32Array(N);
+  const parent = new Int32Array(N);
+  /** A pit's way over its spill: the flood's cells from the pit to its target (the target last, the pit not held). */
+  const spill = new Map<number, number[]>();
   let stampNo = 0;
   const open: number[] = [];
   for (let i = 0; i < N; i++) {
@@ -328,6 +336,11 @@ export function traceRillGraph(gx0: number, gy0: number, nx: number, ny: number,
       open.pop();
       if (route[c] < h) {
         target = c;
+        // (The way there, back through the flood.)
+        const way: number[] = [];
+        for (let q = c; q !== i; q = parent[q]) way.push(q);
+        way.reverse();
+        spill.set(i, way);
         break;
       }
       if (route[c] > h + SPILL_D) continue;
@@ -340,6 +353,7 @@ export function traceRillGraph(gx0: number, gy0: number, nx: number, ny: number,
         const j = yy * nx + xx;
         if (stamp[j] === stampNo) continue;
         stamp[j] = stampNo;
+        parent[j] = c;
         open.push(j);
       }
     }
@@ -487,7 +501,7 @@ export function traceRillGraph(gx0: number, gy0: number, nx: number, ny: number,
     stats.msGround += t1 - t0;
     stats.msTrace += t2 - t1;
   }
-  return { gx0, gy0, nx, ny, ground, net, to, cells, areaR, persist, main, toSink, endE, endN };
+  return { gx0, gy0, nx, ny, ground, net, to, cells, areaR, persist, main, toSink, endE, endN, spill };
 }
 
 /** A cell's size code: its near catchment (plus `extra` cells), fading below the last cell that starts its line and
@@ -725,6 +739,39 @@ export function rillSegments(g: RillGraph, x0: number, y0: number, x1: number, y
     wE.set(i, se / sw);
     wN.set(i, sn / sw);
   };
+  /** A pit's spill drawn along the flood's way over it (its cells' centres, cut round in SPILL_ROUND passes), not as a
+   * straight chord from the pit to where it comes down: the water winds over the low ground between. */
+  const pushWay = (o: RillSegment[], ea: number, na: number, way: number[], eb: number, nb: number, sa: number, sb: number): void => {
+    let pe: number[] = [ea];
+    let pn: number[] = [na];
+    for (let k = 0; k < way.length - 1; k++) {
+      pe.push(E(way[k]));
+      pn.push(Nn(way[k]));
+    }
+    pe.push(eb);
+    pn.push(nb);
+    // (Chaikin's corner cutting, the ends kept.)
+    for (let pass = 0; pass < SPILL_ROUND && pe.length > 2; pass++) {
+      const qe: number[] = [pe[0]];
+      const qn: number[] = [pn[0]];
+      for (let k = 0; k < pe.length - 1; k++) {
+        if (k > 0) {
+          qe.push(0.75 * pe[k] + 0.25 * pe[k + 1]);
+          qn.push(0.75 * pn[k] + 0.25 * pn[k + 1]);
+        }
+        if (k < pe.length - 2) {
+          qe.push(0.25 * pe[k] + 0.75 * pe[k + 1]);
+          qn.push(0.25 * pn[k] + 0.75 * pn[k + 1]);
+        }
+      }
+      qe.push(pe[pe.length - 1]);
+      qn.push(pn[pn.length - 1]);
+      pe = qe;
+      pn = qn;
+    }
+    const L = pe.length - 1;
+    for (let k = 0; k < L; k++) o.push({ e0: pe[k], n0: pn[k], e1: pe[k + 1], n1: pn[k + 1], s0: sa + ((sb - sa) * k) / L, s1: sa + ((sb - sa) * (k + 1)) / L });
+  };
   const out: RillSegment[] = [];
   for (let y = y0; y < y1; y++)
     for (let x = x0; x < x1; x++) {
@@ -738,12 +785,15 @@ export function rillSegments(g: RillGraph, x0: number, y0: number, x1: number, y
         const r = root(j);
         if (r !== i && hider(r) < 0) j = r;
       }
+      const way = j === to[i] && !near(i, j) ? g.spill.get(i) : undefined;
       if (j >= 0 && chan[j]) {
         wide(j);
-        out.push({ e0: wE.get(i)!, n0: wN.get(i)!, e1: wE.get(j)!, n1: wN.get(j)!, s0, s1: sizeAt(j) });
+        if (way) pushWay(out, wE.get(i)!, wN.get(i)!, way, wE.get(j)!, wN.get(j)!, s0, sizeAt(j));
+        else out.push({ e0: wE.get(i)!, n0: wN.get(i)!, e1: wE.get(j)!, n1: wN.get(j)!, s0, s1: sizeAt(j) });
       } else if (j >= 0 && g.net[j]) {
         // Into the network: on to the channel's centreline (or the lake's cell).
-        out.push({ e0: wE.get(i)!, n0: wN.get(i)!, e1: atE(j), n1: atN(j), s0, s1: s0 });
+        if (way) pushWay(out, wE.get(i)!, wN.get(i)!, way, atE(j), atN(j), s0, s0);
+        else out.push({ e0: wE.get(i)!, n0: wN.get(i)!, e1: atE(j), n1: atN(j), s0, s1: s0 });
       }
     }
   if (stats) stats.msLines += performance.now() - t0;

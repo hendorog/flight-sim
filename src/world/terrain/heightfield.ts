@@ -20,7 +20,7 @@ import { breachWall } from './streams';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth, type Drainage } from './drainage';
 import { gullyNetOf, setGullyNet } from './gullies';
-import { attachSlopes, buildErosion, CUT_CELL as CUT_CELL_M, CUT_N, erosionGullies, upsample, markCourse, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
+import { attachSlopes, buildErosion, CUT_CELL as CUT_CELL_M, CUT_N, erosionGullies, upsample, markCourse, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, slopeSmoothDelta, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
 import { buildNetworkHydrology, valleyInfluence, wallLift, wallStart } from './riverNetwork';
 import { riverCore, slopeKey, slopeParams, thresholdSlopes, type SlopeField } from './hillslopes';
 import { structParams, structureFor } from './structure';
@@ -870,6 +870,11 @@ function slopePinned(north: number, east: number): number {
   if (!erosion || !erosion.slopes) return 0;
   sampleErosion(erosion, north, east, pinAt);
   return Math.min(1, pinAt.mg * pinAt.ch * 2);
+}
+/** The threshold hillslopes' ground smoothed less as drawn (erosion.ts slopeSmoothDelta), m: 0 without them. */
+export function slopeRouteDelta(north: number, east: number): number {
+  if (!erosion || !erosion.slopes) return 0;
+  return slopeSmoothDelta(erosion, north, east);
 }
 /** How far the ground stands as the threshold hillslopes' walls (lastWall), for riverNetwork.ts's carve. */
 function slopeWall(north: number, east: number): number {

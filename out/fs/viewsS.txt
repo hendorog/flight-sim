@@ -1,0 +1,5 @@
+floor seed=42&camPos=-12600,-40800,1300&camLook=-13600,-41700,600
+wind seed=42&camPos=-11700,-40700,1000&camLook=-12718,-41720,600
+face seed=42&camPos=-11500,-40200,1050&camLook=-13500,-42300,550
+foot seed=42&camPos=-12900,-42300,950&camLook=-13450,-41650,680
+fields seed=42&camPos=-12300,-42400,950&camLook=-12900,-41500,690

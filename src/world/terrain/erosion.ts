@@ -55,7 +55,7 @@ export interface SteadyParams {
  */
 export const STEADY: SteadyParams = { iterations: 30, ridge: 400, m: 0.6, sc: 0.45, grade: 0.06 };
 /** Bump when the model or its inputs change meaning: part of the cache key (macroCache.ts). */
-export const MODEL_VERSION = 'ss5';
+export const MODEL_VERSION = 'ss6';
 
 /** Catchment, cells, from which a diagonal step of a channel lowers the cells beside it. */
 const CORNER_AREA = 10;
@@ -840,6 +840,25 @@ export function sampleErosion(f: Pick<ErosionField, 'delta' | 'base' | 'carve' |
       if (out.ch > 0) out.hs += out.ch * (bilinear(sl.h, CUT_N, fy, fx) - out.hs);
     }
   }
+}
+
+/**
+ * The threshold hillslopes' ground (hillslopes.ts) smoothed - its B-spline over the fine grid's nodes - less the ground
+ * the terrain draws from it (sampleErosion: Catmull-Rom, bilinear along the channels), by the weight the terrain takes
+ * it, m. The drawn ground follows the 250 m grid: a valley turns at its nodes in 45 degree steps, and beside a channel
+ * the bilinear cells are planes facing along the grid's rows and columns. Water routed over the drawn ground plus this
+ * runs down the slopes' own fall lines and round their valleys' bends as curves (rills.ts). 0 off the slopes.
+ */
+const smoothAt: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, m: 0, hs: 0, ch: 0, mg: 0, mw: 0, north: 0, east: 0 };
+export function slopeSmoothDelta(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'course' | 'courseAny' | 'home' | 'valley' | 'slopes' | 'slopeAny'>, north: number, east: number): number {
+  const sl = f.slopes;
+  if (!sl || !f.slopeAny) return 0;
+  const fy = (north - DOMAIN_LO) / CUT_CELL;
+  const fx = (east - DOMAIN_LO) / CUT_CELL;
+  if (!(fy >= 1 && fx >= 1 && fy < CUT_N - 2 && fx < CUT_N - 2) || !f.slopeAny[cellAt(north, east)]) return 0;
+  sampleErosion(f, north, east, smoothAt);
+  if (!(smoothAt.m > 0)) return 0;
+  return smoothAt.m * (bspline(sl.h, CUT_N, fy, fx) - smoothAt.hs);
 }
 
 /**
