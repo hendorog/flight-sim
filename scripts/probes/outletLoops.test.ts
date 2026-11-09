@@ -4,6 +4,9 @@
 // whose last point lies in that pool's water. A loop: the outlet's way down (joins, then its receiver's joins, ...)
 // reaches one of them. For each loop, the filling line's area just above and below where the outlet's water comes back
 // in (the jump the loop adds), and the outlet's own area at its mouth.
+// Then any loop through lakes and ponds too (a pond's outlet into a lake whose outlet fills the pond): water-flow cycles in
+// the graph line -> the line it joins, line -> the pool its last point lies in, pool -> each line leaving it (first point
+// in it, last point not); every strongly connected part with more than one node is water going round.
 //   OL_SEEDS=1,42,777777,7 npx vitest run --config scripts/probes/vitest.config.ts outletLoops --silent=false
 import { it } from 'vitest';
 import { hydrology, terrainHeight } from '../../src/world/terrain/heightfield';
@@ -55,8 +58,74 @@ it('outlet loops', () => {
         x = L[x].joins ?? -1;
       }
     });
-    console.log(`seed ${seed}: outlets ${outlets}; loops ${loops.length}`);
+    // Cycles through lakes and ponds (Tarjan's strongly connected parts, iterative).
+    const nL = L.length;
+    const adj: number[][] = [];
+    const addE = (a: number, b: number): void => {
+      (adj[a] ??= []).push(b);
+    };
+    L.forEach((r, li) => {
+      const m = r.north.length - 1;
+      const j = r.joins ?? -1;
+      if (j >= 0) addE(li, j);
+      const pe = poolOf(r.north[m], r.east[m]);
+      const ph = (r.kind ?? 0) === 0 ? -1 : poolOf(r.north[0], r.east[0]);
+      if (pe >= 0 && pe !== ph) addE(li, nL + pe);
+      if (ph >= 0 && pe !== ph) addE(nL + ph, li);
+    });
+    const N = adj.length;
+    const idx = new Int32Array(N).fill(-1);
+    const low = new Int32Array(N);
+    const on = new Uint8Array(N);
+    const stack: number[] = [];
+    let counter = 0;
+    const cycles: number[][] = [];
+    for (let s0 = 0; s0 < N; s0++) {
+      if (idx[s0] >= 0 || !adj[s0]) continue;
+      const work: Array<[number, number]> = [[s0, 0]];
+      idx[s0] = low[s0] = counter++;
+      stack.push(s0);
+      on[s0] = 1;
+      while (work.length) {
+        const top = work[work.length - 1];
+        const v = top[0];
+        const es = adj[v] ?? [];
+        if (top[1] < es.length) {
+          const w = es[top[1]++];
+          if (idx[w] < 0) {
+            idx[w] = low[w] = counter++;
+            stack.push(w);
+            on[w] = 1;
+            work.push([w, 0]);
+          } else if (on[w]) low[v] = Math.min(low[v], idx[w]);
+        } else {
+          work.pop();
+          if (work.length) {
+            const u = work[work.length - 1][0];
+            low[u] = Math.min(low[u], low[v]);
+          }
+          if (low[v] === idx[v]) {
+            const comp: number[] = [];
+            let w: number;
+            do {
+              w = stack.pop()!;
+              on[w] = 0;
+              comp.push(w);
+            } while (w !== v);
+            if (comp.length > 1 || (adj[v] ?? []).includes(v)) cycles.push(comp);
+          }
+        }
+      }
+    }
+    const desc = (x: number): string => {
+      if (x >= nL) return `pool ${x - nL}`;
+      const r = L[x];
+      const m = r.north.length - 1;
+      return `line ${x} (${r.end ?? ''}, joins ${r.joins}, ${r.north[0].toFixed(0)},${r.east[0].toFixed(0)} lv ${r.level[0].toFixed(1)} to ${r.north[m].toFixed(0)},${r.east[m].toFixed(0)} lv ${r.level[m].toFixed(1)}, A ${(r.area?.[m] ?? 0).toFixed(1)})`;
+    };
+    console.log(`seed ${seed}: outlets ${outlets}; loops ${loops.length}; cycles through lakes and ponds ${cycles.length}`);
     if (loops.length) console.log(loops.join('\n'));
+    for (const c of cycles) console.log(`  cycle: ${c.map(desc).join(' <- ')}`);
   }
   setWorldSeed(0);
 });
