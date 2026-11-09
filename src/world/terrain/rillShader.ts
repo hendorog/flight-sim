@@ -140,6 +140,9 @@ if (tDist < ${f(RILL_FADE_FAR)}) {
     float bLaw = rillBedHalf(rl.y);
     float bMax = ${f(BAND_MAX)} * bLaw;
     float bStrength = mix(${f(ROCK_SMALL)}, 1.0, smoothstep(${f(ROCK_HW[0])}, ${f(ROCK_HW[1])}, rillWaterHalf(rl.y)));
+    // (Where its band is narrower than the pixel it fades out, rather than being spread over the pixel as a wider band.)
+    float bResolve = smoothstep(0.7, 2.5, 2.0 * bMax / tRillFp);
+    fade *= bResolve;
     float bh = min(bLaw * (0.8 + 0.25 * nD.g + 0.2 * nr.g) * mix(1.0, 1.6 * (0.4 + 1.2 * nr2), tRillSteep), bMax);
     float dr = rl.x + wob * mix(0.6, 1.2, tRillSteep) * bh;
     tRillBed = rillCover(dr, bh, fpA) * fade * mix(1.0, smoothstep(0.33, 0.5, nr2 + 0.3 * (nr.b - 0.5)), 0.9 * tRillSteep);
@@ -149,7 +152,7 @@ if (tDist < ${f(RILL_FADE_FAR)}) {
     tRillDamp = rillCover(rl.x + wob * 1.5 * bh, mh, fpA + 0.3 * mh) * fade * smoothstep(0.0, 0.04, lk) * mix(0.6, 1.0, smoothstep(0.0, 0.5, lk)) * bStrength;
     tRillBed *= bStrength;
     tRillWaterW = rillWaterHalf(rl.y);
-    tRillWet = rillCover(dr, tRillWaterW * (0.8 + 0.4 * nr.a), fpA) * fade;
+    tRillWet = rillCover(dr, tRillWaterW * (0.8 + 0.4 * nr.a), fpA) * fade * bStrength;
     // The channel is cut into the slope: its banks lean in toward the line (one lit, one shaded), out to a notch wider
     // and deeper down the line; faded as the notch narrows under a pixel.
     float nh = min(bh * 2.5 + 3.0 * lk, bMax);
