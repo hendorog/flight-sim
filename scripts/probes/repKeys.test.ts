@@ -1,6 +1,6 @@
 // repKeys (round T): selected StreamReport fields per seed. RK_SEEDS, RK_KEYS (comma-separated field names).
 import { it } from 'vitest';
-import { hydrology, terrainHeight } from '../../src/world/terrain/heightfield';
+import { hydrology, terrainHeight, fieldHeldCount } from '../../src/world/terrain/heightfield';
 import { setWorldSeed } from '../../src/world/worldSeed';
 const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
 it('report keys', () => {
@@ -8,7 +8,7 @@ it('report keys', () => {
     setWorldSeed(seed);
     terrainHeight(0, 0);
     const rep = hydrology.streamReport as unknown as Record<string, unknown>;
-    console.log(`seed ${seed}: ${(env.RK_KEYS ?? 'barbed').split(',').map((k) => `${k} ${JSON.stringify(rep[k])}`).join('; ')}`);
+    console.log(`seed ${seed}: fieldHeld ${fieldHeldCount()}; ${(env.RK_KEYS ?? 'barbed').split(',').map((k) => `${k} ${JSON.stringify(rep[k])}`).join('; ')}`);
   }
   setWorldSeed(0);
 });

@@ -1381,6 +1381,32 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     falls,
     faults,
     queryFlow,
+    holdUnder(trim, near) {
+      let lowered = 0;
+      for (let li = nR; li < allLines.length; li++) {
+        const r = allLines[li] as { north: Float64Array; east: Float64Array; level: Float64Array; cut: Float64Array; halfWidth: Float64Array; s: Float64Array };
+        const m = r.level.length;
+        let changed = false;
+        for (let i = 0; i < m; i++) {
+          if (!near(r.north[i], r.east[i])) continue;
+          // (Under the ground it was levelled on, as trimmed.)
+          const t = trim(r.level[i] + r.cut[i] + 1, r.north[i], r.east[i]) - 1;
+          if (!(t < r.level[i] - 0.01)) continue;
+          r.cut[i] = Math.max(0, r.cut[i] - (r.level[i] - t));
+          r.level[i] = t;
+          changed = true;
+          lowered++;
+        }
+        if (!changed) continue;
+        for (let i = 1; i < m; i++) r.level[i] = Math.min(r.level[i], r.level[i - 1]);
+        const f = flowOf(r, lipsOf[li]);
+        flows[li].gradient.set(f.gradient);
+        flows[li].steepness.set(f.steepness);
+        flows[li].regime.set(f.regime);
+        flows[li].speed.set(f.speed);
+      }
+      return lowered;
+    },
     fallsNear: (pn, pe, radius, out) => fallIndex.near(pn, pe, radius, out),
     streamReport,
     network,

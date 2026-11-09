@@ -702,6 +702,80 @@ let presentHydro: Hydrology;
 let legacyHydro: Hydrology;
 // The generated airfields (airfields.ts, present day only), sited against the same natural terrain and water.
 let fields: readonly Airfield[] = [];
+/** Round T: hold a seeded world's streams under the ground the airfields cut (holdUnder); the samples it lowered. */
+const FIELD_HOLD = true;
+let fieldHeld = 0;
+/** The streams' samples FIELD_HOLD lowered (probes). */
+export const fieldHeldCount = (): number => fieldHeld;
+/** Whether a point lies where an airfield shapes the ground (sampleTerrain): a generated field's reach, the home field's
+ * approaches. */
+function nearField(north: number, east: number): boolean {
+  for (const f of isPresent() ? fields : []) {
+    const fn = north - f.north;
+    const fe = east - f.east;
+    const reach = f.length / 2 + f.approachLength + f.blend;
+    if (fn * fn + fe * fe <= reach * reach) return true;
+  }
+  const dn = north - RW.center.north;
+  const de = east - RW.center.east;
+  const along = dn * RW_COS + de * RW_SIN;
+  const across = -dn * RW_SIN + de * RW_COS;
+  return Math.abs(along) - HALF_LEN < APPROACH_LENGTH && Math.abs(across) < 2 * (300 + 0.12 * APPROACH_LENGTH);
+}
+/** The ground h at a point as sampleTerrain shapes it for the airfields after the network's carve: the home field's
+ * approaches, a generated field's approaches and flat area, the blend into the home field (the same arithmetic). */
+function fieldTrim(h: number, north: number, east: number): number {
+  const dn = north - RW.center.north;
+  const de = east - RW.center.east;
+  const along = dn * RW_COS + de * RW_SIN;
+  const across = -dn * RW_SIN + de * RW_COS;
+  const ox = Math.max(Math.abs(along) - HALF_LEN, 0);
+  const oy = Math.max(Math.abs(across) - HALF_WID, 0);
+  const dRect = Math.sqrt(ox * ox + oy * oy);
+  if (dRect <= FLAT) return ELEV;
+  let gf: Airfield | null = null;
+  let gAlong = 0;
+  let gAcross = 0;
+  let gRect = Infinity;
+  for (const f of isPresent() ? fields : []) {
+    const fn = north - f.north;
+    const fe = east - f.east;
+    const reach = f.length / 2 + f.approachLength + f.blend;
+    if (fn * fn + fe * fe > reach * reach) continue;
+    const c = Math.cos(f.heading);
+    const sn = Math.sin(f.heading);
+    gAlong = fn * c + fe * sn;
+    gAcross = -fn * sn + fe * c;
+    const fx = Math.max(Math.abs(gAlong) - f.length / 2, 0);
+    const fy = Math.max(Math.abs(gAcross) - f.width / 2, 0);
+    gRect = Math.sqrt(fx * fx + fy * fy);
+    gf = f;
+    break;
+  }
+  if (gf && gRect <= gf.flatMargin) return gf.elevation;
+  const beyond = Math.abs(along) - HALF_LEN;
+  if (beyond > 0 && beyond < APPROACH_LENGTH) {
+    const halfW = 300 + 0.12 * beyond;
+    const w = (1 - smooth(halfW, halfW * 1.8, Math.abs(across))) * (1 - smooth(APPROACH_LENGTH * 0.85, APPROACH_LENGTH, beyond));
+    if (w > 0) {
+      const excess = h - (ELEV + APPROACH_GRADIENT * beyond);
+      h -= w * 0.5 * (excess + Math.sqrt(excess * excess + 400));
+    }
+  }
+  if (gf) {
+    const gBeyond = Math.abs(gAlong) - gf.length / 2;
+    if (gBeyond > 0 && gBeyond < gf.approachLength) {
+      const halfW = 150 + 0.12 * gBeyond;
+      const w = (1 - smooth(halfW, halfW * 1.8, Math.abs(gAcross))) * (1 - smooth(gf.approachLength * 0.85, gf.approachLength, gBeyond));
+      if (w > 0) {
+        const excess = h - (gf.elevation + APPROACH_GRADIENT * gBeyond);
+        h -= w * 0.5 * (excess + Math.sqrt(excess * excess + 400));
+      }
+    }
+    h = gf.elevation + (h - gf.elevation) * smoother(gf.flatMargin, gf.flatMargin + gf.blend, gRect);
+  }
+  return ELEV + (h - ELEV) * smoother(FLAT, FLAT + BLEND, dRect);
+}
 /** The home runway checked on the finished ground of the last seeded world (homeSiting.ts siteRunway); null at seed 0. */
 export let homeRecheck: RunwayFit | null = null;
 /** A seeded world's macro model cells (erosion.ts steadyLattice) for one seed and input key. */
@@ -838,6 +912,9 @@ function buildWater(): void {
     fields = siteAirfields(naturalHeight, presentHydro, presentHydro.lakes);
     siteMs = performance.now() - tf;
     setGeneratedAirfields(fields);
+    // Round T (FIELD_HOLD): the streams' water held under the ground the airfields' approaches and flats cut (sampleTerrain),
+    // which the streams, traced first, were not levelled on (seed 777777 line 720 stood 50 m over an approach).
+    if (FIELD_HOLD) fieldHeld = presentHydro.holdUnder?.(fieldTrim, nearField) ?? 0;
     return;
   } else {
     erosion = null;
