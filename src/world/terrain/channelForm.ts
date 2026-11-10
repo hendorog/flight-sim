@@ -139,7 +139,8 @@ export function formOf(A: number, S: number, F: number): Form {
   // sinuosity, 1.25 at 1 km, up to pi 0.7, easing to a gravel thread's by pi 1.2: the fit alone stepped it down by
   // 0.7, the Selwyn's pi, and straightened every big lowland river of 0.6-0.8 - p7-8's, om-plains' - against section 7
   // and the owner's kept meanders.)
-  const om2 = Math.max(0.35 + 1.4 * (1 - smooth(0.05, 0.7, pi)), 0.95 * (1 - smooth(0.7, 1.2, pi))) + 0.25 * beta;
+  const lowland = 0.95 * (1 - smooth(0.7, 1.2, pi));
+  const om2 = Math.max(0.35 + 1.4 * (1 - smooth(0.05, 0.7, pi)), lowland) + 0.25 * beta;
   const lam2 = 13 * ((phi * Wa) / K);
   const om1 = 0.4 - 0.15 * beta;
   const lam1 = 378 * Math.pow(a, 0.204);
@@ -262,6 +263,8 @@ function lerpAt(s: ArrayLike<number>, arr: ArrayLike<number>, sv: number): numbe
 const JITTER = 0.45;
 /** Each bend's swing is the law's times 1 + SWING_JITTER tanh(n). */
 const SWING_JITTER = 0.35;
+/** ... but never past this (rad): a sine-generated curve's loops close on each other from about 2.2. */
+const SWING_TOP = 1.9;
 /** No bend tighter than this many active widths. */
 const BEND_MIN = 1.2;
 
@@ -312,7 +315,7 @@ function marchLevel(total: number, lam: (sv: number) => number, om: (sv: number)
     const j = Math.floor(ph / Math.PI + 0.5);
     const k = Math.floor(ph / Math.PI);
     const rate = base * rateMul(j);
-    let w = w0 * swingMul(k);
+    let w = Math.min(SWING_TOP, w0 * swingMul(k));
     // The curvature cap on the swing (not on the step): |dθ/ds| <= w rate (1 + 3 w² / 32) <= cap.
     const c = cap(sv);
     const rMax = base * Math.max(rateMul(k), rateMul(k + 1));
