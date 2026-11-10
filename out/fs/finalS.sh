@@ -1,7 +1,7 @@
 #!/bin/bash
 # finalS.sh OUT [suite]: round S battery into out/fs/OUT (gates.sh, gully gates, drawnGate, rillGate, turns, ponds,
 # f3 courses moved, seed boxes), then the suite when asked.
-cd /home/roger/github/fs-exp/foundation-streams
+cd "$(dirname "$(readlink -f "$0")")/../.."  # the tree this script lives in (out/fs/..)
 T=$1; O=$PWD/out/fs/$T; mkdir -p $O
 P="npx vitest run --config scripts/probes/vitest.config.ts"
 bash out/fs/gates.sh $PWD $O > $O/gates.out 2>&1

@@ -1,9 +1,9 @@
 #!/bin/bash
-# extrasR2.sh: round T repairs 2 - extrasR.sh's gates (round T's standalone gates) into out/fs/finalR2, after
-# finalS.sh finalR2 suite; plus the junction gate (scripts/probes/junctionGate), the round's under-lake, dry-near and
+# extrasR2.sh [OUT]: round T repairs 2 - extrasR.sh's gates (round T's standalone gates) into out/fs/OUT (default
+# finalR2), after finalS.sh OUT suite; plus the junction gate (scripts/probes/junctionGate), the round's under-lake, dry-near and
 # field-bank probes (out/fs/R and out/fs/R2 probes).
-cd /home/roger/github/fs-exp/foundation-streams
-G=$PWD/out/fs/finalR2
+cd "$(dirname "$(readlink -f "$0")")/../.."  # the tree this script lives in (out/fs/..)
+G=$PWD/out/fs/${1:-finalR2}; mkdir -p $G
 P="npx vitest run --config scripts/probes/vitest.config.ts"
 C="npx vitest run --config out/fs/verifyT1/code/probes/vitest.config.ts"
 R="npx vitest run --config out/fs/R/probes/vitest.config.ts"
