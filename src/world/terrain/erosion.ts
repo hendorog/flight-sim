@@ -55,7 +55,7 @@ export interface SteadyParams {
  */
 export const STEADY: SteadyParams = { iterations: 30, ridge: 400, m: 0.6, sc: 0.45, grade: 0.06 };
 /** Bump when the model or its inputs change meaning: part of the cache key (macroCache.ts). */
-export const MODEL_VERSION = 'ss6';
+export const MODEL_VERSION = 'ss7-v1';
 
 /** Catchment, cells, from which a diagonal step of a channel lowers the cells beside it. */
 const CORNER_AREA = 10;
@@ -158,8 +158,12 @@ export interface ErosionField {
   courseAny: Uint8Array;
   /** The home field, where the change is held at none over its pad (PAD_KEEP). */
   home: { north: number; east: number };
-  /** The macro cells T (the noise lattice plus the change): what the drainage routes over. */
+  /** The macro cells T (the noise lattice plus the change), with the corner fix below (a drawing fix for the
+   * interpolated ground): the lakes and the breach cuts are settled on these (drainage.ts buildDrainage). */
   lattice: Float32Array;
+  /** The same cells as the model routed them, before the corner fix: what the drainage routes the water over, so every
+   * river runs down the channel the model carved (drainage.ts buildDrainage `routing`). */
+  routing: Float32Array;
   /** How far each cell lies below the ground about it on T, m (>= 0): a river's own valley (riverNetwork.ts). */
   valley: Float32Array;
   /** The mountains' threshold hillslopes on the fine grid (hillslopes.ts), once worked out (attachSlopes); null before
@@ -181,7 +185,7 @@ export const CUT_N = (LATTICE_N - 1) * FINE + 1;
  * strength at twice it, the samples per channel piece, the smoothing passes of the course, and the half-width of the
  * carve, m, at its least and growing with its depth (VALLEY_SLOPE: the steepest mean slope of the carve's sides).
  */
-const CHANNEL_AREA = 30;
+export const CHANNEL_AREA = 30;
 const PIECE_SAMPLES = 6;
 const COURSE_PASSES = 3;
 const CARVE_HALF = 650;
@@ -192,7 +196,7 @@ const EDGE_KEEP = [1000, 3000];
 /** Half-width of a channel's valley floor, m, where the finer relief and the gullies give way (erosionGullies). */
 const FLOOR_HALF = 450;
 /** Half-width of the window, cells, whose mean ground a cell's valley depth is measured from (valley): on river cells
- * its distribution matches the old erosion's cut there (p50 45-55 m), which riverNetwork.ts PIN_CUT was tuned on. */
+ * its distribution matches the old erosion's cut there (p50 45-55 m), which riverNetwork.ts GORGE_CUT reads. */
 const VALLEY_R = 1;
 
 /**
@@ -543,6 +547,8 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
   // left standing. Its valley is cut here instead, and the channels routed again down it.
   if (drainByHome(h, n, home, hard, R.area)) R.route(h, fixed);
   const { receiver, area, order, diag } = R;
+  // (The cells as routed, before the corner fix below: what the drainage routes the water over.)
+  const routedCells = h.slice();
   // A channel that steps diagonally between two cells would leave a saddle between them in the interpolated
   // terrain (the two cells beside the step are still high): bring those down to the mean of the step's two ends,
   // so the valley floor runs on down the diagonal.
@@ -565,52 +571,22 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
   const change = new Float32Array(n * n);
   const base = new Float32Array(n * n);
   const eroded = new Float32Array(n * n);
+  const routing = new Float32Array(n * n);
   for (let c = 0; c < n * n; c++) {
     change[c] = h[c] - h0[c];
     base[c] = h0[c] - mound[c];
     eroded[c] = base[c] + change[c];
+    routing[c] = base[c] + (routedCells[c] - h0[c]);
   }
   copyEdges(change, n);
   const N = CUT_N;
   const surface = upsample(eroded, n);
   const carve = new Float32Array(N * N);
   const floorMask = new Uint8Array(N * N);
-  // Each channel's course: its cells smoothed along it as the rivers' courses are (riverNetwork.ts: three [1 2 1]
-  // passes, a cell's neighbours along the channel being its receiver and its main donor, the largest), so the valley
-  // is carved where the river will run.
+  // Each channel's course (channelCourse): the valley is carved along it, and the rivers are laid on it (riverNetwork.ts).
   const channel: number[] = [];
-  const main = new Int32Array(n * n).fill(-1);
-  for (let c = 0; c < n * n; c++) {
-    const r = receiver[c];
-    if (area[c] < CHANNEL_AREA) continue;
-    channel.push(c);
-    if (r >= 0 && (main[r] < 0 || area[c] > area[main[r]])) main[r] = c;
-  }
-  const pn = new Float64Array(n * n);
-  const pe = new Float64Array(n * n);
-  for (const c of channel) {
-    pn[c] = origin + ((c / n) | 0) * DRAIN_CELL;
-    pe[c] = origin + (c % n) * DRAIN_CELL;
-  }
-  const qn = new Float64Array(n * n);
-  const qe = new Float64Array(n * n);
-  for (let pass = 0; pass < COURSE_PASSES; pass++) {
-    for (const c of channel) {
-      const r = receiver[c];
-      const m = main[c];
-      if (r < 0 || m < 0) {
-        qn[c] = pn[c];
-        qe[c] = pe[c];
-        continue;
-      }
-      qn[c] = 0.25 * pn[m] + 0.5 * pn[c] + 0.25 * pn[r];
-      qe[c] = 0.25 * pe[m] + 0.5 * pe[c] + 0.25 * pe[r];
-    }
-    for (const c of channel) {
-      pn[c] = qn[c];
-      pe[c] = qe[c];
-    }
-  }
+  for (let c = 0; c < n * n; c++) if (area[c] >= CHANNEL_AREA) channel.push(c);
+  const { pn, pe } = channelCourse(n, origin, receiver, area);
   const sn = new Float64Array(PIECE_SAMPLES + 1);
   const se = new Float64Array(PIECE_SAMPLES + 1);
   const ex = new Float64Array(PIECE_SAMPLES + 1);
@@ -694,7 +670,51 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
       for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) carveAny[i * n + j] = 1;
     }
   }
-  return { delta: change, base, carve, carveAny, floor: floorMask, course: new Uint8Array(N * N), courseAny: new Uint8Array(n * n), home: { north: home.north, east: home.east }, lattice: eroded, valley: valleyDepth(eroded, n, fixed), slopes: null, slopeAny: null };
+  return { delta: change, base, carve, carveAny, floor: floorMask, course: new Uint8Array(N * N), courseAny: new Uint8Array(n * n), home: { north: home.north, east: home.east }, lattice: eroded, routing, valley: valleyDepth(eroded, n, fixed), slopes: null, slopeAny: null };
+}
+
+/**
+ * A channel's course, for every cell of CHANNEL_AREA or more (cells; `receiver` and `area` a routing of the lattice of
+ * `n` cells a side from `origin`): its centre, then COURSE_PASSES [1 2 1] passes with its receiver and its main donor
+ * (the largest of CHANNEL_AREA or more) at once over the whole tree; a cell lacking either keeps its place. The model
+ * carves its valleys along these courses (buildErosion), and the rivers are laid on them (riverNetwork.ts), each as the
+ * same quadratic B-spline through them.
+ */
+export function channelCourse(n: number, origin: number, receiver: ArrayLike<number>, area: ArrayLike<number>): { pn: Float64Array; pe: Float64Array } {
+  const channel: number[] = [];
+  const main = new Int32Array(n * n).fill(-1);
+  for (let c = 0; c < n * n; c++) {
+    const r = receiver[c];
+    if (area[c] < CHANNEL_AREA) continue;
+    channel.push(c);
+    if (r >= 0 && (main[r] < 0 || area[c] > area[main[r]])) main[r] = c;
+  }
+  const pn = new Float64Array(n * n);
+  const pe = new Float64Array(n * n);
+  for (const c of channel) {
+    pn[c] = origin + ((c / n) | 0) * DRAIN_CELL;
+    pe[c] = origin + (c % n) * DRAIN_CELL;
+  }
+  const qn = new Float64Array(n * n);
+  const qe = new Float64Array(n * n);
+  for (let pass = 0; pass < COURSE_PASSES; pass++) {
+    for (const c of channel) {
+      const r = receiver[c];
+      const m = main[c];
+      if (r < 0 || m < 0) {
+        qn[c] = pn[c];
+        qe[c] = pe[c];
+        continue;
+      }
+      qn[c] = 0.25 * pn[m] + 0.5 * pn[c] + 0.25 * pn[r];
+      qe[c] = 0.25 * pe[m] + 0.5 * pe[c] + 0.25 * pe[r];
+    }
+    for (const c of channel) {
+      pn[c] = qn[c];
+      pe[c] = qe[c];
+    }
+  }
+  return { pn, pe };
 }
 
 /** How far each cell lies below the mean of the macro cells within VALLEY_R of it (land only), m (>= 0). */

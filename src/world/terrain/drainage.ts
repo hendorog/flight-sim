@@ -121,22 +121,25 @@ export function cellEast(d: Drainage, c: number): number {
  * Work out the drainage of the natural terrain `natural` (m MSL at north, east). `fine`, the terrain with all its
  * detail, checks that each lake's water stands over the ground at its middle (the lattice routes the coarse terrain).
  * `onPonds` hears the ponds that may become lakes before they are settled against `fine`. `lattice`, when given, is
- * `natural` already sampled at the lattice's cells (erosion.ts), and saves sampling it again.
+ * `natural` already sampled at the lattice's cells (erosion.ts), and saves sampling it again. `routing`, when given, is
+ * the same cells as the model routed them (erosion.ts ErosionField.routing): the water is routed over those (below).
  */
-export function buildDrainage(natural: (north: number, east: number) => number, fine: (north: number, east: number) => number = natural, onPonds?: (ponds: number[][]) => void, lattice?: Float32Array): Drainage {
+export function buildDrainage(natural: (north: number, east: number) => number, fine: (north: number, east: number) => number = natural, onPonds?: (ponds: number[][]) => void, lattice?: Float32Array, routing?: Float32Array): Drainage {
   const n = Math.round((2 * DOMAIN_HALF) / DRAIN_CELL) + 1;
   const origin = -DOMAIN_HALF;
   const N = n * n;
   const height = new Float32Array(N);
   const rc = AIRPORT.runway.center;
+  // (The mound over the home field, at cell c.)
+  const moundAt = (c: number): number => {
+    const r = Math.hypot(origin + Math.floor(c / n) * DRAIN_CELL - rc.north, origin + (c % n) * DRAIN_CELL - rc.east);
+    return r < HOME_RADIUS ? HOME_MOUND * (1 - r / HOME_RADIUS) : 0;
+  };
   for (let i = 0; i < n; i++) {
     const north = origin + i * DRAIN_CELL;
     for (let j = 0; j < n; j++) {
       const east = origin + j * DRAIN_CELL;
-      let h = lattice ? lattice[i * n + j] : natural(north, east);
-      const r = Math.hypot(north - rc.north, east - rc.east);
-      if (r < HOME_RADIUS) h += HOME_MOUND * (1 - r / HOME_RADIUS);
-      height[i * n + j] = h;
+      height[i * n + j] = (lattice ? lattice[i * n + j] : natural(north, east)) + moundAt(i * n + j);
     }
   }
 
@@ -248,9 +251,21 @@ export function buildDrainage(natural: (north: number, east: number) => number, 
   // bowl with no water in it).
   const final = lakes.filter((l) => !l.tarn).map((l) => l.cells);
   if (pondSignature(final) !== heard) onPonds?.(final);
-  const filled = flood.filled;
-  const receiver = flood.receiver;
-  const area = flood.area;
+  // The water's courses. The lakes and the cuts stand as settled above, on the lattice as drawn; the water is routed
+  // over the model's cells as the model routed them (`routing`: the drawn lattice is those with a drawing fix, erosion.ts
+  // buildErosion), with the same mound, the cuts and the lakes' water: so every river runs down the channel the model
+  // carved, and through the lakes and their outlets.
+  let flow = flood;
+  if (routing) {
+    const r2 = new Float32Array(N);
+    for (let c = 0; c < N; c++) r2[c] = cutWhy[c] ? Math.min(routing[c] + moundAt(c), routed[c]) : routing[c] + moundAt(c);
+    for (const l of lakes) for (const c of l.cells) r2[c] = Math.min(r2[c], Math.max(routed[c], l.level));
+    flow = new Flood(n);
+    flow.run(r2);
+  }
+  const filled = flow.filled;
+  const receiver = flow.receiver;
+  const area = flow.area;
 
   // --- River lines, traced upstream from each mouth.
   const isChannel = (c: number): boolean => area[c] >= RIVER_AREA;

@@ -57,6 +57,8 @@ const HK = vi.hoisted(() => {
     site,
     fnSite,
     bump,
+    /** buildDrainage's `routing` (Round V A1), heard in the drainage mock. */
+    routing: null as Float32Array | null,
     /** confineBelt's window (riverNetwork.ts): from levelProbe 'E' of the first line until the first ground sample
      * after the last line's that confineBelt did not ask for. Within it, the points confineBelt asked the ground at
      * (heard at the macro cache, seededLayout.ts, which every natural ground sample starts with), by line. */
@@ -166,13 +168,20 @@ vi.mock('../../src/world/terrain/drainage', async (orig) => {
       HK.bump('ShoreSmooth.cells', ponds.reduce((a, p) => a + p.length, 0));
     }
   }
-  return { ...o, ShoreSmooth: ShoreSmoothHeard };
+  // (Round V A1: the cells the drainage routes the water over, `routing`, kept for the second flood's rows.)
+  const build = o.buildDrainage as (...a: unknown[]) => unknown;
+  const buildDrainage = (...a: unknown[]): unknown => {
+    HK.routing = (a[4] as Float32Array | undefined) ?? null;
+    return build(...a);
+  };
+  return { ...o, ShoreSmooth: ShoreSmoothHeard, buildDrainage };
 });
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { hydrology, seededDrainage, seededInputs, seededModel, debugValley, fieldHeldCount, terrainHeight, naturalHeight } from '../../src/world/terrain/heightfield';
 import { levelProbe } from '../../src/world/terrain/riverNetwork';
-import { LakeMask, cellNorth, cellEast } from '../../src/world/terrain/drainage';
+import { LakeMask, cellNorth, cellEast, DRAIN_CELL, HOME_MOUND, HOME_RADIUS } from '../../src/world/terrain/drainage';
+import { AIRPORT } from '../../src/core/world';
 import { SteadyRouter } from '../../src/world/terrain/erosion';
 import { slopeStats } from '../../src/world/terrain/hillslopes';
 import { setWorldSeed } from '../../src/world/worldSeed';
@@ -199,6 +208,15 @@ const A = {
   coreHold: anchor('heightfield.ts', 'const core = riverCore(CUT_N'),
   holdsCarve: anchor('heightfield.ts', 'mask.holds(north, east) : 0'),
   holdsBreach: anchor('heightfield.ts', 'mask && mask.holds(north, east) > 0) keep'),
+  // Round V A1: the wander family (RN1-RN3), the network's own copy of the course smoothing (ER3: one smoothing now,
+  // erosion.ts channelCourse) and the drainage routing the corner-fixed cells (ER6b: the second flood routes the
+  // model's own); null = deleted.
+  wander: anchor('riverNetwork.ts', 'const WANDER = '),
+  wanderShort: anchor('riverNetwork.ts', 'const WANDER_SHORT = '),
+  pinned: anchor('riverNetwork.ts', 'const PINNED_WANDER = '),
+  netSmooth: anchor('riverNetwork.ts', 'n2[i] = 0.25 * n[i - 1] + 0.5 * n[i] + 0.25 * n[i + 1];'),
+  flood2: anchor('drainage.ts', 'flow.run(r2);'),
+  modelCourse: anchor('riverNetwork.ts', 'const model = channelCourse('),
 };
 
 // LakeMask's own methods (DR17, DR19 / RN9, DR20), heard on its prototype.
@@ -581,6 +599,50 @@ function measure(seed: number): Map<string, [string, string]> {
     set('ER6', 'derived', `${low} cells lowered (mean ${(drop / Math.max(1, low)).toFixed(0)} m), replayed`);
   }
   set('ER13', 'hook', `${h('markCourse.axes')} axes, ${h('markCourse.samples')} samples, ${h('markCourse.cells')} fine cells marked`);
+  if (A.netSmooth === null) set('ER3', 'deleted', 'A1 (one smoothing, erosion.ts channelCourse, for the carve and the axes)');
+  if (A.modelCourse !== null) set('RN4', 'derived', `${d.lines.length} lines laid on the model's course (channelCourse, the carve's B-spline)`);
+  // The second flood (Round V A1): the drainage's receivers over the model's cells as routed (`routing`), with the
+  // cuts and the lakes' water of the first flood (on the drawn lattice) carried over.
+  const rte = HK.routing;
+  if (A.flood2 === null || !rte) set('ER6b', 'derived', 'the drainage routes the corner-fixed cells');
+  else {
+    set('ER6b', 'deleted', 'A1 (the receivers come from the model\'s cells: V:FLOOD2)');
+    const nn = d.n;
+    const home = AIRPORT.runway.center;
+    const mound = (c: number): number => {
+      const r = Math.hypot(d.origin + Math.floor(c / nn) * DRAIN_CELL - home.north, d.origin + (c % nn) * DRAIN_CELL - home.east);
+      return r < HOME_RADIUS ? HOME_MOUND * (1 - r / HOME_RADIUS) : 0;
+    };
+    const r2 = new Float32Array(rte.length);
+    let cutLow = 0, cutDrop = 0, lakeLow = 0, lakeDrop = 0;
+    for (let c = 0; c < rte.length; c++) {
+      r2[c] = rte[c] + mound(c);
+      if (d.cutWhy[c] && d.routed[c] < r2[c]) (cutLow++, (cutDrop += r2[c] - d.routed[c]), (r2[c] = d.routed[c]));
+    }
+    for (const l of d.lakes) for (const c of l.cells) {
+      const v = Math.max(d.routed[c], l.level);
+      if (v < r2[c]) (lakeLow++, (lakeDrop += r2[c] - v), (r2[c] = v));
+    }
+    // River steps whose receiver is not the one the drawn lattice (the first flood's surface, d.height) routes.
+    const RH = new SteadyRouter(nn);
+    const fixedD = new Uint8Array(nn * nn);
+    for (let c = 0; c < nn * nn; c++) {
+      const i = Math.floor(c / nn), j = c % nn;
+      fixedD[c] = d.height[c] <= 0 || i === 0 || j === 0 || i === nn - 1 || j === nn - 1 ? 1 : 0;
+    }
+    RH.route(d.height, fixedD);
+    let steps = 0, moved = 0;
+    for (const L of d.lines) {
+      const last = L.joins >= 0 ? L.cells.length - 2 : L.cells.length - 1;
+      for (let k = 0; k < last; k++) {
+        steps++;
+        if (RH.receiver[L.cells[k]] !== L.cells[k + 1]) moved++;
+      }
+    }
+    set('V:FLOOD2', 'derived', `${moved} of ${steps} river steps routed off the drawn lattice's receiver (${((100 * moved) / Math.max(1, steps)).toFixed(1)} %)`);
+    set('V:CUT_PASTE', 'derived', `${cutLow} cut cells lowered into the routing (mean ${(cutDrop / Math.max(1, cutLow)).toFixed(0)} m)`);
+    set('V:LAKE_PASTE', 'derived', `${lakeLow} lake cells lowered to the lake's level (mean ${(lakeDrop / Math.max(1, lakeLow)).toFixed(0)} m)`);
+  }
 
   // --- hillslopes.ts
   set('HS1', 'report', `${slopeStats.active} nodes in the pass`);
@@ -615,9 +677,15 @@ function measure(seed: number): Map<string, [string, string]> {
         }
       }
     }
-    set('RN1', 'derived', `${off.toFixed(0)} of ${total.toFixed(0)} axis km > 200 m off the own lattice course (RN1 + RN2)`);
-    set('RN2', 'derived', `(with RN1)`);
-    set('RN3', 'derived', `${offDeep.toFixed(1)} km of it in valleys > 80 m deep`);
+    if (A.wander === null) {
+      // (Round V A1: deleted. What the old count measured, the axis off its own smoothed lattice course, kept for the
+      // record: the axis now lies on the model's course, which the drainage's tree follows.)
+      set('RN1', 'deleted', `A1 (axis km > 200 m off the own lattice course: ${off.toFixed(0)} of ${total.toFixed(0)})`);
+    } else set('RN1', 'derived', `${off.toFixed(0)} of ${total.toFixed(0)} axis km > 200 m off the own lattice course (RN1 + RN2)`);
+    if (A.wanderShort === null) set('RN2', 'deleted', 'A1');
+    else set('RN2', 'derived', `(with RN1)`);
+    if (A.pinned === null) set('RN3', 'deleted', `A1 (valleyAt kept: GORGE_CUT, RN16)`);
+    else set('RN3', 'derived', `${offDeep.toFixed(1)} km of it in valleys > 80 m deep`);
     set('RN7', 'stage', `${held} samples / ${heldKm.toFixed(0)} km held under ground - 2.5 by the running minimum`);
     set('RN19', 'derived', `${total.toFixed(0)} axis km (the second valley is cut about every axis)`);
   }
@@ -845,7 +913,7 @@ it('rule fires', () => {
   }
   setWorldSeed(0);
   const rows: Array<Record<string, string>> = [];
-  const all = [...ROWS.map((r) => r[0]), 'B:FIELD_RAISE', 'B:FIELD_BANK', 'B:RAISE_BESIDE', 'B:LEAVE_BELOW', 'B:RECEIVERS_FIRST'];
+  const all = [...ROWS.map((r) => r[0]), 'B:FIELD_RAISE', 'B:FIELD_BANK', 'B:RAISE_BESIDE', 'B:LEAVE_BELOW', 'B:RECEIVERS_FIRST', 'V:FLOOD2', 'V:CUT_PASTE', 'V:LAKE_PASTE'];
   const meta = new Map(ROWS.map((r) => [r[0], r]));
   const appx: Record<string, [string, string, string, string]> = {
     'B:FIELD_RAISE': ['c', '(B)', '', 'FIELD_RAISE, RAISE_UNDER 1.5'],
@@ -853,6 +921,10 @@ it('rule fires', () => {
     'B:RAISE_BESIDE': ['c', '(B)', '', 'RAISE_BESIDE 1, RAISE_BESIDE_REACH 20'],
     'B:LEAVE_BELOW': ['b', 'C', '', 'LEAVE_BELOW 1, the passing lake guard'],
     'B:RECEIVERS_FIRST': ['b', 'C', '', 'receivers-first order for AT_THE_SURFACE'],
+    // Round V A1's added rows (drainage.ts buildDrainage's second flood).
+    'V:FLOOD2': ['b', 'C', 'A1', 'second flood: receivers over the model\'s cells (routing), lakes and cuts from the first'],
+    'V:CUT_PASTE': ['b', 'C', 'A1', 'the first flood\'s breach cuts carried into the second'],
+    'V:LAKE_PASTE': ['b', 'C', 'A1', 'the first flood\'s lake levels carried into the second'],
   };
   const tally: Record<string, number> = {};
   const lines: string[] = [];
@@ -870,7 +942,7 @@ it('rule fires', () => {
     rows.push({ id, cls, grp, fate, rule, how, ...Object.fromEntries(seeds.map((s, k) => [`s${s}`, vals[k]])) });
     lines.push(`${id.padEnd(17)} ${cls.padEnd(6)} ${grp.padEnd(6)} ${how.padEnd(7)} ${vals.map((v) => v.padEnd(34)).join(' | ')} ${rule}`);
   }
-  console.log(`ruleFires: ${all.length} rows (map 2: 203 counted + 5 infrastructure; appendix B: 5); by how counted ${JSON.stringify(tally)}`);
+  console.log(`ruleFires: ${all.length} rows (map 2: 203 counted + 5 infrastructure; appendix B: 5; Round V added: 3); by how counted ${JSON.stringify(tally)}`);
   console.log(`  anchors: ${JSON.stringify(A)}`);
   console.log(`${'id'.padEnd(17)} ${'cls'.padEnd(6)} ${'grp'.padEnd(6)} ${'how'.padEnd(7)} ${seeds.map((s) => `seed ${s}`.padEnd(34)).join(' | ')} rule`);
   for (const l of lines) console.log(l);

@@ -1,16 +1,18 @@
 // A seeded world's rivers and lakes (any seed but 0), built from its drainage (drainage.ts) at load in every thread.
 // Seed 0 keeps the hand-placed river and lakes of hydrology.ts.
 //
-// Each drainage line becomes a river: its 1 km lattice course jittered and smoothed into a valley axis, its width from
+// Each drainage line becomes a river: its valley axis the course the model carved its valley along (erosion.ts
+// channelCourse, on the drainage's own tree), its width from
 // the catchment area, the big lowland rivers swung into meanders about the axis (a skewed sine whose wavelength
 // follows the width, so no growth simulation has to run at load), and its water level falling from the source,
 // meeting the river it joins at the confluence and lying level through any lake on its course. Lakes are the ponds
 // the drainage leaves behind its breach cuts (drainage.ts LakeMask: the water covers the ground below the pond's level
 // across its lattice cells); ellipses fitted to them place what goes by a lake.
 
-import { fbm, hash2i, gnoise } from './noise';
+import { hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
 import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type DrainLine, type LakeMask } from './drainage';
+import { channelCourse } from './erosion';
 import { bedWidth, breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
 import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
 import { buildFaults, FaultIndex } from './faults';
@@ -22,14 +24,6 @@ import { AIRPORT } from '../../core/world';
 const NECK_FACTOR = 0.22;
 /** Oxbow water stands this far above the river level of its valley section, m (as hydrology.ts). */
 const OXBOW_LEVEL = 0.6;
-/** Amplitude of the courses' wander off the lattice, m: a broad one (6 km) and a shorter one (2.5 km) that bends the
- * straight runs drainage takes down even slopes. */
-const WANDER = 900;
-const WANDER_SHORT = 350;
-/** In a valley deeper than PIN_CUT[1] on the macro ground (erosion.ts valley: a cell's depth under the ground about it),
- * m, a course wanders this fraction of WANDER, WANDER_SHORT and the jitter (all of them shallower than PIN_CUT[0]). */
-const PINNED_WANDER = 0.15;
-const PIN_CUT = [20, 80];
 /** A river meanders less in a valley this deep on the macro ground, m, and not at all from the second (a gorge). */
 const GORGE_CUT = [100, 180];
 /** Past a lake's outlet the river keeps the lake's level over this stretch, m (while its banks stand over it). */
@@ -198,7 +192,7 @@ const FLOOR_GRID = 250;
  * as the channel can swing (the widest meander belt its catchment could take, where the lattice falls gently enough
  * for it to meander, at double MEANDER_GRADIENT for margin: the levels that decide it come later) or the floodplain
  * would reach, with the 80 m the levels are sampled either side, and a fine-grid cell more so the interpolated mark
- * is whole there. `t` is each point's place along the line's cells (catmullRom).
+ * is whole there. `t` is each point's place along the line's cells (bspline2).
  */
 function floorHalf(d: Drainage, L: DrainLine, area: Float64Array, t: ArrayLike<number>): Float64Array {
   const cells = L.cells;
@@ -310,11 +304,6 @@ export const valleyInfluence = (area: number): number => 500 + 1900 * smooth(30,
 /** Build a seeded world's hydrology from its drainage and lakes. */
 export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyDepth?: Float32Array, smoothGround: (north: number, east: number) => number = natural, markFloor?: (axes: Array<{ north: Float64Array; east: Float64Array; half: Float64Array; area: Float64Array }>) => void, pinned?: (north: number, east: number) => number, wallWeight?: (north: number, east: number) => number): Hydrology {
   const lines = d.lines;
-  // How freely a course may wander off its lattice cells (1) or keeps to them (PINNED_WANDER): a valley of the macro
-  // ground (erosion.ts, `valleyDepth` per cell, >= 0) is the river's own, and its floor lies along the lattice path; a
-  // course wandering a kilometre off it would ride up the valley side (its level held far under the ground there,
-  // its meanders swinging back down onto a floor below its water).
-  const free = (c: number): number => (valleyDepth ? 1 - (1 - PINNED_WANDER) * smooth(PIN_CUT[0], PIN_CUT[1], valleyDepth[c]) : 1);
   /** The macro ground's valley depth at the lattice cell nearest a point, m (0 without it). */
   const half = ((d.n - 1) * DRAIN_CELL) / 2;
   const valleyAt = (north: number, east: number): number => {
@@ -323,46 +312,19 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const cj = Math.min(d.n - 1, Math.max(0, Math.round((east + half) / DRAIN_CELL)));
     return valleyDepth[ci * d.n + cj];
   };
-  // --- Lattice courses: jittered (the same jitter for a cell shared by two lines) and smoothed; a tributary's last
-  // point is put back on its parent's smoothed course.
-  const jitter = (c: number, k: number): number => ((hash2i(c, 0x51ed + k) & 0xffff) / 65536 - 0.5) * DRAIN_CELL * 0.55;
-  const courses: Array<{ n: number[]; e: number[] }> = [];
+  // --- Courses: each line's is the model's own (erosion.ts channelCourse, over the drainage's tree), the course the
+  // model carved its valley along. A tributary's last cell is its junction cell, on its parent's course; its course runs
+  // on along that cell's piece to the middle of the leg to the cell's receiver (`ext`), where it meets its parent's
+  // B-spline, as the model's carve of it does.
+  const model = channelCourse(d.n, d.origin, d.receiver, d.area);
+  const courses: Array<{ n: number[]; e: number[]; ext?: [number, number] }> = [];
   for (let li = 0; li < lines.length; li++) {
     const L = lines[li];
-    // A smooth wander (a warp of the plane, so a cell shared by two lines moves the same way) breaks up the straight
-    // runs the lattice routes across plains, then a little per-cell jitter.
-    // A river that reaches the sea keeps its mouth on its outlet cell (the wander fades over the last two cells).
-    const last = L.cells.length - 1;
-    const fade = (i: number): number => (L.joins >= 0 ? 1 : Math.min(1, (last - i) / 2));
-    const wn = (c: number, i: number): number => {
-      const pn = cellNorth(d, c);
-      const pe = cellEast(d, c);
-      return pn + fade(i) * free(c) * (WANDER * fbm(pn / 6000 + 3.7, pe / 6000 - 1.9, 3) + jitter(c, 0));
-    };
-    const we = (c: number, i: number): number => {
-      const pn = cellNorth(d, c);
-      const pe = cellEast(d, c);
-      return pe + fade(i) * free(c) * (WANDER * fbm(pn / 6000 - 8.1, pe / 6000 + 5.3, 3) + jitter(c, 1));
-    };
-    let n = L.cells.map(wn);
-    let e = L.cells.map(we);
+    const n = L.cells.map((c) => model.pn[c]);
+    const e = L.cells.map((c) => model.pe[c]);
+    const r = d.receiver[L.cells[L.cells.length - 1]];
     clearOfRunway(n, e);
-    for (let pass = 0; pass < 3; pass++) {
-      const n2 = n.slice();
-      const e2 = e.slice();
-      for (let i = 1; i < n.length - 1; i++) {
-        n2[i] = 0.25 * n[i - 1] + 0.5 * n[i] + 0.25 * n[i + 1];
-        e2[i] = 0.25 * e[i - 1] + 0.5 * e[i] + 0.25 * e[i + 1];
-      }
-      n = n2;
-      e = e2;
-    }
-    clearOfRunway(n, e);
-    if (L.joins >= 0) {
-      n[n.length - 1] = courses[L.joins].n[L.joinAt];
-      e[e.length - 1] = courses[L.joins].e[L.joinAt];
-    }
-    courses.push({ n, e });
+    courses.push({ n, e, ext: L.joins >= 0 && r >= 0 ? [model.pn[r], model.pe[r]] : undefined });
   }
 
   // --- Valley axes: densified courses with catchment, level, width, meander belt, floodplain.
@@ -376,21 +338,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   for (let li = 0; li < lines.length; li++) {
     const L = lines[li];
     const c = courses[li];
-    const pts = catmullRom(c.n, c.e, AXIS_SPACING);
-    // The shorter wander, on the dense axis (on the 1 km lattice points the smoothing would erase it): a warp of the
-    // plane, so a confluence shared by two lines moves alike for both; none at a mouth on the sea.
-    const last = pts.n.length - 1;
-    const cells = L.cells;
-    for (let i = 0; i <= last; i++) {
-      const u = pts.t[i];
-      const k = Math.max(0, Math.min(cells.length - 2, Math.floor(u)));
-      const f = cells.length < 2 ? free(cells[0]) : free(cells[k]) + (free(cells[k + 1]) - free(cells[k])) * (u - k);
-      const w = f * (L.joins >= 0 ? 1 : Math.min(1, ((last - i) * AXIS_SPACING) / 1500));
-      const pn = pts.n[i];
-      const pe = pts.e[i];
-      pts.n[i] = pn + w * WANDER_SHORT * gnoise(pn / 2500 - 6.2, pe / 2500 + 0.9);
-      pts.e[i] = pe + w * WANDER_SHORT * gnoise(pn / 2500 + 4.4, pe / 2500 - 7.3);
-    }
+    // The course's quadratic B-spline, as the model carves its valley (erosion.ts buildErosion).
+    const pts = bspline2(c.n, c.e, AXIS_SPACING, c.ext);
     // The spline can swing inside the clearance between two points that keep outside it.
     clearOfRunway(pts.n, pts.e);
     const count = pts.n.length;
@@ -407,11 +356,11 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     laid.push({ north, east, s, area, t: pts.t });
   }
   // The ground each river runs on is its own: the relief finer than the lattice gives way across its floor (erosion.ts
-  // markCourse), as it does on the model's channel floors. Those lie along the lattice courses; the axes laid out above
-  // wander up to a kilometre or so off them and the channel swings across its belt about the axis, and there the
-  // noise's own relief (tens of metres on a plain the model lowered by a couple of hundred) stood on a valley floor
-  // graded to a few tens of metres: its troughs reached the sea's level inland (held there by the cushion), the running
-  // minimum below took the river down to them, and it was carved to the sea's level through every rise downstream.
+  // markCourse), as it does on the model's channel floors. The axes lie on those floors' courses; the channel swings
+  // across its belt about the axis and the floodplain reaches past the model's FLOOR_HALF, and there the noise's own
+  // relief (tens of metres on a plain the model lowered by a couple of hundred) stood on a valley floor graded to a few
+  // tens of metres: its troughs reached the sea's level inland (held there by the cushion), the running minimum below
+  // took the river down to them, and it was carved to the sea's level through every rise downstream.
   markFloor?.(laid.map((a, li) => ({ north: a.north, east: a.east, half: floorHalf(d, lines[li], a.area, a.t), area: a.area })));
   for (let li = 0; li < lines.length; li++) {
     const L = lines[li];
@@ -2028,31 +1977,43 @@ function cutOffLoops(ch: { north: number[]; east: number[]; valleyS: number[]; o
   return out;
 }
 
-/** Catmull-Rom through the points at about `spacing`; `t` is each sample's fractional index into the points. */
-function catmullRom(pn: number[], pe: number[], spacing: number): { n: number[]; e: number[]; t: number[] } {
+/**
+ * A course's quadratic B-spline, as the model carves its valley (erosion.ts buildErosion carvePiece): from the first
+ * point straight to the middle of the first leg, then a piece about each inner point from the middle of the leg before
+ * it to the middle of the leg after it, and from the middle of the last leg straight to the last point - or, given `ext`
+ * (the point after the last), a piece about the last point to the middle of the leg to `ext`. Sampled about every
+ * `spacing` m; `t` is each sample's place along the points (0 .. m - 1).
+ */
+function bspline2(pn: number[], pe: number[], spacing: number, ext?: [number, number]): { n: number[]; e: number[]; t: number[] } {
+  const m = pn.length;
+  if (m === 1) return { n: [pn[0], pn[0]], e: [pe[0], pe[0] + 1], t: [0, 0] };
   const n: number[] = [];
   const e: number[] = [];
   const t: number[] = [];
-  const m = pn.length;
-  if (m === 1) return { n: [pn[0], pn[0]], e: [pe[0], pe[0] + 1], t: [0, 0] };
-  for (let i = 0; i < m - 1; i++) {
-    const i0 = Math.max(0, i - 1);
-    const i3 = Math.min(m - 1, i + 2);
-    const seg = Math.hypot(pn[i + 1] - pn[i], pe[i + 1] - pe[i]);
-    const steps = Math.max(1, Math.ceil(seg / spacing));
-    for (let k = 0; k < steps; k++) {
+  const piece = (an: number, ae: number, bn: number, be: number, cn: number, ce: number, t0: number, t1: number, last: boolean): void => {
+    const len = Math.hypot(bn - an, be - ae) + Math.hypot(cn - bn, ce - be);
+    const steps = Math.max(1, Math.ceil(len / spacing));
+    for (let k = 0; k < steps + (last ? 1 : 0); k++) {
       const u = k / steps;
-      const u2 = u * u;
-      const u3 = u2 * u;
-      const cr = (a: number, b: number, c: number, d: number): number => 0.5 * (2 * b + (-a + c) * u + (2 * a - 5 * b + 4 * c - d) * u2 + (-a + 3 * b - 3 * c + d) * u3);
-      n.push(cr(pn[i0], pn[i], pn[i + 1], pn[i3]));
-      e.push(cr(pe[i0], pe[i], pe[i + 1], pe[i3]));
-      t.push(i + u);
+      const w0 = (1 - u) * (1 - u);
+      const w1 = 2 * u * (1 - u);
+      const w2 = u * u;
+      n.push(w0 * an + w1 * bn + w2 * cn);
+      e.push(w0 * ae + w1 * be + w2 * ce);
+      t.push(t0 + (t1 - t0) * u);
     }
+  };
+  const mid = (i: number): [number, number] => [0.5 * (pn[i] + pn[i + 1]), 0.5 * (pe[i] + pe[i + 1])];
+  let [an, ae] = mid(0);
+  piece(pn[0], pe[0], pn[0], pe[0], an, ae, 0, 0.5, false);
+  for (let i = 1; i < m - 1; i++) {
+    const [bn, be] = mid(i);
+    piece(an, ae, pn[i], pe[i], bn, be, i - 0.5, i + 0.5, false);
+    an = bn;
+    ae = be;
   }
-  n.push(pn[m - 1]);
-  e.push(pe[m - 1]);
-  t.push(m - 1);
+  if (ext) piece(an, ae, pn[m - 1], pe[m - 1], 0.5 * (pn[m - 1] + ext[0]), 0.5 * (pe[m - 1] + ext[1]), m - 1.5, m - 1, true);
+  else piece(an, ae, pn[m - 1], pe[m - 1], pn[m - 1], pe[m - 1], m - 1.5, m - 1, true);
   return { n, e, t };
 }
 

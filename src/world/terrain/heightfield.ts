@@ -924,21 +924,27 @@ function buildWater(): void {
     const eroded = buildErosion(inputs, T);
     erosion = eroded;
     lastModel = { seed: worldSeed(), key, lattice: T, slopes: null };
-    // The macro cells the drainage routes over (erosion.ts), with the cushion above the sea and the era's volcano.
+    // The macro cells the drainage settles its lakes on and the cells it routes the water over (erosion.ts: the same
+    // cells, as drawn and as the model routed them), each with the cushion above the sea and the era's volcano.
     const lat = eroded.lattice;
+    const rte = eroded.routing;
     const V = era().terrain.volcano;
     for (let c = 0; c < lat.length; c++) {
       lat[c] = applyMacro(eroded.base[c], lat[c] - eroded.base[c]);
+      rte[c] = applyMacro(eroded.base[c], rte[c] - eroded.base[c]);
       if (!V) continue;
       const north = -DOMAIN_HALF + Math.floor(c / EROSION_N) * DRAIN_CELL;
       const east = -DOMAIN_HALF + (c % EROSION_N) * DRAIN_CELL;
       const b = volcanoBound(V);
-      if ((north - V.north) ** 2 + (east - V.east) ** 2 < b * b) lat[c] = volcanoMerge(lat[c], volcanoHeight(north, east, V));
+      if ((north - V.north) ** 2 + (east - V.east) ** 2 < b * b) {
+        lat[c] = volcanoMerge(lat[c], volcanoHeight(north, east, V));
+        rte[c] = volcanoMerge(rte[c], volcanoHeight(north, east, V));
+      }
     }
     const drainage = buildDrainage(naturalHeightCoarse, naturalHeight, (ponds) => {
       shoreSmooth = new ShoreSmooth(EROSION_N, -DOMAIN_HALF, ponds, home);
       shoreSeed = worldSeed();
-    }, lat);
+    }, lat, rte);
     seededDrainage = drainage;
     // Its lakes are the drainage's ponds, flooded on the detailed ground (LakeMask): the water covers the natural
     // ground below their level, nothing carved; the fitted ellipses only place things by them.
