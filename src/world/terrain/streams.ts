@@ -509,8 +509,10 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       const ri = Math.floor(k / R);
       const rj = k % R;
       if (ri <= 0 || rj <= 0 || ri >= R - 1 || rj >= R - 1) return { kind: 'edge', line: -1, idx: 0, pool: -1 };
+      // (A lake where its water stands over the point: its domain's rim, under a margin over the water, is dry ground
+      // the course runs on over into the water.)
       const pool = mask.poolAt(ri, rj);
-      if (pool >= 0 && pool !== own && !mask.pools[pool].drained && !(avoidPools && avoidPools.has(pool)) && !overSource(k)) return { kind: 'lake', line: -1, idx: 0, pool, ok: true };
+      if (pool >= 0 && pool !== own && !mask.pools[pool].drained && !(avoidPools && avoidPools.has(pool)) && !overSource(k) && G(k) < mask.pools[pool].level) return { kind: 'lake', line: -1, idx: 0, pool, ok: true };
       if (G(k) <= 0.5) return { kind: 'sea', line: -1, idx: 0, pool: -1 };
       return null;
     };
