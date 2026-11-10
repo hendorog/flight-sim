@@ -21,7 +21,7 @@ it('junction views', () => {
       const AP = P.area![bk];
       if (bd > 30 || AP < Number(env.JV_RATIO ?? 8) * A || AP > 400) return;
       const d = debugMacro(r.north[m], r.east[m]);
-      if (!d || d.s.mw < 0.5) return;
+      if (!d || d.s.m < 0.5) return;
       if (used.some(([a, b]) => Math.hypot(a - r.north[m], b - r.east[m]) < 20000)) return;
       // From 500 m down the receiver, 250 m over its water, looking at a point 150 m up the tributary.
       let c = bk;

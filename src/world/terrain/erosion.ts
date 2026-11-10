@@ -26,9 +26,8 @@
 // floor keeps falling. C1 everywhere, so the terrain has no facets or creases at the lattice lines and no beads along
 // a channel that steps diagonally. The change may raise the ground as well as lower it; nothing clamps it at 0.
 
-import { A2, A2rec } from './a2Probe';
 import { DOMAIN_HALF, DRAIN_CELL, HOME_MOUND, HOME_RADIUS, LAKE_HOME_CLEAR, RIVER_AREA } from './drainage';
-import type { SlopeField } from './hillslopes';
+import { FLOOR_CHUNK, floorChunk, nearLine, type FloorLines, type SlopeField } from './hillslopes';
 import { placeBlock, type Structure } from './structure';
 
 /** Settings of the steady-state model. */
@@ -157,6 +156,13 @@ export interface ErosionField {
   course: Uint8Array;
   /** Per lattice cell: whether any of `course` reaches the samples interpolated in it (a skip for the rest). */
   courseAny: Uint8Array;
+  /**
+   * The channels' floors as lines (FloorLines): each channel piece's course (the carve's B-spline) about every
+   * FLOOR_STEP m, with its floor's half-width (FLOOR_HALF by the channel's strength). The threshold hillslopes take them
+   * as their fixed base level (hillslopes.ts thresholdSlopes) and the terrain draws them along the lines
+   * (sampleErosion).
+   */
+  floorLines: FloorLines;
   /** The home field, where the change is held at none over its pad (PAD_KEEP). */
   home: { north: number; east: number };
   /** The macro cells T (the noise lattice plus the change), with the corner fix below (a drawing fix for the
@@ -172,6 +178,18 @@ export interface ErosionField {
   slopes: SlopeField | null;
   /** Per lattice cell: whether any of the slopes' weight reaches the samples interpolated in it (a skip for the rest). */
   slopeAny: Uint8Array | null;
+  /** The floors' lines the terrain draws (floorGround), indexed per lattice cell once the slopes are attached. */
+  floorIndex: FloorIndex | null;
+}
+
+/** floorLines' chunks (FLOOR_CHUNK segments each, in the lines' order) by lattice cell (CSR: cell -> the chunks
+ * reaching it), each with its line, first segment and box grown by its reach. */
+interface FloorIndex {
+  start: Int32Array;
+  list: Int32Array;
+  line: Int32Array;
+  seg: Int32Array;
+  box: Float32Array;
 }
 
 /** Spacing of the fine grid the valleys are drawn on, m: a quarter of the lattice's. */
@@ -194,8 +212,13 @@ const CARVE_HALF_MAX = 1600;
 const VALLEY_SLOPE = 0.12;
 /** Distance inside the fine grid's edge, m, over which the carve and the floor come in. */
 const EDGE_KEEP = [1000, 3000];
-/** Half-width of a channel's valley floor, m, where the finer relief and the gullies give way (erosionGullies). */
+/** Half-width of a channel's valley floor, m, where the finer relief and the gullies give way (erosionGullies), and
+ * where the threshold hillslopes stand on it at its level (FloorLines). */
 const FLOOR_HALF = 450;
+/** The floors' lines are sampled about this often along a channel's course, m. */
+const FLOOR_STEP = 40;
+/** A floor's half-width for a catchment of `area` km² (a lattice cell is 1 km²): FLOOR_HALF by the channel's strength. */
+export const floorHalfFor = (area: number): number => FLOOR_HALF * smoothstep(CHANNEL_AREA, 2 * CHANNEL_AREA, area);
 /** Half-width of the window, cells, whose mean ground a cell's valley depth is measured from (valley): on river cells
  * its distribution matches the old erosion's cut there (p50 45-55 m), which riverNetwork.ts GORGE_CUT reads. */
 const VALLEY_R = 1;
@@ -556,7 +579,6 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
   for (let k = 0; k < order.length; k++) {
     const c = order[k];
     const r = receiver[c];
-    if (A2.cornerOff === 'all') break;
     if (r < 0 || !diag[c] || area[c] < CORNER_AREA) continue;
     const mid = 0.5 * (h[c] + Math.max(h[r], LAND_MIN));
     const ic = (c / n) | 0;
@@ -580,13 +602,6 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
     eroded[c] = base[c] + change[c];
     routing[c] = base[c] + (routedCells[c] - h0[c]);
   }
-  // (Round V A2 probe only, a2Probe.ts.)
-  if (A2.record) {
-    A2rec.deltaRouted = Float32Array.from(routedCells, (v, c) => v - h0[c]);
-    copyEdges(A2rec.deltaRouted, n);
-    A2rec.lowered = Float32Array.from(routedCells, (v, c) => v - h[c]);
-  }
-  if (A2.cornerOff === 'delta') for (let c = 0; c < n * n; c++) change[c] = routedCells[c] - h0[c];
   copyEdges(change, n);
   const N = CUT_N;
   const surface = upsample(eroded, n);
@@ -600,41 +615,53 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
   const se = new Float64Array(PIECE_SAMPLES + 1);
   const ex = new Float64Array(PIECE_SAMPLES + 1);
   const fk = new Float64Array(PIECE_SAMPLES + 1);
+  // The floors' lines (FloorLines): each piece's points (about every FLOOR_STEP m), by the cell it runs from (its
+  // donor's, or a channel's first cell's own), then joined into courses below.
+  const pieceFrom = new Map<number, number[]>();
+  const headPiece = new Map<number, number[]>();
+  const strengthOf = (c: number): number => smoothstep(CHANNEL_AREA, 2 * CHANNEL_AREA, area[c]);
   const carvePiece = (a: number, c: number, r: number, strength: number): void => {
     // Quadratic B-spline piece from the middle of a->c, about c, to the middle of c->r (a = c: from the cell itself),
-    // through the smoothed course.
-    const cn0 = pn[a];
-    const ce0 = pe[a];
+    // through the smoothed course (coursePiece, as the rivers' axes are laid, riverNetwork.ts).
     const cn1 = pn[c];
     const ce1 = pe[c];
-    const cn2 = pn[r];
-    const ce2 = pe[r];
-    const pn0 = 0.5 * (cn0 + cn1);
-    const pe0 = 0.5 * (ce0 + ce1);
-    const pn2 = 0.5 * (cn1 + cn2);
-    const pe2 = 0.5 * (ce1 + ce2);
+    const pn0 = 0.5 * (pn[a] + cn1);
+    const pe0 = 0.5 * (pe[a] + ce1);
+    const pn2 = 0.5 * (cn1 + pn[r]);
+    const pe2 = 0.5 * (ce1 + pe[r]);
     const f0 = 0.5 * (eroded[a] + eroded[c]);
     const f1 = eroded[c];
     const f2 = 0.5 * (eroded[c] + Math.max(eroded[r], LAND_MIN));
     let any = false;
     for (let k = 0; k <= PIECE_SAMPLES; k++) {
       const t = k / PIECE_SAMPLES;
-      const w0 = (1 - t) * (1 - t);
-      const w1 = 2 * t * (1 - t);
-      const w2 = t * t;
-      const qn = w0 * pn0 + w1 * cn1 + w2 * pn2;
-      const qe = w0 * pe0 + w1 * ce1 + w2 * pe2;
-      sn[k] = qn;
-      se[k] = qe;
-      const fl = w0 * f0 + w1 * f1 + w2 * f2;
+      coursePiece(pn0, pe0, cn1, ce1, pn2, pe2, t);
+      sn[k] = pieceAt.n;
+      se[k] = pieceAt.e;
+      const fl = (1 - t) * (1 - t) * f0 + 2 * t * (1 - t) * f1 + t * t * f2;
       fk[k] = fl;
-      ex[k] = Math.max(0, bicubic(eroded, n, origin, DRAIN_CELL, qn, qe, true) - fl) * strength;
+      ex[k] = Math.max(0, bicubic(eroded, n, origin, DRAIN_CELL, pieceAt.n, pieceAt.e, true) - fl) * strength;
       if (ex[k] > 0) any = true;
     }
     for (let k = 0; k < PIECE_SAMPLES; k++) {
       markFloor(floorMask, N, sn[k], se[k], sn[k + 1], se[k + 1], strength);
       if (any && (ex[k] > 0 || ex[k + 1] > 0)) carveSegment(carve, surface, N, sn[k], se[k], fk[k], sn[k + 1], se[k + 1], fk[k + 1], Math.max(ex[k], ex[k + 1]), strength);
     }
+    // Its floor's line, about every FLOOR_STEP m along the same piece; the floor's half-width by the channel's strength,
+    // running on from cell to cell as its level does (f0, f1, f2).
+    let len = 0;
+    for (let k = 0; k < PIECE_SAMPLES; k++) len += Math.hypot(sn[k + 1] - sn[k], se[k + 1] - se[k]);
+    const steps = Math.max(1, Math.ceil(len / FLOOR_STEP));
+    const s0 = 0.5 * (strengthOf(a) + strength);
+    const s2 = 0.5 * (strength + strengthOf(r));
+    const pts: number[] = [];
+    for (let k = 0; k <= steps; k++) {
+      const u = k / steps;
+      coursePiece(pn0, pe0, cn1, ce1, pn2, pe2, u);
+      pts.push(pieceAt.n, pieceAt.e, FLOOR_HALF * ((1 - u) * (1 - u) * s0 + 2 * u * (1 - u) * strength + u * u * s2));
+    }
+    if (a === c) headPiece.set(c, pts);
+    else pieceFrom.set(a, pts);
   };
   for (const c of channel) {
     const r = receiver[c];
@@ -679,7 +706,100 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
       for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) carveAny[i * n + j] = 1;
     }
   }
-  return { delta: change, base, carve, carveAny, floor: floorMask, course: new Uint8Array(N * N), courseAny: new Uint8Array(n * n), home: { north: home.north, east: home.east }, lattice: eroded, routing, valley: valleyDepth(eroded, n, fixed), slopes: null, slopeAny: null };
+  // The floors' lines: one per course, from a channel's first cell down its pieces while it is its receiver's main
+  // donor (the largest), so to the mouth (its end the line's own) or into the course it joins (its last piece runs on
+  // into that course's, and past its end the floor is that course's).
+  const mainDonor = new Int32Array(n * n).fill(-1);
+  for (const c of channel) {
+    const r = receiver[c];
+    if (r >= 0 && (mainDonor[r] < 0 || area[c] > area[mainDonor[r]])) mainDonor[r] = c;
+  }
+  const lineStart: number[] = [0];
+  const lineN: number[] = [];
+  const lineE: number[] = [];
+  const lineW: number[] = [];
+  const lineCap: number[] = [];
+  for (const [h, first] of headPiece) {
+    const add = (pts: number[], from: number): void => {
+      for (let k = from; k < pts.length; k += 3) {
+        lineN.push(pts[k]);
+        lineE.push(pts[k + 1]);
+        lineW.push(pts[k + 2]);
+      }
+    };
+    add(first, 0);
+    let cur = h;
+    let cap = 3;
+    for (;;) {
+      const pts = pieceFrom.get(cur);
+      if (!pts) break;
+      add(pts, 3);
+      const r = receiver[cur];
+      if (mainDonor[r] !== cur) {
+        cap = 1;
+        break;
+      }
+      cur = r;
+    }
+    lineStart.push(lineN.length);
+    lineCap.push(cap);
+  }
+  const floorLines: FloorLines = { start: Int32Array.from(lineStart), north: Float32Array.from(lineN), east: Float32Array.from(lineE), half: Float32Array.from(lineW), cap: Uint8Array.from(lineCap) };
+  return { delta: change, base, carve, carveAny, floor: floorMask, course: new Uint8Array(N * N), courseAny: new Uint8Array(n * n), floorLines, home: { north: home.north, east: home.east }, lattice: eroded, routing, valley: valleyDepth(eroded, n, fixed), slopes: null, slopeAny: null, floorIndex: null };
+}
+
+/** A point of a course's quadratic B-spline piece (coursePiece), m. */
+const pieceAt = { n: 0, e: 0 };
+/**
+ * One piece of a course's quadratic B-spline at u (0-1), into pieceAt: from (an, ae) about the course point (bn, be)
+ * to (cn, ce). The model carves its valleys along these pieces (buildErosion: from the middle of the leg into a channel
+ * cell, about the cell's course point, to the middle of the leg to its receiver), and the rivers' axes are laid on the
+ * same (courseSpline).
+ */
+export function coursePiece(an: number, ae: number, bn: number, be: number, cn: number, ce: number, u: number): void {
+  const w0 = (1 - u) * (1 - u);
+  const w1 = 2 * u * (1 - u);
+  const w2 = u * u;
+  pieceAt.n = w0 * an + w1 * bn + w2 * cn;
+  pieceAt.e = w0 * ae + w1 * be + w2 * ce;
+}
+
+/**
+ * A course's quadratic B-spline, as the model carves its valley (buildErosion carvePiece, coursePiece): from the first
+ * point straight to the middle of the first leg, then a piece about each inner point from the middle of the leg before
+ * it to the middle of the leg after it, and from the middle of the last leg straight to the last point - or, given `ext`
+ * (the point after the last), a piece about the last point to the middle of the leg to `ext`. Sampled about every
+ * `spacing` m; `t` is each sample's place along the points (0 .. m - 1).
+ */
+export function courseSpline(pn: number[], pe: number[], spacing: number, ext?: [number, number]): { n: number[]; e: number[]; t: number[] } {
+  const m = pn.length;
+  if (m === 1) return { n: [pn[0], pn[0]], e: [pe[0], pe[0] + 1], t: [0, 0] };
+  const n: number[] = [];
+  const e: number[] = [];
+  const t: number[] = [];
+  const piece = (an: number, ae: number, bn: number, be: number, cn: number, ce: number, t0: number, t1: number, last: boolean): void => {
+    const len = Math.hypot(bn - an, be - ae) + Math.hypot(cn - bn, ce - be);
+    const steps = Math.max(1, Math.ceil(len / spacing));
+    for (let k = 0; k < steps + (last ? 1 : 0); k++) {
+      const u = k / steps;
+      coursePiece(an, ae, bn, be, cn, ce, u);
+      n.push(pieceAt.n);
+      e.push(pieceAt.e);
+      t.push(t0 + (t1 - t0) * u);
+    }
+  };
+  const mid = (i: number): [number, number] => [0.5 * (pn[i] + pn[i + 1]), 0.5 * (pe[i] + pe[i + 1])];
+  let [an, ae] = mid(0);
+  piece(pn[0], pe[0], pn[0], pe[0], an, ae, 0, 0.5, false);
+  for (let i = 1; i < m - 1; i++) {
+    const [bn, be] = mid(i);
+    piece(an, ae, pn[i], pe[i], bn, be, i - 0.5, i + 0.5, false);
+    an = bn;
+    ae = be;
+  }
+  if (ext) piece(an, ae, pn[m - 1], pe[m - 1], 0.5 * (pn[m - 1] + ext[0]), 0.5 * (pe[m - 1] + ext[1]), m - 1.5, m - 1, true);
+  else piece(an, ae, pn[m - 1], pe[m - 1], pn[m - 1], pe[m - 1], m - 1.5, m - 1, true);
+  return { n, e, t };
 }
 
 /**
@@ -747,18 +867,6 @@ function valleyDepth(t: Float32Array, n: number, fixed: Uint8Array): Float32Arra
   return out;
 }
 
-/** The threshold hillslopes give way to a drawn river's own floor (hillslopes.ts riverCore) from the first of these to
- * the second (its core, where its level is read: the ground there stays the model's). Across the whole of the core's
- * taper: the slopes' ground (on the 250 m grid) can stand a couple of hundred metres over the model's beside a river's
- * floor narrower than a node, and over the taper's last half (from 0.5) it came in as a wall 60-90 m high in 25 m
- * (seeds 1 / 42 / 777777: 128 / 80 / 268 of them once the valley carve no longer cut them away). */
-const COURSE_SLOPES = [0, 0.95];
-/** ... and the gullies come back over the same (ErosionSample.mg): over the last tenth of it only, the slopes' ground
- * stood over the model's full gully relief across the rest, and where a river's channel swings onto the taper its
- * troughs lay under the water (water over the ground > 10 m, seeds 1 / 42 / 777777: 60 / 13 / 28 with that, 55 / 10 /
- * 23 without; overGround). */
-const COURSE_GULLIES = [0, 0.95];
-
 /** Hand the field its threshold hillslopes (hillslopes.ts thresholdSlopes), with the skip per lattice cell. */
 export function attachSlopes(f: ErosionField, s: SlopeField): void {
   const n = LATTICE_N;
@@ -776,6 +884,110 @@ export function attachSlopes(f: ErosionField, s: SlopeField): void {
   }
   f.slopes = s;
   f.slopeAny = any;
+  // The floors' lines' chunks by lattice cell, each as far as the terrain draws it (FLOOR_DRAW past its floor's edge).
+  const L = f.floorLines;
+  const line: number[] = [];
+  const seg: number[] = [];
+  const bx: number[] = [];
+  for (let p = 0; p < L.start.length - 1; p++) {
+    const s1 = L.start[p + 1] - 1;
+    for (let k0 = L.start[p]; k0 < s1; k0 += FLOOR_CHUNK) {
+      const k1 = Math.min(s1, k0 + FLOOR_CHUNK);
+      let n0 = Infinity, n1 = -Infinity, e0 = Infinity, e1 = -Infinity, w = 0;
+      for (let k = k0; k <= k1; k++) {
+        n0 = Math.min(n0, L.north[k]);
+        n1 = Math.max(n1, L.north[k]);
+        e0 = Math.min(e0, L.east[k]);
+        e1 = Math.max(e1, L.east[k]);
+        w = Math.max(w, L.half[k]);
+      }
+      const r = w + FLOOR_DRAW[1];
+      line.push(p);
+      seg.push(k0);
+      bx.push(n0 - r, n1 + r, e0 - r, e1 + r);
+    }
+  }
+  const C = line.length;
+  const box = Float32Array.from(bx);
+  const count = new Int32Array(n * n + 1);
+  const cells = (c: number, fn: (cell: number) => void): void => {
+    const i0 = Math.max(0, Math.floor((box[4 * c] - DOMAIN_LO) / DRAIN_CELL));
+    const i1 = Math.min(n - 1, Math.floor((box[4 * c + 1] - DOMAIN_LO) / DRAIN_CELL));
+    const j0 = Math.max(0, Math.floor((box[4 * c + 2] - DOMAIN_LO) / DRAIN_CELL));
+    const j1 = Math.min(n - 1, Math.floor((box[4 * c + 3] - DOMAIN_LO) / DRAIN_CELL));
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) fn(i * n + j);
+  };
+  for (let c = 0; c < C; c++) cells(c, (cell) => count[cell + 1]++);
+  for (let c = 0; c < n * n; c++) count[c + 1] += count[c];
+  const fill = count.slice(0, n * n);
+  const list = new Int32Array(count[n * n]);
+  for (let c = 0; c < C; c++) cells(c, (cell) => (list[fill[cell]++] = c));
+  f.floorIndex = { start: count, list, line: Int32Array.from(line), seg: Int32Array.from(seg), box };
+}
+
+/** The terrain draws a floor's line (floorGround) to FLOOR_DRAW[0] m past its floor's edge, fading out by FLOOR_DRAW[1];
+ * past that the slopes' nodes, graded up from the same line (hillslopes.ts), stand on it. */
+const FLOOR_DRAW = [CUT_CELL, 2 * CUT_CELL];
+/** The slopes' interpolated ground meets a floor's drawn ground with a smooth minimum over this, m (heightfield.ts). */
+export const FLOOR_SMIN = 8;
+/**
+ * The model's floors at (north, east) as the terrain draws them, into `out` (ErosionSample.fw, fin, fc, fcN, fcE):
+ * whether the point lies on one (within its half-width of its line: the model's own ground there), and the lowest of
+ * their walls about it (each floor's edge level on the point's side, SlopeField.lz, rising past it at `slope`, the
+ * threshold hillslopes' gradient by their weight). Drawn to FLOOR_DRAW past the nearest floor's edge.
+ */
+function floorGround(f: Pick<ErosionField, 'floorLines' | 'floorIndex'>, z: Float32Array, north: number, east: number, slope: number, out: ErosionSample): void {
+  out.fw = out.fin = 0;
+  out.fc = Infinity;
+  const idx = f.floorIndex;
+  if (!idx) return;
+  const c = cellAt(north, east);
+  const a0 = idx.start[c];
+  const a1 = idx.start[c + 1];
+  if (a1 <= a0) return;
+  const L = f.floorLines;
+  const box = idx.box;
+  // (Each line at its nearest point, its chunks listed together.)
+  let pastMin = Infinity;
+  let cur = -1;
+  const fold = (): void => {
+    if (cur < 0 || nearLine.d === Infinity || nearLine.open) return;
+    const past = nearLine.past;
+    pastMin = Math.min(pastMin, past);
+    if (past <= 0) {
+      out.fin = 1;
+      return;
+    }
+    out.fc = Math.min(out.fc, nearLine.z + slope * past);
+  };
+  for (let a = a0; a < a1; a++) {
+    const ch = idx.list[a];
+    if (north < box[4 * ch] || north > box[4 * ch + 1] || east < box[4 * ch + 2] || east > box[4 * ch + 3]) continue;
+    const p = idx.line[ch];
+    if (p !== cur) {
+      fold();
+      cur = p;
+      nearLine.d = Infinity;
+    }
+    floorChunk(L, z, p, idx.seg[ch], Math.min(L.start[p + 1] - 1, idx.seg[ch] + FLOOR_CHUNK), north, east);
+  }
+  fold();
+  out.fw = pastMin < Infinity ? 1 - smoothstep(FLOOR_DRAW[0], FLOOR_DRAW[1], pastMin) : 0;
+}
+/** A smooth minimum of a and b over k that never dips under the lower (equal grounds stay as they are); its weight on b
+ * into sminW (heightfield.ts: the slopes' ground meeting the model's floors). */
+let sminW = 0;
+export function sminUp(a: number, b: number, k: number): number {
+  const x = Math.abs(a - b);
+  if (x >= k) {
+    sminW = a <= b ? 0 : 1;
+    return a <= b ? a : b;
+  }
+  const u = 1 - x / k;
+  const sx = x - x * u * u;
+  const ds = 1 - u * (1 - (3 * x) / k);
+  sminW = 0.5 * (1 + ds * (a > b ? 1 : a < b ? -1 : 0));
+  return 0.5 * (a + b) - 0.5 * sx;
 }
 
 /** The model at a point (sampleErosion), for macroOffset and erosionGullies. */
@@ -794,19 +1006,20 @@ export interface ErosionSample {
   keep: number;
   /** How far outside the lattice the point lies, m (0 inside). */
   o: number;
-  /** The threshold hillslopes (hillslopes.ts): how far the ground takes them, [0, 1] (0: none here), the ground they
-   * built (Catmull-Rom), m, and how far the point lies on one of their channels' floors, [0, 1]. */
+  /** The threshold hillslopes (hillslopes.ts): how far the ground takes them, [0, 1] (0: none here; their mountain
+   * mask, SlopeField.w, by the home pad's keep: the gullies give way to their valleys by it, heightfield.ts, and
+   * carveNetwork lowers their walls by it, riverNetwork.ts wallLift), the ground they built (Catmull-Rom, with the
+   * model's floors drawn along their lines, floorGround), m, and how far the point lies on one of their channels'
+   * floors, [0, 1]. */
   m: number;
   hs: number;
   ch: number;
-  /** How far the gullies give way to the threshold hillslopes' valleys, [0, 1]: the weight, off only on a drawn river's
-   * core (where the ground stays the model's, gullies and all), so they do not come back in the band where the ground
-   * blends from the slopes to the river's floor. */
-  mg: number;
-  /** The threshold hillslopes' own weight (their mountain mask, SlopeField.w, by the home pad's keep), [0, 1]: not off
-   * on a river's core, so smooth across it (heightfield.ts carveNetwork lowers their walls by it, riverNetwork.ts
-   * wallLift). */
-  mw: number;
+  /** The model's floors about the point (floorGround): how far they are drawn here (0-1; 0: none), 1 on a floor (the
+   * model's own ground there, heightfield.ts), and the lowest of the floors' walls (their edges' levels rising at the
+   * slopes' gradient past them; Infinity: none), m. */
+  fw: number;
+  fin: number;
+  fc: number;
   north: number;
   east: number;
 }
@@ -838,24 +1051,8 @@ function residualFade(x: number): number {
   return t * t * (3 - 2 * t);
 }
 
-/** Round V A2 probe only (a2Probe.ts): at a point, the drawn change without the corner fix (B-spline), the valley
- * depth's fade g, a drawn river's floor mark k (markCourse), and the slope pass's river core (0-1, Catmull-Rom) with
- * the core at the nearest fine node (0-255). */
-export function a2Sample(f: Pick<ErosionField, 'valley' | 'course' | 'courseAny' | 'slopes'>, north: number, east: number): { dRouted: number; g: number; k: number; kr: number; coreNode: number } {
-  const dRouted = A2rec.deltaRouted ? bicubic(A2rec.deltaRouted, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true) : NaN;
-  const g = residualFade(bicubic(f.valley, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true));
-  const fy = (north - DOMAIN_LO) / CUT_CELL;
-  const fx = (east - DOMAIN_LO) / CUT_CELL;
-  const inside = fy >= 1 && fx >= 1 && fy < CUT_N - 2 && fx < CUT_N - 2;
-  const k = inside && f.courseAny[cellAt(north, east)] ? Math.min(1, Math.max(0, catmullRomU8(f.course, CUT_N, fy, fx) / 255)) : 0;
-  const sl = f.slopes;
-  const kr = sl && inside ? catmullRomU8(sl.core, CUT_N, fy, fx) / 255 : 0;
-  const coreNode = sl && inside ? sl.core[Math.round(fy) * CUT_N + Math.round(fx)] : 0;
-  return { dRouted, g, k, kr, coreNode };
-}
-
 /** The model at (north, east), into `out`. */
-export function sampleErosion(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'course' | 'courseAny' | 'home' | 'valley' | 'slopes' | 'slopeAny'>, north: number, east: number, out: ErosionSample): void {
+export function sampleErosion(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'course' | 'courseAny' | 'floorLines' | 'floorIndex' | 'home' | 'valley' | 'slopes' | 'slopeAny'>, north: number, east: number, out: ErosionSample): void {
   out.north = north;
   out.east = east;
   out.d = bicubic(f.delta, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true);
@@ -870,19 +1067,19 @@ export function sampleErosion(f: Pick<ErosionField, 'delta' | 'base' | 'carve' |
   out.r = out.w > 0 ? bicubic(f.base, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true) : 0;
   out.keep = padKeep(f.home, north, east);
   out.o = outside(north, east);
-  out.m = out.hs = out.ch = out.mg = out.mw = 0;
+  out.m = out.hs = out.ch = out.fw = out.fin = 0;
+  out.fc = Infinity;
   const sl = f.slopes;
   if (sl && inside && (f.slopeAny as Uint8Array)[cellAt(north, east)]) {
-    const kr = catmullRomU8(sl.core, CUT_N, fy, fx) / 255;
     const m0 = Math.min(1, Math.max(0, catmullRomU8(sl.w, CUT_N, fy, fx) / 255));
-    out.mg = m0 * (1 - smoothstep(COURSE_GULLIES[0], COURSE_GULLIES[1], kr)) * out.keep;
-    out.mw = m0 * out.keep;
-    const m = m0 * (1 - smoothstep(COURSE_SLOPES[0], COURSE_SLOPES[1], kr));
-    if (m > 1e-4) {
-      out.m = Math.min(1, m) * out.keep;
+    if (m0 > 1e-4) {
+      out.m = m0 * out.keep;
       out.hs = catmullRom(sl.h, CUT_N, fy, fx);
       out.ch = Math.min(1, Math.max(0, catmullRomU8(sl.chan, CUT_N, fy, fx) / 255));
       if (out.ch > 0) out.hs += out.ch * (bilinear(sl.h, CUT_N, fy, fx) - out.hs);
+      // The model's floors along their lines (the nodes stand on the same, but between them the interpolation cuts a
+      // floor's edge), at the slopes' gradient by their weight.
+      floorGround(f, sl.lz, north, east, sl.sc / m0, out);
     }
   }
 }
@@ -894,8 +1091,8 @@ export function sampleErosion(f: Pick<ErosionField, 'delta' | 'base' | 'carve' |
  * the bilinear cells are planes facing along the grid's rows and columns. Water routed over the drawn ground plus this
  * runs down the slopes' own fall lines and round their valleys' bends as curves (rills.ts). 0 off the slopes.
  */
-const smoothAt: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, m: 0, hs: 0, ch: 0, mg: 0, mw: 0, north: 0, east: 0 };
-export function slopeSmoothDelta(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'course' | 'courseAny' | 'home' | 'valley' | 'slopes' | 'slopeAny'>, north: number, east: number): number {
+const smoothAt: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, m: 0, hs: 0, ch: 0, fw: 0, fin: 0, fc: Infinity, north: 0, east: 0 };
+export function slopeSmoothDelta(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'course' | 'courseAny' | 'floorLines' | 'floorIndex' | 'home' | 'valley' | 'slopes' | 'slopeAny'>, north: number, east: number): number {
   const sl = f.slopes;
   if (!sl || !f.slopeAny) return 0;
   const fy = (north - DOMAIN_LO) / CUT_CELL;
@@ -903,7 +1100,8 @@ export function slopeSmoothDelta(f: Pick<ErosionField, 'delta' | 'base' | 'carve
   if (!(fy >= 1 && fx >= 1 && fy < CUT_N - 2 && fx < CUT_N - 2) || !f.slopeAny[cellAt(north, east)]) return 0;
   sampleErosion(f, north, east, smoothAt);
   if (!(smoothAt.m > 0)) return 0;
-  return smoothAt.m * (bspline(sl.h, CUT_N, fy, fx) - smoothAt.hs);
+  // (Not about the model's floors, which the terrain draws along their lines: heightfield.ts.)
+  return smoothAt.m * (1 - smoothAt.fw) * (bspline(sl.h, CUT_N, fy, fx) - smoothAt.hs);
 }
 
 /**
@@ -962,7 +1160,7 @@ const cubic = { v: 0, gy: 0, gx: 0 };
  * (macroOffsetGrad). Values as sampleErosion's; gradients the B-spline's (Catmull-Rom's gradient is only C0, and the
  * gullies turned and held by it crease the ground along every grid line). Off the grids the gradients are taken as 0.
  */
-export function sampleErosionGrad(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'course' | 'courseAny' | 'home' | 'valley' | 'slopes' | 'slopeAny'>, north: number, east: number, out: ErosionSample, g: ErosionGrad): void {
+export function sampleErosionGrad(f: Pick<ErosionField, 'delta' | 'base' | 'carve' | 'carveAny' | 'floor' | 'course' | 'courseAny' | 'floorLines' | 'floorIndex' | 'home' | 'valley' | 'slopes' | 'slopeAny'>, north: number, east: number, out: ErosionSample, g: ErosionGrad): void {
   out.north = north;
   out.east = east;
   const ly = (north - DOMAIN_LO) / DRAIN_CELL;
@@ -1031,38 +1229,18 @@ export function sampleErosionGrad(f: Pick<ErosionField, 'delta' | 'base' | 'carv
   }
   out.keep = padKeep(f.home, north, east);
   out.o = outside(north, east);
-  out.m = out.hs = out.ch = out.mg = out.mw = 0;
+  out.m = out.hs = out.ch = out.fw = out.fin = 0;
+  out.fc = Infinity;
   g.mN = g.mE = g.hN = g.hE = 0;
   const sl = f.slopes;
   if (sl && inside && (f.slopeAny as Uint8Array)[cellAt(north, east)]) {
     const m0 = Math.min(1, Math.max(0, catmullRomU8(sl.w, CUT_N, fy, fx) / 255));
-    const kr = catmullRomU8(sl.core, CUT_N, fy, fx) / 255;
-    out.mg = m0 * (1 - smoothstep(COURSE_GULLIES[0], COURSE_GULLIES[1], kr)) * out.keep;
-    out.mw = m0 * out.keep;
-    const kc = 1 - smoothstep(COURSE_SLOPES[0], COURSE_SLOPES[1], kr);
-    const m = m0 * kc;
-    if (m > 1e-4) {
-      out.m = Math.min(1, m) * out.keep;
-      if (m < 1) {
-        let gN = 0;
-        let gE = 0;
-        if (m0 < 1) {
-          cubicGradU8(sl.w, CUT_N, fy, fx);
-          gN = cubic.gy / (255 * CUT_CELL);
-          gE = cubic.gx / (255 * CUT_CELL);
-        }
-        // (With the drawn river's floor's fade: d(1 - smoothstep)/dk times its mark's gradient.)
-        const t = (kr - COURSE_SLOPES[0]) / (COURSE_SLOPES[1] - COURSE_SLOPES[0]);
-        let krN = 0;
-        let krE = 0;
-        if (t > 0 && t < 1) {
-          cubicGradU8(sl.core, CUT_N, fy, fx);
-          const dk = -(6 * t * (1 - t)) / (COURSE_SLOPES[1] - COURSE_SLOPES[0]);
-          krN = (dk * cubic.gy) / (255 * CUT_CELL);
-          krE = (dk * cubic.gx) / (255 * CUT_CELL);
-        }
-        g.mN = out.keep * (gN * kc + m0 * krN);
-        g.mE = out.keep * (gE * kc + m0 * krE);
+    if (m0 > 1e-4) {
+      out.m = m0 * out.keep;
+      if (m0 < 1) {
+        cubicGradU8(sl.w, CUT_N, fy, fx);
+        g.mN = (out.keep * cubic.gy) / (255 * CUT_CELL);
+        g.mE = (out.keep * cubic.gx) / (255 * CUT_CELL);
       }
       out.hs = catmullRom(sl.h, CUT_N, fy, fx);
       cubicGrad(sl.h, CUT_N, fy, fx, true);
@@ -1070,6 +1248,8 @@ export function sampleErosionGrad(f: Pick<ErosionField, 'delta' | 'base' | 'carv
       g.hE = cubic.gx / CUT_CELL;
       out.ch = Math.min(1, Math.max(0, catmullRomU8(sl.chan, CUT_N, fy, fx) / 255));
       if (out.ch > 0) out.hs += out.ch * (bilinear(sl.h, CUT_N, fy, fx) - out.hs);
+      // The model's floors along their lines (as sampleErosion).
+      floorGround(f, sl.lz, north, east, sl.sc / m0, out);
     }
   }
 }

@@ -17,7 +17,7 @@ it('line around', () => {
     const h = (Math.atan2(r.east[j] - r.east[i], r.north[j] - r.north[i]) * 180) / Math.PI;
     const d = debugMacro(r.north[i], r.east[i])!;
     const on = Math.round(r.north[i] / 250) * 250, oe = Math.round(r.east[i] / 250) * 250;
-    console.log(`  s ${r.s[i].toFixed(0)} ${r.north[i].toFixed(0)},${r.east[i].toFixed(0)} off raster ${Math.hypot(r.north[i] - on, r.east[i] - oe).toFixed(0)} heading ${h.toFixed(0)} pin ${Math.min(1, d.s.mg * d.s.ch * 2).toFixed(2)} ch ${d.s.ch.toFixed(2)} mg ${d.s.mg.toFixed(2)} lvl ${r.level[i].toFixed(1)}`);
+    console.log(`  s ${r.s[i].toFixed(0)} ${r.north[i].toFixed(0)},${r.east[i].toFixed(0)} off raster ${Math.hypot(r.north[i] - on, r.east[i] - oe).toFixed(0)} heading ${h.toFixed(0)} pin ${Math.min(1, d.s.m * d.s.ch * 2).toFixed(2)} ch ${d.s.ch.toFixed(2)} mg ${d.s.m.toFixed(2)} lvl ${r.level[i].toFixed(1)}`);
   }
   setWorldSeed(0);
 });

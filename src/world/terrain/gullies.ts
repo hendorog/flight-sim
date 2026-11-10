@@ -32,8 +32,8 @@ export interface GullyNet {
   dir: Uint8Array;
   /** Catchment through each node the pass built, km² (its own cell and every node draining to it), 0 elsewhere. */
   area: Float32Array;
-  /** SlopeField.core: how far a node lies on a drawn river's own floor (held by the pass), 0-255. */
-  core: Uint8Array;
+  /** SlopeField.floor: the nodes on a model's floor (the pass's fixed base level), 255. */
+  floor: Uint8Array;
   /** SlopeField.h: the ground the pass built, m. */
   h: Float32Array;
 }
@@ -59,7 +59,7 @@ export function gullyNetOf(sl: SlopeField | null | undefined): GullyNet | null {
   // (The pass summed it already when it built the field here; a field from the cache sums it again.)
   if (sl.area && sl.area.length === N) {
     lastSlopes = sl;
-    lastNet = { n, cell: LAKE_RASTER, origin: -DOMAIN_HALF, dir, area: sl.area, core: sl.core, h: sl.h };
+    lastNet = { n, cell: LAKE_RASTER, origin: -DOMAIN_HALF, dir, area: sl.area, floor: sl.floor, h: sl.h };
     return lastNet;
   }
   const area = new Float32Array(N);
@@ -86,7 +86,7 @@ export function gullyNetOf(sl: SlopeField | null | undefined): GullyNet | null {
     if (--indeg[r] === 0) queue[tail++] = r;
   }
   lastSlopes = sl;
-  lastNet = { n, cell: LAKE_RASTER, origin: -DOMAIN_HALF, dir, area, core: sl.core, h: sl.h };
+  lastNet = { n, cell: LAKE_RASTER, origin: -DOMAIN_HALF, dir, area, floor: sl.floor, h: sl.h };
   return lastNet;
 }
 

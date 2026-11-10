@@ -105,25 +105,6 @@ vi.mock('../../src/world/terrain/erosion', async (orig) => {
     },
   };
 });
-vi.mock('../../src/world/terrain/hillslopes', async (orig) => {
-  const o = (await orig()) as Record<string, unknown>;
-  const riverCore = o.riverCore as (...a: unknown[]) => Uint8Array;
-  return {
-    ...o,
-    riverCore: (...a: unknown[]): Uint8Array => {
-      const at = HK.site();
-      const r = riverCore(...a);
-      let held = 0, any = 0;
-      for (let q = 0; q < r.length; q++) {
-        if (r[q] > 0) any++;
-        if (r[q] >= 250) held++;
-      }
-      HK.bump(`riverCore@${at}.held`, held);
-      HK.bump(`riverCore@${at}.any`, any);
-      return r;
-    },
-  };
-});
 vi.mock('../../src/world/terrain/seededLayout', async (orig) => {
   const o = (await orig()) as Record<string, unknown>;
   const heard = (f: (...a: unknown[]) => unknown) => (...a: unknown[]): unknown => {
@@ -205,7 +186,6 @@ const A = {
   fieldTrim: anchor('riverNetwork.ts', 'r.breach[i] = Math.min(r.breach[i], breachOfCut(r.cut[i]))'),
   confine: anchor('riverNetwork.ts', 'natural(north[i] + un * r, east[i] + ue * r) < floor'),
   refineNet: anchor('riverNetwork.ts', 'const f = refineSteep('),
-  coreHold: anchor('heightfield.ts', 'const core = riverCore(CUT_N'),
   holdsCarve: anchor('heightfield.ts', 'mask.holds(north, east) : 0'),
   holdsBreach: anchor('heightfield.ts', 'mask && mask.holds(north, east) > 0) keep'),
   // Round V A1: the wander family (RN1-RN3), the network's own copy of the course smoothing (ER3: one smoothing now,
@@ -598,7 +578,10 @@ function measure(seed: number): Map<string, [string, string]> {
     }
     set('ER6', 'derived', `${low} cells lowered (mean ${(drop / Math.max(1, low)).toFixed(0)} m), replayed`);
   }
+  // Round V A3: the floors the model carved are the slopes' base level as lines (V:FLOOR_LINES, V:FLOOR_DRAW):
+  // markCourse, the river cores and their fades are deleted.
   set('ER13', 'hook', `${h('markCourse.axes')} axes, ${h('markCourse.samples')} samples, ${h('markCourse.cells')} fine cells marked`);
+  set('ER14', 'deleted', 'A3 (no river core: the slopes and the gullies by the slopes\' weight alone)');
   if (A.netSmooth === null) set('ER3', 'deleted', 'A1 (one smoothing, erosion.ts channelCourse, for the carve and the axes)');
   if (A.modelCourse !== null) set('RN4', 'derived', `${d.lines.length} lines laid on the model's course (channelCourse, the carve's B-spline)`);
   // The second flood (Round V A1): the drainage's receivers over the model's cells as routed (`routing`), with the
@@ -646,7 +629,11 @@ function measure(seed: number): Map<string, [string, string]> {
 
   // --- hillslopes.ts
   set('HS1', 'report', `${slopeStats.active} nodes in the pass`);
-  set('HS2', 'hook', `${at('riverCore', A.coreHold, '.held')} nodes held (core >= 250), ${at('riverCore', A.coreHold, '.any')} in a core`);
+  set('HS2', 'deleted', 'A3 (V:FLOOR_LINES)');
+  set('HS3', 'deleted', 'A3');
+  set('HS4', 'deleted', 'A3 (every model floor runs down its course to the sea)');
+  set('V:FLOOR_LINES', 'report', `${slopeStats.floorLines} lines, ${slopeStats.floorPoints} points; ${slopeStats.floorNodes} nodes on a floor, ${slopeStats.floorWalls} under a floor's walls`);
+  set('V:FLOOR_DRAW', 'report', `${slopeStats.floorLines} lines drawn (as V:FLOOR_LINES)`);
   set('HS5', 'report', `${slopeStats.corners} corners`);
 
   // --- riverNetwork.ts
@@ -854,7 +841,9 @@ function measure(seed: number): Map<string, [string, string]> {
   set('PP3', 'report', `${(pitch.deepen ?? []).filter((x) => x > 0.01).length} pool heads under the old level`);
   // --- heightfield.ts (build-time parts)
   set('HF2', 'report', `${fieldHeldCount()} stream samples held`);
-  set('HF5', 'hook', '(as HS2)');
+  set('HF1', 'report', 'live with ER13 (byLake keeps the mark off the lakes)');
+  set('HF5', 'report', 'A3: the margin gone; the rivers\' own floors (the axes\' floorHalf) are floors\' lines (V:FLOOR_LINES)');
+
   set('HF6', 'report', `${num(rep.steps)} raster steps (as RN32)`);
   set('B:LEAVE_BELOW', 'report', `${num(sf.passing)} passing lines kept their levels`);
 
@@ -913,7 +902,7 @@ it('rule fires', () => {
   }
   setWorldSeed(0);
   const rows: Array<Record<string, string>> = [];
-  const all = [...ROWS.map((r) => r[0]), 'B:FIELD_RAISE', 'B:FIELD_BANK', 'B:RAISE_BESIDE', 'B:LEAVE_BELOW', 'B:RECEIVERS_FIRST', 'V:FLOOD2', 'V:CUT_PASTE', 'V:LAKE_PASTE'];
+  const all = [...ROWS.map((r) => r[0]), 'B:FIELD_RAISE', 'B:FIELD_BANK', 'B:RAISE_BESIDE', 'B:LEAVE_BELOW', 'B:RECEIVERS_FIRST', 'V:FLOOD2', 'V:CUT_PASTE', 'V:LAKE_PASTE', 'V:FLOOR_LINES', 'V:FLOOR_DRAW'];
   const meta = new Map(ROWS.map((r) => [r[0], r]));
   const appx: Record<string, [string, string, string, string]> = {
     'B:FIELD_RAISE': ['c', '(B)', '', 'FIELD_RAISE, RAISE_UNDER 1.5'],
@@ -925,6 +914,9 @@ it('rule fires', () => {
     'V:FLOOD2': ['b', 'C', 'A1', 'second flood: receivers over the model\'s cells (routing), lakes and cuts from the first'],
     'V:CUT_PASTE': ['b', 'C', 'A1', 'the first flood\'s breach cuts carried into the second'],
     'V:LAKE_PASTE': ['b', 'C', 'A1', 'the first flood\'s lake levels carried into the second'],
+    // Round V A3's added rows (the model's floors as lines: hillslopes.ts, erosion.ts floorGround).
+    'V:FLOOR_LINES': ['a', '', 'A3', 'the model\'s floors as the slopes\' base level: FLOOR_HALF x strength about each course (FLOOR_STEP 40), walls under the edge level + sc x past (FLOOR_REACH 750), junction ends open'],
+    'V:FLOOR_DRAW': ['b', 'E', 'A3', 'the floors drawn along their lines: FLOOR_DRAW [250, 500] past the edge, FLOOR_SMIN 8'],
   };
   const tally: Record<string, number> = {};
   const lines: string[] = [];
@@ -942,7 +934,7 @@ it('rule fires', () => {
     rows.push({ id, cls, grp, fate, rule, how, ...Object.fromEntries(seeds.map((s, k) => [`s${s}`, vals[k]])) });
     lines.push(`${id.padEnd(17)} ${cls.padEnd(6)} ${grp.padEnd(6)} ${how.padEnd(7)} ${vals.map((v) => v.padEnd(34)).join(' | ')} ${rule}`);
   }
-  console.log(`ruleFires: ${all.length} rows (map 2: 203 counted + 5 infrastructure; appendix B: 5; Round V added: 3); by how counted ${JSON.stringify(tally)}`);
+  console.log(`ruleFires: ${all.length} rows (map 2: 203 counted + 5 infrastructure; appendix B: 5; Round V added: 5); by how counted ${JSON.stringify(tally)}`);
   console.log(`  anchors: ${JSON.stringify(A)}`);
   console.log(`${'id'.padEnd(17)} ${'cls'.padEnd(6)} ${'grp'.padEnd(6)} ${'how'.padEnd(7)} ${seeds.map((s) => `seed ${s}`.padEnd(34)).join(' | ')} rule`);
   for (const l of lines) console.log(l);

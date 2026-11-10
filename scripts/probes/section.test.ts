@@ -24,7 +24,7 @@ it('section', () => {
       const cs = ch.slice(0, k).filter((c) => c.dist < 400).map((c) => `C${c.line}${c.kind ? 's' : 'r'} d${c.dist.toFixed(0)} lv${c.level.toFixed(0)}${c.breach > 0 ? ` br${c.breach.toFixed(0)}/${c.reach.toFixed(0)}` : ''}`).join(' ');
       const vv = vs.slice(0, kv).map((v) => `V${v.line} t${((v.dist - v.floodplain) / v.influence).toFixed(2)} I${v.influence.toFixed(0)} lv${v.level.toFixed(0)}`).join(' ');
       const dm = debugMacro(n, e);
-      console.log(`${x}\t${g.toFixed(1)}\t${nat.toFixed(1)}\tmg ${dm ? dm.s.mg.toFixed(2) : '-'} m ${dm ? dm.s.m.toFixed(2) : '-'} hs ${dm ? dm.s.hs.toFixed(0) : '-'} coarse ${dm ? dm.coarse.toFixed(0) : '-'}\t${cs}\t${vv}`);
+      console.log(`${x}\t${g.toFixed(1)}\t${nat.toFixed(1)}\tmg ${dm ? dm.s.m.toFixed(2) : '-'} m ${dm ? dm.s.m.toFixed(2) : '-'} hs ${dm ? dm.s.hs.toFixed(0) : '-'} coarse ${dm ? dm.coarse.toFixed(0) : '-'}\t${cs}\t${vv}`);
     }
   }
   setWorldSeed(0);

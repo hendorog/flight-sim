@@ -14,9 +14,9 @@ it('stream sinks', () => {
       if (sl.end !== 'sink') continue;
       const k = r.north.length - 1;
       const d = debugMacro(r.north[k], r.east[k]);
-      const c = !d ? 'none' : d.s.mg > 0.5 ? 'mountain' : d.s.m > 0 || d.s.mg > 0 ? 'edge' : 'outside';
+      const c = !d ? 'none' : d.s.m > 0.5 ? 'mountain' : d.s.m > 0 || d.s.m > 0 ? 'edge' : 'outside';
       cls[c] = (cls[c] ?? 0) + 1;
-      console.log(`SINK seed ${seed} ${r.north[k].toFixed(0)},${r.east[k].toFixed(0)} len ${(r.s[k] / 1000).toFixed(1)} km A ${sl.area[k].toFixed(1)} m ${d?.s.m.toFixed(2)} mg ${d?.s.mg.toFixed(2)} ch ${d?.s.ch.toFixed(2)} f ${d?.s.f.toFixed(2)} ${c}`);
+      console.log(`SINK seed ${seed} ${r.north[k].toFixed(0)},${r.east[k].toFixed(0)} len ${(r.s[k] / 1000).toFixed(1)} km A ${sl.area[k].toFixed(1)} m ${d?.s.m.toFixed(2)} mg ${d?.s.m.toFixed(2)} ch ${d?.s.ch.toFixed(2)} f ${d?.s.f.toFixed(2)} ${c}`);
     }
     console.log(`seed ${seed}: sinks by place ${JSON.stringify(cls)}`);
   }

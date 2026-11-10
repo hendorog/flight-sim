@@ -18,7 +18,7 @@ it('bank height', () => {
       if ((r.kind ?? 0) !== 0) return;
       for (let i = 1; i < r.north.length - 1; i += 4) {
         const dm = debugMacro(r.north[i], r.east[i]);
-        if (!env.BH_ALL && (!dm || dm.s.mw < 0.5)) continue;
+        if (!env.BH_ALL && (!dm || dm.s.m < 0.5)) continue;
         const dn = r.north[i + 1] - r.north[i - 1];
         const de = r.east[i + 1] - r.east[i - 1];
         const l = Math.hypot(dn, de) || 1;

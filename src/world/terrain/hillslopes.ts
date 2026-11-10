@@ -10,12 +10,14 @@
 // uplift holds it, so the slopes between a stream's floor and its ridges stand at the angle the rock holds and no
 // gentler. The construction, on the fine grid inside the orogen's mountains:
 //
-//   1. Route the water over the ground G as it stands (priority flood from the ground outside the pass and the drawn
-//      rivers' floors, then steepest descent on the filled surface G_f).
+//   1. Route the water over the ground G as it stands (priority flood from the ground outside the pass and the model's
+//      floors, then steepest descent on the filled surface G_f).
 //   2. Build the ground H downstream first: a node is its receiver's height plus the steepest drop it may stand over
 //      it, s(A) L, with s(A) = tan Sc on a hillslope (A < A_c) and min(tan Sc, ks A^-theta) on a channel (A >= A_c);
 //      so the channels' floors rise from their trunk at a stream-power gradient and every hillslope rises from its
-//      channel at the threshold. Up to the envelope E = G_f + lift (lift only on mountain ground: not on a plain); over
+//      channel at the threshold; and never over a model's floor's walls (its edge's level, rising past the edge at the
+//      threshold by the distance from its line). Up to the envelope E = G_f + lift (lift only on mountain ground: not
+//      on a plain); over
 //      it a slope rises on at `soft` of its gradient, at most `crown` over it, so a ridge is a crest where two slopes
 //      meet, and a summit the envelope holds is a low peak, not a flat cap.
 //   3. Route again over H (the channels now lower than the ground beside them gather its water: captures) and rebuild
@@ -30,9 +32,11 @@
 // raster down the same ground, pinned to the raster points on the channels' floors: they run in these valleys.
 //
 // Held at G: ground outside the orogen's mountain mask (the ranges' uplift share `ur`, `onset` to `full`), the sea,
-// the home field's held ground and protected surfaces (erosion.ts `hard`, `cap`), and the drawn rivers' own floors
-// (riverCore, from their axes as riverNetwork.ts lays them out): the rivers' levels, read off the ground after, are
-// those of stage 2.
+// the home field's held ground and protected surfaces (erosion.ts `hard`, `cap`). Fixed at their own level: the floors
+// the 1 km model carved (erosion.ts FloorLines: every channel's course, its B-spline, about every 40 m, with the
+// floor's half-width; at the model's ground there), the base level the slopes are graded up from. The nodes on a floor
+// stand at its level; the envelope never raises them. The terrain draws the floors along their lines (erosion.ts
+// floorGround), so the rivers laid on them (riverNetwork.ts) read the model's floor as their level.
 
 import { DOMAIN_HALF } from './drainage';
 
@@ -51,8 +55,6 @@ export interface SlopeParams {
   full: number;
   /** Route-and-build iterations. */
   iterations: number;
-  /** A drawn river's own floor (riverCore, 0-1) is held from this weight up. */
-  courseHold: number;
   /** Share of the gullies' relief kept where the pass runs fully (heightfield.ts): its channels are the valleys there. */
   gully: number;
   /** ... and of the finer gullies (the rills' scale, past heightfield.ts STREAM_GULLY_OCTAVES). */
@@ -63,8 +65,6 @@ export interface SlopeParams {
   lift: number;
   /** ... and the most a slope rises on over the envelope, m. */
   crown: number;
-  /** The share of both kept about a drawn river's valley (heightfield.ts RIVER_NO_LIFT). */
-  riverLift: number;
 }
 
 /** The envelope is raised (SlopeParams.lift, crown) where the ground's relief within RELIEF_R nodes is from the first to
@@ -72,7 +72,7 @@ export interface SlopeParams {
 const RELIEF_R = 8;
 const RELIEF_LIFT = [150, 400];
 
-export const SLOPES: SlopeParams = { sc: 0.73, ac: 1.5, ks: 0.2, theta: 0.45, onset: 0.3, full: 0.4, iterations: 6, courseHold: 0.98, gully: 0, fine: 1, lift: 100, soft: 0.4, crown: 150, riverLift: 1 };
+export const SLOPES: SlopeParams = { sc: 0.73, ac: 1.5, ks: 0.2, theta: 0.45, onset: 0.3, full: 0.4, iterations: 6, gully: 0, fine: 1, lift: 100, soft: 0.4, crown: 150 };
 
 /** Probes: change the pass's settings before a world is built (null: the defaults). */
 let override: Partial<SlopeParams> | null = null;
@@ -80,21 +80,28 @@ export function setSlopeParams(p: Partial<SlopeParams> | null): void {
   override = p;
 }
 export const slopeParams = (): SlopeParams => ({ ...SLOPES, ...(override ?? {}) });
-/** The settings as part of the model's cache key (heightfield.ts). */
-export const slopeKey = (p: SlopeParams): string => [p.sc, p.ac, p.ks, p.theta, p.onset, p.full, p.iterations, p.courseHold, p.gully, p.fine, p.lift, p.soft, p.crown, p.riverLift].join('_');
+/** The settings as part of the model's cache key (heightfield.ts), with the pass's version (bump when what it holds or
+ * hands on changes meaning). */
+const SLOPE_VERSION = 'lf2';
+export const slopeKey = (p: SlopeParams): string => [SLOPE_VERSION, p.sc, p.ac, p.ks, p.theta, p.onset, p.full, p.iterations, p.gully, p.fine, p.lift, p.soft, p.crown].join('_');
 
 /** What the pass hands the terrain (erosion.ts ErosionField.slopes), on the fine grid (n x n from (-DOMAIN_HALF,
  * -DOMAIN_HALF), `cell` apart). */
 export interface SlopeField {
-  /** The ground the pass built, m: at every node it built and G at those it held and three rings about them, else 0. */
+  /** The ground the pass built, m: at every node it built and G at those it fixed (the model's floors' among them) and
+   * three rings about them, else 0. */
   h: Float32Array;
   /** How far the terrain takes h, 0-255 (the mountain mask with the home field's fade). */
   w: Uint8Array;
   /** How far a node lies on a channel's floor, 0-255: the gullies and the small relief give way there. */
   chan: Uint8Array;
-  /** How far a node lies on a drawn river's own floor, 0-255 (riverCore): the pass holds it and the terrain keeps the
-   * ground as it stood there. */
-  core: Uint8Array;
+  /** The nodes on a model's floor (FloorLines), 255 (0 elsewhere): fixed at its level, the pass's base level. */
+  floor: Uint8Array;
+  /** The floors' edges' levels at their lines' points (FloorLines), left then right of each point, m: the model's
+   * ground at each edge. */
+  lz: Float32Array;
+  /** The threshold gradient the pass built with (SlopeParams.sc): the terrain draws the floors' walls at it. */
+  sc: number;
   /** The pass's own routing (its last, over the ground it built): at each node it built, 1 + the index into DI8/DJ8 of
    * its receiver's direction; 0 at every other node. The streams follow it (gullies.ts). Absent from old caches. */
   dir?: Uint8Array;
@@ -103,61 +110,55 @@ export interface SlopeField {
   area?: Float32Array;
 }
 
+
+/** The model's floors as lines (erosion.ts buildErosion: one per course, along the carve's B-spline, from a channel's
+ * first cell to the sea or into the course it joins): line p's points are start[p] .. start[p + 1] - 1, each with its
+ * place, m, and its floor's half-width, m; cap[p] bit 1: the line's floor ends at its last point (a mouth), else the
+ * course it joins carries it on there (bit 0, its first point, always). */
+export interface FloorLines {
+  start: Int32Array;
+  north: Float32Array;
+  east: Float32Array;
+  half: Float32Array;
+  cap: Uint8Array;
+}
+
+/** The lines are searched in chunks of this many segments (each chunk's box grown by its reach). */
+export const FLOOR_CHUNK = 16;
+/** floorChunk's result, per line: the nearest point's distance, m (Infinity: none yet), how far past the floor's edge
+ * it lies, m (<= 0 on the floor), the floor's edge level on its side (the model's ground at the edge, SlopeField.lz),
+ * m, and whether it lies past an end the line does not cap. */
+export const nearLine = { d: Infinity, past: 0, z: 0, open: false };
+/**
+ * Segments k0 .. k1 - 1 of line p of `L` (edge levels `z`: left then right of each point) at their point nearest
+ * (north, east): into nearLine if nearer than what it holds. A point is the line's own only where it lies across from
+ * it; past its first point (a channel's head) and past a mouth the line's floor ends round, but past its end where it
+ * joins another course that course carries the floor on (`open`: the point is not this line's).
+ */
+export function floorChunk(L: FloorLines, z: Float32Array, p: number, k0: number, k1: number, north: number, east: number): void {
+  const last = L.start[p + 1] - 2;
+  for (let k = k0; k < k1; k++) {
+    const an = L.north[k], ae = L.east[k];
+    const dn = L.north[k + 1] - an, de = L.east[k + 1] - ae;
+    const L2 = dn * dn + de * de;
+    const t0 = L2 > 1e-6 ? ((north - an) * dn + (east - ae) * de) / L2 : 0;
+    const t = t0 < 0 ? 0 : t0 > 1 ? 1 : t0;
+    const qn = north - an - t * dn;
+    const qe = east - ae - t * de;
+    const d = Math.sqrt(qn * qn + qe * qe);
+    if (d >= nearLine.d) continue;
+    nearLine.d = d;
+    nearLine.past = d - (L.half[k] + t * (L.half[k + 1] - L.half[k]));
+    // (The side: left of the line's direction is z[2k], right z[2k + 1].)
+    const side = dn * qe - de * qn >= 0 ? 0 : 1;
+    nearLine.z = z[2 * k + side] + t * (z[2 * k + 2 + side] - z[2 * k + side]);
+    nearLine.open = k === last && t0 > 1 && (L.cap[p] & 2) === 0;
+  }
+}
+
 /** Neighbour offsets of SlopeField.dir (code 1 + k): rows (north) then columns (east). */
 export const SLOPE_DI = [-1, -1, -1, 0, 0, 1, 1, 1];
 export const SLOPE_DJ = [-1, 0, 1, -1, 1, -1, 0, 1];
-
-/** Beyond a drawn river's floor (where its level is read and its channel swings) the nodes are held this much further,
- * m (a point on the floor reads the 2 x 2 nodes about it: half a diagonal), and the hold comes off over CORE_TAPER. */
-const CORE_HOLD = 180;
-const CORE_TAPER = 250;
-
-/**
- * Mark the drawn rivers' own floors on the fine grid (n x n, `cell` apart, from (-DOMAIN_HALF, -DOMAIN_HALF)), 0-255:
- * 255 within each axis point's `half` m (riverNetwork.ts: the floodplain and the channel's swing, or the axis and the
- * 80 m either side its level is read from) plus CORE_HOLD, off over CORE_TAPER beyond.
- */
-export function riverCore(n: number, cell: number, axes: ReadonlyArray<{ north: ArrayLike<number>; east: ArrayLike<number>; half: ArrayLike<number> }>): Uint8Array {
-  const out = new Uint8Array(n * n);
-  const origin = -DOMAIN_HALF;
-  for (const { north, east, half } of axes) {
-    const m = north.length;
-    // (In chords of about 240 m: a smooth axis strays a few metres from them.)
-    let step = 1;
-    if (m > 2) step = Math.max(1, Math.round(240 / Math.max(1, Math.hypot(north[1] - north[0], east[1] - east[0]))));
-    for (let k0 = 0; k0 + 1 < m; k0 += step) {
-      const k1 = Math.min(m - 1, k0 + step);
-      const n0 = north[k0];
-      const e0 = east[k0];
-      const dn = north[k1] - n0;
-      const de = east[k1] - e0;
-      let h0 = half[k0];
-      let h1 = half[k1];
-      for (let k = k0 + 1; k < k1; k++) (h0 = Math.max(h0, half[k])), (h1 = Math.max(h1, half[k]));
-      const reach = Math.max(h0, h1) + CORE_HOLD + CORE_TAPER;
-      const yLo = Math.max(0, Math.ceil((Math.min(n0, n0 + dn) - reach - origin) / cell));
-      const yHi = Math.min(n - 1, Math.floor((Math.max(n0, n0 + dn) + reach - origin) / cell));
-      const xLo = Math.max(0, Math.ceil((Math.min(e0, e0 + de) - reach - origin) / cell));
-      const xHi = Math.min(n - 1, Math.floor((Math.max(e0, e0 + de) + reach - origin) / cell));
-      const L2 = dn * dn + de * de || 1;
-      for (let y = yLo; y <= yHi; y++) {
-        const qn = origin + y * cell - n0;
-        for (let x = xLo; x <= xHi; x++) {
-          const q = y * n + x;
-          if (out[q] === 255) continue;
-          const qe = origin + x * cell - e0;
-          const u = Math.min(1, Math.max(0, (qn * dn + qe * de) / L2));
-          const d = Math.hypot(qn - u * dn, qe - u * de);
-          const h = h0 + (h1 - h0) * u + CORE_HOLD;
-          if (d >= h + CORE_TAPER) continue;
-          const v = Math.round(255 * (1 - smoothstep(h, h + CORE_TAPER, d)));
-          if (v > out[q]) out[q] = v;
-        }
-      }
-    }
-  }
-  return out;
-}
 
 const DI8 = [-1, -1, -1, 0, 0, 1, 1, 1];
 const DJ8 = [-1, 0, 1, -1, 1, -1, 0, 1];
@@ -227,14 +228,19 @@ class Heap {
 }
 
 /** Probes: what the last pass did (nodes, iterations' changed receivers, ms per part). */
-export const slopeStats = { active: 0, sampled: 0, changed: [] as number[], corners: 0, msSample: 0, msPass: 0 };
+export const slopeStats = { active: 0, sampled: 0, changed: [] as number[], corners: 0, msSample: 0, msPass: 0, floorLines: 0, floorPoints: 0, floorNodes: 0, floorWalls: 0, msFloor: 0, msLevels: 0 };
+
+/** A model's floor bounds the nodes' ground this far past its edge, m (FloorLines; past that the pass's own build from
+ * its receivers stands under the floor's slopes anyway). */
+const FLOOR_REACH = 750;
 
 /**
- * The pass (see the head of the file). `n`, `cell`: the fine grid. `weight(north, east)`: the pass's weight at a node,
- * [0, 1] (the mountain mask with the home field's fade; 0 outside, where nothing is sampled). `hold(q)`: true where a
- * node is held at its ground (a drawn river's floor). `core`: riverCore's marks, kept with the result. `ground(north, east)`: the ground G as it stands, m.
+ * The pass (see the head of the file). `n`, `cell`: the fine grid. `weight`: the pass's weight at each node, [0, 1] (the
+ * mountain mask with the home field's fade; 0 outside, where nothing is sampled). `ground(north, east)`: the ground G
+ * as it stands, m. `lines`: the floors (the model's and the rivers' own), with their edges' levels `lz` (m, left and
+ * right of each point): the pass's fixed base level.
  */
-export function thresholdSlopes(n: number, cell: number, weight: Float32Array, hold: (q: number) => boolean, ground: (north: number, east: number) => number, core: Uint8Array, p: SlopeParams = slopeParams(), nearRiver: Uint8Array | null = null): SlopeField {
+export function thresholdSlopes(n: number, cell: number, weight: Float32Array, ground: (north: number, east: number) => number, lines: FloorLines, lz: Float32Array, p: SlopeParams = slopeParams()): SlopeField {
   const origin = -DOMAIN_HALF;
   const N = n * n;
   const t0 = performance.now();
@@ -248,53 +254,80 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, h
     w8[q] = Math.round(255 * Math.min(1, v));
     W[q] = w8[q] / 255;
   }
-  // Active nodes: weight > 0, not on the grid's rim, not held. The ground is sampled there and three rings about them
-  // (the terrain's interpolation reads the 4 x 4 nodes about a point).
+  // The model's floors: the weighted nodes within a floor's half-width of its line lie on it, fixed at the model's own
+  // ground there (the pass's base level); about them, within FLOOR_REACH past a floor's edge, the lowest of the floors'
+  // walls - the edge's level (the model's ground at it, on the node's side) rising past it at the node's threshold
+  // gradient (sc by its weight, as the build's) - which the nodes built from their receivers never stand over.
+  const fz = new Float32Array(N).fill(Infinity);
+  const floor = new Uint8Array(N);
+  {
+    // (Per line, the nearest of its points to each node about it, chunk by chunk; then the floor's ground there.)
+    const bd = new Float64Array(N).fill(Infinity);
+    const bz = new Float32Array(N);
+    const bw = new Float32Array(N);
+    const bo = new Uint8Array(N);
+    const touched: number[] = [];
+    for (let li = 0; li < lines.start.length - 1; li++) {
+      const s1 = lines.start[li + 1] - 1;
+      for (let k0 = lines.start[li]; k0 < s1; k0 += FLOOR_CHUNK) {
+        const k1 = Math.min(s1, k0 + FLOOR_CHUNK);
+        let n0 = Infinity, n1 = -Infinity, e0 = Infinity, e1 = -Infinity, wm = 0;
+        for (let k = k0; k <= k1; k++) {
+          n0 = Math.min(n0, lines.north[k]);
+          n1 = Math.max(n1, lines.north[k]);
+          e0 = Math.min(e0, lines.east[k]);
+          e1 = Math.max(e1, lines.east[k]);
+          wm = Math.max(wm, lines.half[k]);
+        }
+        const reach = wm + FLOOR_REACH;
+        const y0 = Math.max(1, Math.ceil((n0 - reach - origin) / cell));
+        const y1 = Math.min(n - 2, Math.floor((n1 + reach - origin) / cell));
+        const x0 = Math.max(1, Math.ceil((e0 - reach - origin) / cell));
+        const x1 = Math.min(n - 2, Math.floor((e1 + reach - origin) / cell));
+        for (let y = y0; y <= y1; y++) {
+          for (let x = x0; x <= x1; x++) {
+            const q = y * n + x;
+            if (!(W[q] > 0)) continue;
+            nearLine.d = bd[q];
+            floorChunk(lines, lz, li, k0, k1, origin + y * cell, origin + x * cell);
+            if (!(nearLine.d < bd[q])) continue;
+            if (bd[q] === Infinity) touched.push(q);
+            bd[q] = nearLine.d;
+            bz[q] = nearLine.z;
+            bw[q] = nearLine.past;
+            bo[q] = nearLine.open ? 1 : 0;
+          }
+        }
+      }
+      for (const q of touched) {
+        const past = bw[q];
+        bd[q] = Infinity;
+        if (bo[q] || past > FLOOR_REACH) continue;
+        // (On a floor: the model's own ground there, marked; past it, its edge's level rising at the threshold.)
+        if (past <= 0) floor[q] = 255;
+        else fz[q] = Math.min(fz[q], bz[q] + (p.sc / W[q]) * past);
+      }
+      touched.length = 0;
+    }
+  }
+  slopeStats.floorLines = lines.start.length - 1;
+  slopeStats.floorPoints = lines.north.length;
+  slopeStats.floorNodes = 0;
+  slopeStats.floorWalls = 0;
+  for (let q = 0; q < N; q++) {
+    if (floor[q]) slopeStats.floorNodes++;
+    else if (fz[q] < Infinity) slopeStats.floorWalls++;
+  }
+  slopeStats.msFloor = performance.now() - t0;
+  // Active nodes: weight > 0, not on the grid's rim, not on a floor. The ground is sampled there and three rings about
+  // them (the terrain's interpolation reads the 4 x 4 nodes about a point).
   const state = new Uint8Array(N); // 0 untouched, 1 sampled (fixed), 2 active
   const RING = 3;
   const G = new Float32Array(N);
-  // A held floor is base level only where it runs on, through held floor, to the ground outside the pass (a river
-  // runs out of the ranges): a patch of it standing alone would be a closed hollow among the slopes built about it, so
-  // it takes part in the pass.
-  const held = new Uint8Array(N);
-  {
-    const stack: number[] = [];
-    for (let q = 0; q < N; q++) {
-      if (W[q] > 0 && hold(q)) held[q] = 1;
-    }
-    for (let q = 0; q < N; q++) {
-      if (held[q] !== 1) continue;
-      const y = (q / n) | 0;
-      const x = q - y * n;
-      let out = y === 0 || x === 0 || y === n - 1 || x === n - 1;
-      for (let k = 0; k < 8 && !out; k++) {
-        const nb = (y + DI8[k]) * n + (x + DJ8[k]);
-        if (W[nb] <= 0) out = true;
-      }
-      if (out) {
-        held[q] = 2;
-        stack.push(q);
-      }
-    }
-    while (stack.length) {
-      const q = stack.pop() as number;
-      const y = (q / n) | 0;
-      const x = q - y * n;
-      for (let k = 0; k < 8; k++) {
-        const yy = y + DI8[k];
-        const xx = x + DJ8[k];
-        if (yy < 0 || xx < 0 || yy >= n || xx >= n) continue;
-        const nb = yy * n + xx;
-        if (held[nb] !== 1) continue;
-        held[nb] = 2;
-        stack.push(nb);
-      }
-    }
-  }
   for (let y = 1; y < n - 1; y++) {
     for (let x = 1; x < n - 1; x++) {
       const q = y * n + x;
-      if (W[q] <= 0 || held[q] === 2) continue;
+      if (W[q] <= 0 || floor[q]) continue;
       state[q] = 2;
       active++;
     }
@@ -436,7 +469,7 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, h
           if (hi[q] > b) b = hi[q];
         }
         const q = y * n + x;
-        L[q] = W[q] * smoothstep(RELIEF_LIFT[0], RELIEF_LIFT[1], b - a) * (nearRiver ? 1 - (1 - p.riverLift) * (nearRiver[q] / 255) : 1);
+        L[q] = W[q] * smoothstep(RELIEF_LIFT[0], RELIEF_LIFT[1], b - a);
       }
     }
   }
@@ -531,7 +564,8 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, h
       // Up to the envelope at the full rise; over it at `soft` of it (a summit stands as a low peak, not a flat cap), up
       // to `crown` over it. Where the ground stood high over its surroundings only (L[c]): a plain stays a plain.
       const e = Gf[c] + p.lift * L[c];
-      let v = hr + rise;
+      // (Never over a floor's ground: the envelope does not lift a floor.)
+      let v = Math.min(hr + rise, fz[c]);
       if (v > e) {
         const top = e + p.crown * L[c];
         v = Math.min(top, Math.max(e, hr) + p.soft * L[c] * (v - Math.max(e, hr)));
@@ -578,33 +612,6 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, h
       corners++;
     }
   }
-  // (And where a held floor runs on diagonally, one node wide: those two nodes are its floor's too, chanFloor.)
-  const chanFloor: number[] = [];
-  for (let q = 0; q < N; q++) {
-    if (held[q] !== 2) continue;
-    const y = (q / n) | 0;
-    const x = q - y * n;
-    for (const [dy, dx] of [[1, 1], [1, -1]]) {
-      const yy = y + dy;
-      const xx = x + dx;
-      if (yy >= n || xx < 0 || xx >= n) continue;
-      const d = yy * n + xx;
-      const a = y * n + xx;
-      const b = yy * n + x;
-      if (held[d] !== 2 || held[a] === 2 || held[b] === 2) continue;
-      const mid = 0.5 * (H[q] + H[d]);
-      if (state[a] === 2 && H[a] > mid) {
-        H[a] = mid;
-        corners++;
-      }
-      if (state[b] === 2 && H[b] > mid) {
-        H[b] = mid;
-        corners++;
-      }
-      if (state[a] === 2) chanFloor.push(a);
-      if (state[b] === 2) chanFloor.push(b);
-    }
-  }
   route(H);
   orderAndArea();
   for (let k = 0; k < active; k++) {
@@ -633,9 +640,8 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, h
     if (state[a] === 2 && u > chan[a]) chan[a] = u;
     if (state[b] === 2 && u > chan[b]) chan[b] = u;
   }
-  // (A held valley floor is a channel's floor too: the ground beside it may stand a node's threshold rise above it.)
-  for (let q = 0; q < N; q++) if (state[q] === 1 && held[q] === 2) chan[q] = 255;
-  for (const q of chanFloor) chan[q] = 255;
+  // (A model's floor is a channel's floor too: the ground beside it may stand a node's threshold rise above it.)
+  for (let q = 0; q < N; q++) if (state[q] === 1 && floor[q]) chan[q] = 255;
   for (let q = 0; q < N; q++) if (state[q] === 0) w8[q] = 0;
   // The routing the slopes were built from, for the streams (gullies.ts).
   const dir = new Uint8Array(N);
@@ -651,5 +657,5 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, h
   slopeStats.corners = corners;
   slopeStats.msSample = t1 - t0;
   slopeStats.msPass = performance.now() - t1;
-  return { h: H, w: w8, chan, core, dir, area };
+  return { h: H, w: w8, chan, floor, lz, sc: p.sc, dir, area };
 }

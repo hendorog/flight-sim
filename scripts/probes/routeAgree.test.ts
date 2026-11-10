@@ -427,7 +427,7 @@ it('route agreement', () => {
       const y = Math.round((pnn - ORIGIN) / CUT_CELL);
       const x = Math.round((pee - ORIGIN) / CUT_CELL);
       if (y < 0 || x < 0 || y >= CUT_N || x >= CUT_N) return 0;
-      return slopes.core[y * CUT_N + x] / 255;
+      return slopes.floor[y * CUT_N + x] / 255;
     };
     say(`model courses: ${channel.length} channel cells (>= ${CHANNEL_AREA} km2), ${MC.seg.length / 7} piece segments; lattice routes ${LR.seg.length / 7} segments; slope chains (>= 1.5 km2) ${CH.seg.length / 7} segments`);
     {

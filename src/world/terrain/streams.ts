@@ -146,7 +146,7 @@ const PASS_WALK = 400;
 /** A chain stream's samples between two of its points take the points' ground where the routing ground there is the
  * slopes' own within this, m (away from a river's carved valley). */
 const CHAIN_PLAIN = 2;
-/** A chain come onto a river's floor (gullies.ts GullyNet.core) crosses it to the river's nearest sample within
+/** A chain come onto a river's floor (gullies.ts GullyNet.floor) crosses it to the river's nearest sample within
  * FLOOR_CROSS m, where the ground on the way (looked at every FLOOR_STEP m) rises no more than FLOOR_RISE m over the
  * chain's there, and the water there lies no more than FLOOR_DROP m under the chain's ground (a floor, not a valley
  * below a wall). The rivers' samples are indexed about every RIVER_INDEX_STEP m in RIVER_INDEX_CELL m cells. */
@@ -1781,7 +1781,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     /** The chain being walked (besideChain, crossTo). */
     let chainPath: number[] = [];
     // The rivers' samples about every RIVER_INDEX_STEP m, by RIVER_INDEX_CELL cell: a chain come onto a river's floor
-    // (the ground the slopes held for it, beside its core) crosses the floor to it.
+    // (a model's floor the slopes stand on, gullies.ts GullyNet.floor) crosses the floor to it.
     const rIdx = new Map<number, number[]>();
     const rKey = (nn: number, ee: number): number => Math.floor((nn - ORIGIN) / RIVER_INDEX_CELL) * 4096 + Math.floor((ee - ORIGIN) / RIVER_INDEX_CELL);
     for (let li = 0; li < nR; li++) {
@@ -1941,7 +1941,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         // (On a river's floor, or a valley's floor out of the V's: across it to the water already there, not down the
         // floor beside it.)
         const nx = receiverOf(gn, r);
-        if ((gn.core[r] > 0 || (nx >= 0 && !inV(r, nx))) && (cross = crossTo(r, low))) break;
+        if ((gn.floor[r] > 0 || (nx >= 0 && !inV(r, nx))) && (cross = crossTo(r, low))) break;
         // (Beside a chain stream on the same floor - a neighbouring point of its course, the ground level across: the
         // raster's steepest descent runs parallel lines down an even floor where the water gathers into one.)
         if ((cross = besideChain(r, low))) break;

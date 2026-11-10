@@ -42,7 +42,7 @@ it('fs views', () => {
       if (A < 15 || A > 80 || L < 3000) return;
       const m = r.north.length - 1;
       const d = debugMacro(r.north[m], r.east[m]);
-      if (!d || d.s.mw < 0.9) return;
+      if (!d || d.s.m < 0.9) return;
       cand.push({ li, A });
     });
     cand.sort((a, b) => Math.abs(a.A - 30) - Math.abs(b.A - 30));

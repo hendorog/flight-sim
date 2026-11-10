@@ -20,7 +20,7 @@ const chans = (n: number, e: number): string => {
 };
 const pass = (n: number, e: number): string => {
   const d = debugMacro(n, e);
-  return d ? `m${d.s.m.toFixed(2)} mw${d.s.mw.toFixed(2)} mg${d.s.mg.toFixed(2)} ch${d.s.ch.toFixed(2)}` : '-';
+  return d ? `m${d.s.m.toFixed(2)} ch${d.s.ch.toFixed(2)}` : '-';
 };
 it('step why', () => {
   const every = Number(env.SW_EVERY ?? 2000);

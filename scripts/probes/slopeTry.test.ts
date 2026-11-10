@@ -18,7 +18,7 @@ it('slope try', () => {
     const t0 = performance.now();
     setWorldSeed(seed);
     const tb = performance.now() - t0;
-    console.log(`seed ${seed}: build ${tb.toFixed(0)} ms (model ${modelMs.toFixed(0)} ms); slopes active ${slopeStats.active} sampled ${slopeStats.sampled} corners ${slopeStats.corners} changed ${slopeStats.changed.join(',')} sample ${slopeStats.msSample.toFixed(0)} ms pass ${slopeStats.msPass.toFixed(0)} ms`);
+    console.log(`seed ${seed}: build ${tb.toFixed(0)} ms (model ${modelMs.toFixed(0)} ms); slopes active ${slopeStats.active} sampled ${slopeStats.sampled} corners ${slopeStats.corners} changed ${slopeStats.changed.join(',')} sample ${slopeStats.msSample.toFixed(0)} ms pass ${slopeStats.msPass.toFixed(0)} ms; floors ${slopeStats.floorLines} lines ${slopeStats.floorPoints} points, ${slopeStats.floorNodes} floor nodes, ${slopeStats.floorWalls} under walls, levels ${slopeStats.msLevels.toFixed(0)} ms, floor pass ${slopeStats.msFloor.toFixed(0)} ms`);
     if (!env.SLOPE_BOX) continue;
     for (const box of env.SLOPE_BOX.split(';')) {
       const [cn, ce, half] = box.split(',').map(Number);

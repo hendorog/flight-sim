@@ -23,7 +23,7 @@ it('valley views', () => {
         if (r.s[k] < 1500 || S - r.s[k] < LOOK) continue;
         const d = debugMacro(r.north[k], r.east[k]);
         why.pts++;
-        if (!d || d.s.mg < 0.9 || d.s.ch < 0.5) continue;
+        if (!d || d.s.m < 0.9 || d.s.ch < 0.5) continue;
         why.mask++;
         // Down the stream LOOK m: the look point; the course should keep roughly straight (a valley to look along).
         let j = k;

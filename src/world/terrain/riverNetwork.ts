@@ -12,8 +12,7 @@
 import { hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
 import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type DrainLine, type LakeMask } from './drainage';
-import { channelCourse } from './erosion';
-import { A2 } from './a2Probe';
+import { channelCourse, courseSpline } from './erosion';
 import { bedWidth, breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
 import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
 import { buildFaults, FaultIndex } from './faults';
@@ -301,7 +300,7 @@ export interface LevelStage {
 export const levelProbe: { on?: (stage: string, li: number, line: LevelStage) => void } = {};
 /** How far beyond its floodplain a river's valley is carved into the ground about it (carveNetwork), m, for a catchment
  * of `area` km². */
-export const valleyInfluence = (area: number): number => (A2.noValley ? 1 : 500 + 1900 * smooth(30, 2000, area));
+export const valleyInfluence = (area: number): number => 500 + 1900 * smooth(30, 2000, area);
 /** Build a seeded world's hydrology from its drainage and lakes. */
 export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyDepth?: Float32Array, smoothGround: (north: number, east: number) => number = natural, markFloor?: (axes: Array<{ north: Float64Array; east: Float64Array; half: Float64Array; area: Float64Array }>) => void, pinned?: (north: number, east: number) => number, wallWeight?: (north: number, east: number) => number): Hydrology {
   const lines = d.lines;
@@ -340,7 +339,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const L = lines[li];
     const c = courses[li];
     // The course's quadratic B-spline, as the model carves its valley (erosion.ts buildErosion).
-    const pts = bspline2(c.n, c.e, AXIS_SPACING, c.ext);
+    const pts = courseSpline(c.n, c.e, AXIS_SPACING, c.ext);
     // The spline can swing inside the clearance between two points that keep outside it.
     clearOfRunway(pts.n, pts.e);
     const count = pts.n.length;
@@ -361,7 +360,10 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   // across its belt about the axis and the floodplain reaches past the model's FLOOR_HALF, and there the noise's own
   // relief (tens of metres on a plain the model lowered by a couple of hundred) stood on a valley floor graded to a few
   // tens of metres: its troughs reached the sea's level inland (held there by the cushion), the running minimum below
-  // took the river down to them, and it was carved to the sea's level through every rise downstream.
+  // took the river down to them, and it was carved to the sea's level through every rise downstream. (Where a river
+  // leaves the model's channel - through the drainage's cuts and its lakes - the mark is all there is.) Then the
+  // ground about them is made before their levels are read off it (heightfield.ts: the threshold hillslopes, graded up
+  // from the model's floors).
   markFloor?.(laid.map((a, li) => ({ north: a.north, east: a.east, half: floorHalf(d, lines[li], a.area, a.t), area: a.area })));
   for (let li = 0; li < lines.length; li++) {
     const L = lines[li];
@@ -1976,46 +1978,6 @@ function cutOffLoops(ch: { north: number[]; east: number[]; valleyS: number[]; o
   ch.valleyS = v2;
   ch.off = o2;
   return out;
-}
-
-/**
- * A course's quadratic B-spline, as the model carves its valley (erosion.ts buildErosion carvePiece): from the first
- * point straight to the middle of the first leg, then a piece about each inner point from the middle of the leg before
- * it to the middle of the leg after it, and from the middle of the last leg straight to the last point - or, given `ext`
- * (the point after the last), a piece about the last point to the middle of the leg to `ext`. Sampled about every
- * `spacing` m; `t` is each sample's place along the points (0 .. m - 1).
- */
-function bspline2(pn: number[], pe: number[], spacing: number, ext?: [number, number]): { n: number[]; e: number[]; t: number[] } {
-  const m = pn.length;
-  if (m === 1) return { n: [pn[0], pn[0]], e: [pe[0], pe[0] + 1], t: [0, 0] };
-  const n: number[] = [];
-  const e: number[] = [];
-  const t: number[] = [];
-  const piece = (an: number, ae: number, bn: number, be: number, cn: number, ce: number, t0: number, t1: number, last: boolean): void => {
-    const len = Math.hypot(bn - an, be - ae) + Math.hypot(cn - bn, ce - be);
-    const steps = Math.max(1, Math.ceil(len / spacing));
-    for (let k = 0; k < steps + (last ? 1 : 0); k++) {
-      const u = k / steps;
-      const w0 = (1 - u) * (1 - u);
-      const w1 = 2 * u * (1 - u);
-      const w2 = u * u;
-      n.push(w0 * an + w1 * bn + w2 * cn);
-      e.push(w0 * ae + w1 * be + w2 * ce);
-      t.push(t0 + (t1 - t0) * u);
-    }
-  };
-  const mid = (i: number): [number, number] => [0.5 * (pn[i] + pn[i + 1]), 0.5 * (pe[i] + pe[i + 1])];
-  let [an, ae] = mid(0);
-  piece(pn[0], pe[0], pn[0], pe[0], an, ae, 0, 0.5, false);
-  for (let i = 1; i < m - 1; i++) {
-    const [bn, be] = mid(i);
-    piece(an, ae, pn[i], pe[i], bn, be, i - 0.5, i + 0.5, false);
-    an = bn;
-    ae = be;
-  }
-  if (ext) piece(an, ae, pn[m - 1], pe[m - 1], 0.5 * (pn[m - 1] + ext[0]), 0.5 * (pe[m - 1] + ext[1]), m - 1.5, m - 1, true);
-  else piece(an, ae, pn[m - 1], pe[m - 1], pn[m - 1], pe[m - 1], m - 1.5, m - 1, true);
-  return { n, e, t };
 }
 
 /** Index of the segment containing arc length sv (clamped). */

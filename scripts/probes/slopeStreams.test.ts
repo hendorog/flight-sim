@@ -20,7 +20,7 @@ it('slope streams', () => {
         if ((r.kind ?? 0) !== kind) continue;
         for (let k = 1; k + 1 < r.north.length; k += 2) {
           const d = debugMacro(r.north[k], r.east[k]);
-          if (!d || d.s.mg < 0.5) continue;
+          if (!d || d.s.m < 0.5) continue;
           n++;
           km += (r.s[k + 1] - r.s[k - 1]) / 2000;
           if (r.s[k] > 1000) {
@@ -30,7 +30,7 @@ it('slope streams', () => {
           if (d.s.ch >= 0.5) on++;
           else if (env.SS_OFF && kind === 1 && d.s.ch < 0.1 && offShown < Number(env.SS_OFF)) {
             offShown++;
-            console.log(`  offch ${r.north[k].toFixed(0)},${r.east[k].toFixed(0)} s ${r.s[k].toFixed(0)}/${r.s[r.s.length - 1].toFixed(0)} level ${r.level[k].toFixed(1)} ground ${naturalHeight(r.north[k], r.east[k]).toFixed(1)} A ${r.area?.[k].toFixed(1)} mg ${d.s.mg.toFixed(2)}`);
+            console.log(`  offch ${r.north[k].toFixed(0)},${r.east[k].toFixed(0)} s ${r.s[k].toFixed(0)}/${r.s[r.s.length - 1].toFixed(0)} level ${r.level[k].toFixed(1)} ground ${naturalHeight(r.north[k], r.east[k]).toFixed(1)} A ${r.area?.[k].toFixed(1)} mg ${d.s.m.toFixed(2)}`);
           }
           fh[Math.min(10, Math.floor(d.s.f * 10))]++;
           chh[Math.min(10, Math.floor(d.s.ch * 10))]++;

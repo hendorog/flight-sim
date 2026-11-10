@@ -1,6 +1,6 @@
 // Foundation stage 4 steps: the rivers' floor gaps in the threshold hillslopes' mountains (ValleyNear.gap: the ground
 // the level was read from over the water's floor), by reach class, and how far their channels swing past the
-// floodplain. Every 4th channel sample of each river (kind 0) where the slopes' weight (ErosionSample.mw) is over 0.5.
+// floodplain. Every 4th channel sample of each river (kind 0) where the slopes' weight (ErosionSample.m) is over 0.5.
 //   GD_SEEDS=1,42,777777 npx vitest run --config scripts/probes/vitest.config.ts gapDump
 import { it } from 'vitest';
 import { debugMacro, hydrology } from '../../src/world/terrain/heightfield';
@@ -22,7 +22,7 @@ it('gap dump', () => {
       let I = 0;
       for (let i = 0; i < r.north.length; i += 4) {
         const dm = debugMacro(r.north[i], r.east[i]);
-        if (!dm || dm.s.mw < 0.5) continue;
+        if (!dm || dm.s.m < 0.5) continue;
         const k = hydrology.network!.valleys(r.north[i], r.east[i], vs);
         const v = vs.slice(0, k).find((x) => x.line === li);
         if (!v) continue;

@@ -10,7 +10,8 @@ it('transect', () => {
     const [n0, e0] = a.split(',').map(Number);
     const [n1, e1] = b.split(',').map(Number);
     const L = Math.hypot(n1 - n0, e1 - e0);
-    const k = Math.round(L / 50);
+    const step = Number(process.env.TR_STEP ?? 50);
+    const k = Math.round(L / step);
     const out: string[] = [];
     const rows: string[] = [];
     for (let i = 0; i <= k; i++) {
@@ -19,7 +20,7 @@ it('transect', () => {
       out.push(terrainHeight(pn, pe).toFixed(0));
       if (process.env.TR_PARTS) {
         const m = debugMacro(pn, pe);
-        if (m) rows.push(`  ${(i * 50).toString().padStart(5)} drawn ${terrainHeight(pn, pe).toFixed(0)} natural ${naturalHeight(pn, pe).toFixed(0)} coarse ${m.coarse.toFixed(0)} ground ${m.ground.toFixed(0)} | d ${m.s.d.toFixed(0)} c ${m.s.c.toFixed(0)} f ${m.s.f.toFixed(2)} m ${m.s.m.toFixed(2)} hs ${m.s.hs.toFixed(0)} ch ${m.s.ch.toFixed(2)} mg ${m.s.mg.toFixed(2)} mw ${m.s.mw.toFixed(2)}`);
+        if (m) rows.push(`  ${(i * step).toString().padStart(5)} drawn ${terrainHeight(pn, pe).toFixed(0)} natural ${naturalHeight(pn, pe).toFixed(0)} coarse ${m.coarse.toFixed(0)} ground ${m.ground.toFixed(0)} model ${m.model.toFixed(0)} | d ${m.s.d.toFixed(0)} c ${m.s.c.toFixed(0)} f ${m.s.f.toFixed(2)} m ${m.s.m.toFixed(2)} hs ${m.s.hs.toFixed(0)} ch ${m.s.ch.toFixed(2)} slope ${m.slope.toFixed(0)} fw ${m.s.fw.toFixed(2)} fin ${m.s.fin} fc ${m.s.fc.toFixed(0)}`);
       }
     }
     console.log(`TR ${pair}: ${out.join(' ')}`);
