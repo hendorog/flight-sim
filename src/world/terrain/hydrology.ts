@@ -200,6 +200,9 @@ export interface RiverLine {
   wetR?: Float32Array;
   wetL?: Float32Array;
   depth?: Float32Array;
+  /** ... its threads (1: one; more on a braided bed) and their wavelength along the valley, m (channelForm.ts). */
+  threads?: Float32Array;
+  lam2?: Float32Array;
   /**
    * A stream's pitches and pools (pitchPool.ts): its unit coordinate `sigma` at each sample (unit k's lip at
    * pitchPool.ts lipOf(k), its foot pitchLen(k) on, the next unit's lip at lipOf(k + 1)), and `pitchOn` 1 where its water
