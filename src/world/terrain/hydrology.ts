@@ -42,6 +42,14 @@ export interface RiverHit {
   side: number;
   /** How far upstream of the source the point lies (along the first segment's direction), m; 0 elsewhere. */
   beyondSource: number;
+  /** A seeded world's river (channelForm.ts): its bed's half-width and how far right of the line (the thread) the bed's
+   * middle lies, m - its bed is |dist * side - bedShift| < bed, its point bar on one side and its cut bank on the other.
+   * (A stream's: its half-width and 0.) */
+  bed?: number;
+  bedShift?: number;
+  /** Asked of a seeded world's query (an input, m): the bed's edges as their mean over this much of the line either
+   * side (a coarse tile's vertex spacing: no bar or bay finer than the tile is drawn). */
+  smooth?: number;
 }
 
 /** Result of a valley-axis query: the smooth line the floodplain and valley walls are carved about. */
@@ -184,6 +192,14 @@ export interface RiverLine {
   /** The typical size of the stones on the bed at each sample, m (falls.ts bedGrain): 2-5 m boulders by the heads, on
    * the steep pitches and below falls, cobbles of 0.1-0.3 m on riffles, gravel and sand on the calm lowland reaches. */
   grain?: Float32Array;
+  /** A seeded world's river (riverNetwork.ts, channelForm.ts): its bed's edge right and left of the line (the thread),
+   * and the thread's depth, at each sample, m. */
+  bedR?: Float32Array;
+  bedL?: Float32Array;
+  /** ... and its water's edge right and left of the line (the law's, varied along it; halfWidth is the catchment's). */
+  wetR?: Float32Array;
+  wetL?: Float32Array;
+  depth?: Float32Array;
   /**
    * A stream's pitches and pools (pitchPool.ts): its unit coordinate `sigma` at each sample (unit k's lip at
    * pitchPool.ts lipOf(k), its foot pitchLen(k) on, the next unit's lip at lipOf(k + 1)), and `pitchOn` 1 where its water
@@ -245,8 +261,15 @@ export interface ChannelNear {
   reach: number;
   /** How far the stream's water runs under the ground it was traced over here (its breach's depth), m. */
   cut: number;
-  /** A stream's bed half-width here (streams.ts bedWidth: its banks are carved to it), m; a river's: its half-width. */
+  /** A stream's bed half-width here (streams.ts bedWidth: its banks are carved to it), m; a river's: its bed's edge on
+   * this side (channelForm.ts: the point bar or the cut bank). */
   bed: number;
+  /** A river's water edge on this side, its thread's depth, its bank's height and slope (tan) (channelForm.ts);
+   * undefined on a stream. */
+  wet?: number;
+  depth?: number;
+  bankH?: number;
+  bankTan?: number;
   dist: number;
   side: number;
   level: number;

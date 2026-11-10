@@ -30,6 +30,7 @@ import { fieldsGlsl } from './fields';
 import { hashGlsl, ROT_GLSL } from './glsl';
 import { worldSeed } from '../worldSeed';
 import { riverStrip, TREE_LINE_ASPECT, treeLineBase } from './biome';
+import { BAR_FAR, BAR_NEAR, CORRIDOR_GLSL } from './channelForm';
 import { GALLERY_FAR } from './riparian';
 import { ERA_GROUND, PALETTES, type EraGroundPalette } from './eraPalette';
 import { hydrology, snowLineBase } from './heightfield';
@@ -454,7 +455,7 @@ varying float vCoverUp;
 // Signed distance from the river centreline and the channel half-width there, m (tileBuilder.ts).
 varying vec2 vRiver;
 ${flowText(`// The nearest channel's steepness, 0..1 (tileBuilder.ts flow; bedrock.ts).\nvarying float vFlow;\n${BEDROCK_GLSL}`)}${presentText('varying float vPlantation;\n')}${hashGlsl()}
-${ROT_GLSL}${flowText(ROCK_EDGE_GLSL)}${rillText(RILL_HEAD_GLSL)}
+${ROT_GLSL}${flowText(ROCK_EDGE_GLSL + CORRIDOR_GLSL)}${rillText(RILL_HEAD_GLSL)}
 ${E('#if ERA_FARM\n')}${fieldsGlsl()}${presentText(PLANTATION_GLSL)}${presentText(ROADS_GLSL)}${presentText(FIELD_EDGE_GLSL)}
 ${E(`#endif\n${ERA_HEAD}${VOLCANO_HEAD}${ERA_TERRAIN_UNIFORMS_GLSL}`)}${eraSlot('lava', VOLCANO_LAVA_HEAD_GLSL, 'VOLCANO')}${eraSlot('speckle', UNDERSTOREY_HEAD_GLSL)}
 struct Mat { vec3 albedo; vec2 slope; float rough; float cavity; float height; };
@@ -740,10 +741,9 @@ float fineN = 0.0;
 if ((tUpN > 0.55 && tUpN < 0.9) || (tBio.x > 0.1 && tBio.x < 0.7)) fineN = (texture(tNoise, rot2(tXZ, 5.3) * (1.0 / 13.0)).g - 0.5) * 2.5;
 float rockW = smoothstep(mix(0.70, 0.76, highZone) + rockShift, mix(0.60, 0.63, highZone) + rockShift, tUpN + 0.1 * fineN);
 rockW = max(rockW, smoothstep(snowLine - 200.0, snowLine + 150.0, tH + 120.0 * sB.g) * smoothstep(0.93 + rockShift, 0.84 + rockShift, tUp + 0.03 * sC.g));
-${flowText(`// (A small stream's notch: its walls are steep only because it is cut a few metres into the slope, not rock faces:
-// they keep the slope's cover, so a torrent of a metre reads as the thin line it is, not as a pale strip of rock as
-// wide as the triangles across its notch. Out to its bed's edge and a little beyond (bedrock.ts ROCK_HW).)
-if (vRiver.y > 0.2 && vRiver.y < ${ROCK_HW[1].toFixed(1)}) rockW *= mix(1.0, smoothstep(${ROCK_HW[0].toFixed(1)}, ${ROCK_HW[1].toFixed(1)}, vRiver.y), 1.0 - smoothstep(1.2 * vRiver.y + 2.0, 1.2 * vRiver.y + 8.0, abs(vRiver.x)));
+${flowText(`// (A channel's bed and banks: steep only because the water cut them a metre or two into the ground, not rock faces -
+// gravel and earth (channelForm.ts), so no slope rock in them however coarse the triangles across them.)
+if (vRiver.y > 0.2) rockW *= smoothstep(1.2 * vRiver.y + 2.0, 1.2 * vRiver.y + 10.0, abs(vRiver.x));
 `)}${E(VOLCANO_WEIGHTS)}// Scree: debris fans in the hollows below the rock on high ground, a fringe of broken rock around the
 // outcrops, and stony patches in the thin alpine turf.
 float screeW = (1.0 - rockW) * smoothstep(0.9, 0.8, tUp + 0.04 * sC.a) * alpine * smoothstep(0.1, 0.5, concave + 0.3 * sC.b);
@@ -935,12 +935,21 @@ ${flowText(`    // (A small stream's gravel bed and bank are a thin thread among
     float smallBed = mix(${ROCK_SMALL.toFixed(2)}, 1.0, smoothstep(${ROCK_HW[0].toFixed(1)}, ${ROCK_HW[1].toFixed(1)}, vRiver.y));
     tRiverBed *= smallBed;
     tRiverBank *= smallBed;
+    // (Far away the ribbon draws the bed's bars, its rows finer than these triangles: water.ts FLOW_BARS.)
+    float tBarFar = 1.0 - smoothstep(${BAR_NEAR.toFixed(1)}, ${BAR_FAR.toFixed(1)}, tDist);
+    tRiverBed *= tBarFar;
+    tRiverBank *= tBarFar;
 `)}    float strip = 1.0 - smoothstep(${riverStrip().toFixed(1)}, ${(riverStrip() + 16).toFixed(1)}, rEdge + 5.0 * sC.g + 3.0 * sD.a);
-${flowText('    strip *= smallBed;\n')}    farmW *= 1.0 - strip;
+${flowText(`    // (A seeded world's corridor wanders in width, its trees in runs with gaps: channelForm.ts corridorFar, corridorRuns.)
+    vec2 tEN = vec2(tXZ.x, -tXZ.y);
+    float galFar = corridorFar(tEN, ${GALLERY_FAR.toFixed(1)});
+    float galRun = corridorRuns(tEN);
+    strip = 1.0 - smoothstep(galFar + 2.0, galFar + 18.0, rEdge + 5.0 * sC.g + 3.0 * sD.a);
+`)}${flowText('    strip *= smallBed;\n')}    farmW *= 1.0 - strip;
 ${presentText(`    // The wooded bank (riparian.ts GALLERY_FAR; placement.ts plants it): as its trees thin out with distance the
     // canopy shell stands in for them, so the river keeps its dark green margins from the air.
     float gallery = (1.0 - smoothstep(${(GALLERY_FAR - 6).toFixed(1)}, ${(GALLERY_FAR + 4).toFixed(1)}, rEdge + 5.0 * sC.g)) * smoothstep(0.0, 2.0, rEdge);
-    forestW += (1.0 - forestW) * 0.85 * gallery * (1.0 - tKeepOpen)${flowText(` * (1.0 - tRock) * (1.0 - ${GALLERY_ROCK_THIN.toFixed(2)} * bedRock(vFlow))`)};
+${flowText('    gallery = (1.0 - smoothstep(galFar - 6.0, galFar + 4.0, rEdge + 5.0 * sC.g)) * smoothstep(0.0, 2.0, rEdge) * galRun;\n')}    forestW += (1.0 - forestW) * 0.85 * gallery * (1.0 - tKeepOpen)${flowText(` * (1.0 - tRock) * (1.0 - ${GALLERY_ROCK_THIN.toFixed(2)} * bedRock(vFlow))`)};
     farmW *= 1.0 - gallery;
 `)}    // Rough bankside vegetation: tussocky, olive and dark, with pale reed beds at the water's edge.
     float reeds = (1.0 - smoothstep(bankW + 1.0, bankW + 6.0, rEdge + 2.0 * sD.g)) * smoothstep(0.45, 0.6, nC.r);
@@ -1248,10 +1257,15 @@ if (tRiverBank > 0.001) {
   Mat g = layerTop(${LAYER.gravel}, tXZ, tDist);
   vec3 mud = mix(${P.mud}, ${P.mudLight} * g.albedo, smoothstep(0.6, 0.8, nD.b + 0.3 * g.height));
   mud = mix(mud, ${P.riverBed}, tRiverBed);
-  acc.albedo = mix(acc.albedo, mud, tRiverBank);
+${flowText(`  // A seeded world's river bed is wider than its water (channelForm.ts): pale gravel bars round the thread, the water
+  // over the same gravel.
+  mud = mix(mud, mix(vec3(0.105, 0.1, 0.09), vec3(0.135, 0.13, 0.118), smoothstep(0.3, 0.7, nD.b + 0.3 * g.height)) * g.albedo, tRiverBed);
+`)}  acc.albedo = mix(acc.albedo, mud, tRiverBank);
   acc.slope = mix(acc.slope, g.slope * 0.5, tRiverBank);
   acc.rough = mix(acc.rough, 0.45, tRiverBank);
-  acc.cavity = mix(acc.cavity, 1.0, tRiverBank);
+${flowText(`  // (Its bars are dry gravel: rough, no sheen. The water over the bed is the ribbon's.)
+  acc.rough = mix(acc.rough, 0.9, tRiverBed);
+`)}  acc.cavity = mix(acc.cavity, 1.0, tRiverBank);
   tFoliageW *= 1.0 - tRiverBank;
 }
 

@@ -20,6 +20,7 @@ import { REGIME } from './streams';
 import { channelStonesGlsl, GRAIN_TOP, grainToUnit, STONE_ACROSS, STONE_ALONG, STONE_FILL } from './channelStones';
 import { BEDROCK_GLSL, GALLERY_ROCK_THIN } from './bedrock';
 import { hash2i } from './noise';
+import { BAR_FAR, BAR_NEAR } from './channelForm';
 import { GALLERY_FLOOR, RIPARIAN_GLSL, RIPARIAN_TREE_HEIGHT } from './riparian';
 import type { WaterData } from './tileBuilder';
 import { era, isPresent } from '../era/eraState';
@@ -784,11 +785,38 @@ float fMist = 0.0;
 }
 `;
 
+/** A seeded world's ribbon is lifted over the coarse terrain from 300 m away, 1.5 mm a metre (to 8 m): a thread narrower than a coarse tile's triangles, its bars a metre over its water, stays one thread
+ * instead of breaking into pools where a triangle's corners stand on the bars. */
+const FLOW_LIFT = `{
+  vec3 lw = (modelMatrix * vec4(position, 1.0)).xyz;
+  transformed.y += clamp((distance(lw, cameraPosition) - 300.0) * 0.0015, 0.0, 8.0);
+}
+`;
+/** A seeded world's ribbon spans its bed (ribbonRows: vDepth -1 at the bed's edge, 0 at the water's): from
+ * BAR_NEAR m away it draws the gravel bars beyond its water itself, all of them from BAR_FAR - the terrain's own
+ * paint of them (terrainMaterial.ts, faded out over the same distances) comes in triangles coarser than the bars,
+ * a saw-tooth outline; the ribbon's rows follow the line sample by sample. Lit as the terrain is (the irradiance the
+ * water's own body colour received), its edge soft over the outer tenth of the bar. */
+const FLOW_BARS = `{
+  float bK = (1.0 - smoothstep(-0.12, -0.02, vDepth)) * (1.0 - smoothstep(0.85, 1.0, -vDepth)) * smoothstep(${BAR_NEAR.toFixed(1)}, ${BAR_FAR.toFixed(1)}, wDist);
+  if (bK > 0.0) {
+    vec4 bN = texture(tNoise, vWaterPos.xz * (1.0 / 37.0) + 0.23);
+    vec3 bAlb = vec3(0.24, 0.235, 0.215) * (0.82 + 0.36 * bN.g) * (1.0 - 0.25 * smoothstep(-0.2, -0.05, vDepth));
+    vec3 bIrr = (reflectedLight.directDiffuse + reflectedLight.indirectDiffuse) / max(diffuseColor.rgb * RECIPROCAL_PI, vec3(1e-5));
+    gl_FragColor = gl_FragColor * (1.0 - bK) + vec4(bAlb * bIrr * RECIPROCAL_PI, 1.0) * bK;
+  }
+}
+`;
+/** ... and its water's optical density a multiple of the palette's river (channelForm.ts: its thread is decimetres deep). */
+const FLOW_TURBID = 2.5;
 /** Splice the running water into a river (or falls) material's shader; `ice`: the ice code follows. */
 function withFlow(shader: { vertexShader: string; fragmentShader: string }, falls: boolean, ice: boolean): void {
   shader.vertexShader = shader.vertexShader
     .replace('attribute float aDepth;\n', `attribute float aDepth;\n${FLOW_VERTEX_HEAD(falls)}`)
-    .replace('vec3 transformed = position;\n', `vec3 transformed = position;\n${falls ? `vFall = aFall;\n${FALLS_BILLBOARD}` : `vFlow = aFlow * vec4(1.0, ${FLOW_SPEED_MAX.toFixed(1)}, 1.0, 1.0);\nvPitch = aPitch;\n`}`);
+    .replace('vec3 transformed = position;\n', `vec3 transformed = position;\n${falls ? `vFall = aFall;\n${FALLS_BILLBOARD}` : `vFlow = aFlow * vec4(1.0, ${FLOW_SPEED_MAX.toFixed(1)}, 1.0, 1.0);\nvPitch = aPitch;\n${FLOW_LIFT}`}`);
+  // (A seeded world's water is as turbid as its glacial and silt-laden rivers: opaque within a few decimetres, its
+  // thread reading as water over the gravel it runs among, not as more of the bed.)
+  if (!falls) shader.fragmentShader = shader.fragmentShader.replace(/vec3 atten = (vec3\([^)]*\));\n/, `vec3 atten = ${FLOW_TURBID.toFixed(1)} * $1;\n`).replace('gl_FragColor = vec4(wColor * wEdge, (1.0 - wSeen) * wEdge);\n', `gl_FragColor = vec4(wColor * wEdge, (1.0 - wSeen) * wEdge);\n${FLOW_BARS}`);
   shader.fragmentShader = shader.fragmentShader
     .replace('varying float vDepth;\n', `varying float vDepth;\n${falls ? 'varying vec4 vFall;\n' : 'varying vec4 vFlow;\nvarying vec2 vPitch;\n'}`)
     // (After the hashes: the stone lattice uses hash2u.)
@@ -911,7 +939,7 @@ interface RiverBuffers {
 const riverBuffers = (): RiverBuffers => ({ pos: [], depth: [], info: [], tan: [], idx: [], flow: [], pitch: [] });
 
 /** A line as the ribbon reads it (a seeded network's lines also carry their kind and flow). */
-type RibbonLine = { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; kind?: number; regime?: Uint8Array; steepness?: Float32Array; speed?: Float32Array; sigma?: Float32Array; pitchOn?: Float32Array };
+type RibbonLine = { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; depth?: Float32Array; wetR?: Float32Array; wetL?: Float32Array; bedR?: Float32Array; bedL?: Float32Array; kind?: number; regime?: Uint8Array; steepness?: Float32Array; speed?: Float32Array; sigma?: Float32Array; pitchOn?: Float32Array };
 
 /** Whether sample i of a line is a fall's lip whose face (to sample i + 1) is steep enough to draw as a curtain. */
 function curtainAt(r: RibbonLine, i: number): boolean {
@@ -921,19 +949,22 @@ function curtainAt(r: RibbonLine, i: number): boolean {
   return drop >= 1 && run < 1.5 * drop;
 }
 const RIBBON_ACROSS = [-1.2, -0.55, 0, 0.55, 1.2];
-/** A stream's ribbon (kind 1) drops a row its neighbours' rows draw within these: its water within ROW_LEVEL m of the
+/** A seeded world's ribbon across its bed (ribbonRows: -3 and 3 the right and left bed edges, -2 and 2 the water's). */
+const BED_ACROSS = [-3, -2, -1, 0, 1, 2, 3];
+/** A running line's ribbon drops a row its neighbours' rows draw within these: its water within ROW_LEVEL m of the
  * level between them, its centre within ROW_SIDE of its half-width (at least ROW_SIDE_MIN m) of the line between
- * them; rows at most ROW_RUN m apart. Its fall lips, the row below each and where its pitches start or end are kept.
- * (A steep stream's course is sampled every few metres to follow the ground: thousands of km of ribbon rows.) */
+ * them, its width within ROW_SIDE of theirs; rows at most ROW_RUN m apart. Its fall lips, the row below each and
+ * where its pitches start or end are kept. (A steep stream's course is sampled every few metres to follow the ground:
+ * thousands of km of ribbon rows.) */
 const ROW_LEVEL = 0.25;
 const ROW_SIDE = 0.2;
 const ROW_SIDE_MIN = 0.3;
 const ROW_RUN = 60;
 
-/** The rows of samples [from, to) a stream's ribbon draws (every one for any other line). */
+/** The rows of samples [from, to) a running line's ribbon draws (every one for seed 0's river). */
 function ribbonKeep(r: RibbonLine, from: number, to: number, flowing: boolean): number[] {
   const out: number[] = [];
-  if (!(flowing && r.kind === 1)) {
+  if (!flowing) {
     for (let i = from; i < to; i++) out.push(i);
     return out;
   }
@@ -951,8 +982,10 @@ function ribbonKeep(r: RibbonLine, from: number, to: number, flowing: boolean): 
       const L = Math.hypot(dn, de) || 1e-9;
       for (let k = i + 1; k < c && ok; k++) {
         const t = (r.s[k] - r.s[i]) / Math.max(1e-9, r.s[c] - r.s[i]);
+        const wk = ribbonHalf(r, k);
         if (Math.abs(r.level[k] - (r.level[i] + (r.level[c] - r.level[i]) * t)) > ROW_LEVEL) ok = false;
-        else if (Math.abs(((r.north[k] - r.north[i]) * de - (r.east[k] - r.east[i]) * dn) / L) > Math.max(ROW_SIDE_MIN, ROW_SIDE * r.halfWidth[k])) ok = false;
+        else if (Math.abs(((r.north[k] - r.north[i]) * de - (r.east[k] - r.east[i]) * dn) / L) > Math.max(ROW_SIDE_MIN, ROW_SIDE * wk)) ok = false;
+        else if (Math.abs(wk - (ribbonHalf(r, i) + (ribbonHalf(r, c) - ribbonHalf(r, i)) * t)) > Math.max(ROW_SIDE_MIN, ROW_SIDE * wk)) ok = false;
       }
       if (!ok) break;
       j = c;
@@ -963,10 +996,18 @@ function ribbonKeep(r: RibbonLine, from: number, to: number, flowing: boolean): 
   return out;
 }
 
+/** A line's water half-width at sample i as the ribbon draws it: a seeded world's between its water's edges
+ * (channelForm.ts: they vary along it and either side), else its half-width. */
+const ribbonHalf = (r: RibbonLine, i: number): number => (r.wetR && r.wetL ? 0.5 * (r.wetR[i] + r.wetL[i]) : r.halfWidth[i]);
+
 /** Append the ribbon of samples [from, to) of a river line (it stops at the coast); returns the index after the last row. */
 function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, flow = false): number {
   const count = r.north.length;
-  const across = RIBBON_ACROSS;
+  // (A seeded world's line spans its whole bed, channelForm.ts: its bed's edges, its water's edges, the middle of each
+  // side's water and the line - the bars beyond the water drawn far away, where the terrain's triangles are coarser
+  // than they are: FLOW_BARS.)
+  const bed = !!(r.bedR && r.bedL && r.wetR && r.wetL);
+  const across = bed ? BED_ACROSS : RIBBON_ACROSS;
   const { pos, depth, info, tan, idx } = b;
   // Running water: the flow per row, and no ribbon down a fall's face (createFallGeometries draws its curtain).
   const flowing = flow && !!r.steepness && !!r.speed && !!r.regime;
@@ -994,9 +1035,11 @@ function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, fl
     // Unit perpendicular to the direction of flow (east, north components).
     const pe = -tn / tl;
     const pn = te / tl;
-    const w = r.halfWidth[i];
-    // A stream (kind 1) is shallow: its bed can show through.
-    const centreDepth = flowing && r.kind === 1 ? Math.min(2.2 + w * 0.05, 0.3 + 0.3 * w) : 2.2 + w * 0.05;
+    // (A seeded world's line: between its water's edges, about their middle - channelForm.ts.)
+    const w = ribbonHalf(r, i);
+    const mid = r.wetR && r.wetL ? 0.5 * (r.wetR[i] - r.wetL[i]) : 0;
+    // (A seeded world's line: its thread's own depth, channelForm.ts - a pool at a bend, a riffle at a crossing.)
+    const centreDepth = r.depth ? r.depth[i] : 2.2 + w * 0.05;
     let fall = 0;
     if (flowing) {
       const lip = r.regime![i] === REGIME.fall;
@@ -1009,13 +1052,27 @@ function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, fl
       }
     }
     for (const a of across) {
-      const off = a * w;
-      const e = r.east[i] + pe * off;
-      const n = r.north[i] + pn * off;
+      let off = a * w;
+      let d = Math.abs(a) > 1 ? -0.8 : centreDepth * (1 - a * a);
+      if (bed) {
+        // (Across from the right bed edge (a -3) to the left (3), as the plain ribbon's offsets run; the water between
+        // -2 and 2, about the line: its depth from the thread's, the bars' -1 at the bed's edge, 0 at the water's.)
+        const right = a < 0;
+        const wet = right ? r.wetR![i] : r.wetL![i];
+        const edge = Math.max(wet + 0.3, right ? r.bedR![i] : r.bedL![i]);
+        const u = Math.abs(a);
+        const x = u <= 2 ? 0.5 * u * wet : wet + (u - 2) * (edge - wet);
+        off = (right ? -1 : 1) * x;
+        d = u <= 2 ? centreDepth * (1 - 0.25 * u * u) : -(u - 2);
+      }
+      // (The across offset points to the left bank: the water's middle lies `mid` right of the line.)
+      const sh = bed ? 0 : mid;
+      const e = r.east[i] + pe * (off - sh);
+      const n = r.north[i] + pn * (off - sh);
       pos.push(e, r.level[i], -n);
-      depth.push(Math.abs(a) > 1 ? -0.8 : centreDepth * (1 - a * a));
+      depth.push(d);
       // The across offset points to the left bank; RiverHit.side and the shader count toward the right.
-      info.push(-off, r.s[i], w);
+      info.push(-(off - sh + mid), r.s[i], w);
       tan.push(te / tl, -tn / tl);
       if (flowing) {
         b.flow.push(r.steepness![i], r.speed![i], fall, grainToUnit((r as { grain?: Float32Array }).grain?.[i] ?? 0));
@@ -1061,7 +1118,7 @@ const RIVER_CHUNK = 10000;
 /** Rows per ribbon piece (pieces overlap by one row so they join). */
 const RIVER_PIECE = 240;
 
-/** A stream's ribbon piece whose water is never this wide (half-width, m: about 15 km² of catchment, streams.ts
+/** A ribbon piece whose water is never this wide (half-width, m: about 15 km² of catchment, streams.ts
  * channelHalfWidth) is drawn only within SMALL_RIBBON_RANGE m of the viewer (TerrainSystem builds its chunk there and
  * drops it beyond): a narrower stream is under two pixels further off, and a seeded world's mountains hold thousands
  * of km of them (gullies.ts chains). Rivers and wider streams are always drawn. */
@@ -1118,9 +1175,9 @@ export function createRiverNetworkGeometries(small?: SmallRibbonChunk[]): THREE.
         }
         const key = `${Math.floor(r.north[piece] / RIVER_CHUNK)},${Math.floor(r.east[piece] / RIVER_CHUNK)}`;
         const end = Math.min(to, piece + RIVER_PIECE + 1);
-        if (small && (r as RibbonLine).kind === 1) {
+        if (small) {
           let wide = false;
-          for (let i = piece; i < end && !wide; i++) if (r.halfWidth[i] >= SMALL_RIBBON_HW || r.level[i] < 0.3) wide = true;
+          for (let i = piece; i < end && !wide; i++) if (ribbonHalf(r as RibbonLine, i) >= SMALL_RIBBON_HW || r.level[i] < 0.3) wide = true;
           if (!wide) {
             let c = smallPieces.get(key);
             if (!c) smallPieces.set(key, (c = { pieces: [], minN: Infinity, maxN: -Infinity, minE: Infinity, maxE: -Infinity }));

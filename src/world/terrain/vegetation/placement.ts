@@ -20,6 +20,7 @@ import { CLEARFELL_YEARS, compartmentAt, EDGE_FIREBREAK, EDGE_GAP, EDGE_HALF_WID
 import { era } from '../../era/eraState';
 import { gullyNear, gullyNet, type GullyHit } from '../gullies';
 import { bedWidth } from '../streams';
+import { corridorFar, corridorRuns } from '../channelForm';
 import { FLORA } from './flora';
 
 export interface TreeCellRequest {
@@ -231,13 +232,16 @@ export function buildTreeCell(req: TreeCellRequest): TreeCellData {
       let scrub = false;
       if (!hedge && u >= p + lone) {
         const be = lerp2(bank, fx, fz);
-        if (be > GALLERY_NEAR - 4 && be < GALLERY_FAR + 4) {
+        // (A seeded world's corridor: runs of trees with gaps, its width wandering, channelForm.ts.)
+        const seeded = !!hydrology.queryFlow;
+        if (be > GALLERY_NEAR - 4 && be < (seeded ? 1.3 * GALLERY_FAR : GALLERY_FAR) + 4) {
           sampleTerrain(north, east, sample);
           const edge = sample.riverDist - sample.riverHalfWidth;
-          if (sample.riverHalfWidth > 0 && edge > GALLERY_NEAR && edge < GALLERY_FAR) {
-            const pr = riparianPresence(sample.riverArc, Math.sign(sample.riverSigned));
-            const t = (edge - GALLERY_NEAR) / (GALLERY_FAR - GALLERY_NEAR);
-            riparian = u < 0.95 * (GALLERY_FLOOR + (1 - GALLERY_FLOOR) * pr) * (1 - 0.45 * t * t);
+          const far = seeded ? corridorFar(east, north, GALLERY_FAR) : GALLERY_FAR;
+          if (sample.riverHalfWidth > 0 && edge > GALLERY_NEAR && edge < far) {
+            const pr = seeded ? corridorRuns(east, north) : riparianPresence(sample.riverArc, Math.sign(sample.riverSigned));
+            const t = (edge - GALLERY_NEAR) / (far - GALLERY_NEAR);
+            riparian = u < 0.95 * (seeded ? pr : GALLERY_FLOOR + (1 - GALLERY_FLOOR) * pr) * (1 - 0.45 * t * t);
             scrub = riparian && edge < GALLERY_SCRUB && rnd(h0, 11) < 0.6;
           }
         }

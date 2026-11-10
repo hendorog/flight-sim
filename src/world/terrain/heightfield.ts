@@ -22,6 +22,7 @@ import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth, type Dra
 import { gullyNetOf, setGullyNet } from './gullies';
 import { attachSlopes, buildErosion, floorHalfFor, FLOOR_SMIN, sminUp, CUT_CELL as CUT_CELL_M, CUT_N, erosionGullies, upsample, markCourse, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, slopeSmoothDelta, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
 import { buildNetworkHydrology, wallLift, wallStart } from './riverNetwork';
+import { formSection } from './channelForm';
 import { slopeKey, slopeParams, slopeStats, thresholdSlopes, type FloorLines, type SlopeField } from './hillslopes';
 import { structParams, structureFor } from './structure';
 import { buildFaults } from './faults';
@@ -1208,27 +1209,6 @@ function channelProfile(d: number, halfWidth: number): number {
   return BANK_HEIGHT + 0.05 * (b - CHANNEL_BANK) * (b - CHANNEL_BANK);
 }
 
-/**
- * A stream's banks as the water has worn them (a seeded world's network, carveNetwork): its bed a little under the
- * water, then a bank whose width wanders along the stream and differs from side to side, and rock walls beyond rising at a
- * slope that varies (about 30 to 50 degrees, steepening a little with height, never sheer), with ledges and
- * buttresses across them. `s` is the arc length along the stream, `side` the bank (+1 right), `line` the stream.
- */
-function streamBanks(d: number, halfWidth: number, bed: number, s: number, side: number, line: number): number {
-  if (d < halfWidth) {
-    const t = d / halfWidth;
-    return -(0.5 + 0.2 * halfWidth) * (1 - t * t);
-  }
-  const b = d - halfWidth;
-  const n1 = gnoise(s / 90 + side * 5.3 + line * 0.71, line * 1.37 + side * 0.5);
-  // (The bank's low strip out to the bed's edge: the stones and gravel a flood covers, streams.ts bedWidth.)
-  const bank = streamBankWidth(halfWidth, bed) * (1 + 0.3 * n1);
-  if (b < bank) return 0.5 * smooth(0, bank, b);
-  const w = b - bank;
-  const slope = 0.75 - 0.35 * n1;
-  const ledge = gnoise(s / 37 - side * 2.9 + line * 0.11, w / 9 + line * 0.53);
-  return 0.5 + slope * w + 0.02 * w * w + Math.min(4, 1 + 0.08 * w) * ledge * smooth(0, 8, w);
-}
 
 /** The low strip of a stream's banks beyond its water: out to its bed's edge, at least STREAM_BANK_MIN m. */
 const STREAM_BANK_MIN = 0.6;
@@ -1324,7 +1304,7 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
   let calmS = 0;
   for (let j = 0; j < nc0; j++) {
     const c = channelNear[j];
-    if (c.kind === 1) calmS = Math.max(calmS, 1 - smooth(c.halfWidth + STREAM_SMOOTH[0], c.halfWidth + STREAM_SMOOTH[1], c.dist));
+    calmS = Math.max(calmS, 1 - smooth(c.bed + STREAM_SMOOTH[0], c.bed + STREAM_SMOOTH[1], c.dist));
   }
   // (Never more than STREAM_FILL over the natural ground: a dip deeper than that beside a stream stays a dip.)
   // Not in a lake's domain: its bed and shore keep their ground (a stream's smoothing or banks there would raise a
@@ -1367,8 +1347,10 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
   presentHydro.queryRiver(north, east, riverHit);
   out.riverDist = riverHit.dist;
   if (riverHit.side !== 0) {
-    out.riverSigned = riverHit.dist * riverHit.side;
-    out.riverHalfWidth = riverHit.halfWidth * (1 - smooth(0, 60, riverHit.beyondSource));
+    // (Measured from the middle of the bed, which is wider than the water and lies to one side of it: channelForm.ts.)
+    out.riverSigned = riverHit.dist * riverHit.side - (riverHit.bedShift ?? 0);
+    out.riverDist = Math.abs(out.riverSigned);
+    out.riverHalfWidth = (riverHit.bed ?? riverHit.halfWidth) * (1 - smooth(0, 6 * (riverHit.bed ?? riverHit.halfWidth), riverHit.beyondSource));
     out.riverArc = riverHit.s;
   }
   // Under a lake its water covers the river: no channel cut across the lake bed (it would show as a dark line).
@@ -1389,11 +1371,11 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
   let wet2 = false;
   for (let q = 0; q < nc; q++) {
     const o = channelNear[q];
-    if (o.dist < o.halfWidth) {
+    if (o.dist < (o.wet !== undefined ? o.wet : o.halfWidth)) {
       if (wetLine >= 0 && wetLine !== o.line) wet2 = true;
       else wetLine = o.line;
     }
-    if (!(o.dist < o.halfWidth + CHANNEL_BANK + 20)) continue;
+    if (!(o.dist < (o.wet !== undefined ? o.bed : o.halfWidth) + CHANNEL_BANK + 20)) continue;
     const v = o.level + BANK_HEIGHT;
     if (v > keep1) {
       keep2 = keep1;
@@ -1405,48 +1387,29 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     const c = channelNear[j];
     const d = c.dist;
     const wetOther = wet2 || (wetLine >= 0 && wetLine !== c.line);
-    if (c.kind === 1) {
-      // A stream (streams.ts): a narrow notch, no floodplain banks or levee.
-      // Its broad breach first (a rim or sill worn down), then its own bed and banks. Neither takes the ground under
-      // another channel's water within that channel's banks (a stream running down beside a river held up on its valley
-      // floor would leave the river's water standing over a hollow).
-      let keep = keepLine === c.line ? keep2 : keep1;
-      // Nor beside a lake standing higher (its domain and a raster point round it, LakeMask.holds).
-      if (c.breach > 0 && mask && mask.holds(north, east) > 0) keep = Math.max(keep, mask.holdLevel + 0.5);
-      // (Faded out over the last fifth of its reach, where its walls should long since have met the ground.)
-      if (c.breach > 0) h += (Math.max(Math.min(h, keep), smin(h, breachLift(c.level + breachProfile(d, c.breach), h, d, c.reach, c.cut, wallHere), 3)) - h) * open * (1 - smooth(0.8 * c.reach, c.reach, d));
-      const w = c.halfWidth * (1 - smooth(0, 20, c.beyondSource));
-      if (w <= 0.3) continue;
-      // (Not worked out where its banks stand well over the ground: their least height there is under the ground's.)
-      const kb = 0.5 + 0.3 * w;
-      if (d < w || c.level + 0.4 * (d - w - 2.1 * streamBankWidth(w, c.bed)) - 4 < h + kb) {
-        const banks = smin(h, c.level + streamBanks(d, w, c.bed, c.s, c.side, c.line), kb);
-        h += ((d > w ? Math.max(Math.min(h, keep), banks) : banks) - h) * open;
-      }
-      // Its banks hold its water: where the ground beside it lies under the water (a hillside it crosses, a dip
-      // between the points it was traced on) a low bank is built up, at most STREAM_FILL (not in another channel's
-      // water, nor at a mouth on the sea).
-      if (d > w && !wetOther && out.river === -Infinity && c.level > 0.5 && dryS) {
-        // (Less what an airfield's blend will raise it by: FIELD_RAISE.)
-        const need = Math.min(c.level + 0.3 + 0.03 * (d - w), hNatural + STREAM_FILL) - h - blendLift;
-        if (need > 0) h += need * (1 - smooth(w + STREAM_SMOOTH[0] + 15, w + STREAM_SMOOTH[1], d)) * open;
-      }
-      if (d < w && h < c.level && open >= 1) out.river = Math.max(out.river, c.level);
-      continue;
+    // Every line alike (channelForm.ts formSection): its broad breach first (a rim or sill worn down), then its own wet
+    // bed, the bar out to its bed's edge and its bank, faded in from its source over three of its bed's widths. Neither
+    // takes the ground under another channel's water within that channel's banks (a stream running down beside a river
+    // held up on its valley floor would leave the river's water standing over a hollow), nor beside a lake standing
+    // higher (its domain and a raster point round it, LakeMask.holds).
+    let keep = keepLine === c.line ? keep2 : keep1;
+    if (c.breach > 0 && mask && mask.holds(north, east) > 0) keep = Math.max(keep, mask.holdLevel + 0.5);
+    // (Faded out over the last fifth of its reach, where its walls should long since have met the ground.)
+    if (c.breach > 0) h += (Math.max(Math.min(h, keep), smin(h, breachLift(c.level + breachProfile(d, c.breach), h, d, c.reach, c.cut, wallHere), 3)) - h) * open * (1 - smooth(0.8 * c.reach, c.reach, d));
+    const fade = 1 - smooth(0, 6 * c.bed, c.beyondSource);
+    const wet = (c.wet ?? c.halfWidth) * fade;
+    if (wet <= 0.2) continue;
+    const bed = Math.max(wet, c.bed * fade);
+    const banks = smin(h, c.level + formSection(d, wet, bed, c.depth ?? 1, c.bankH ?? 1, c.bankTan ?? 0.5), Math.min(3, 0.5 + 0.3 * wet));
+    h += ((d > wet ? Math.max(Math.min(h, keep), banks) : banks) - h) * open;
+    // Its banks hold its water: where the ground beside it lies under the water (a hillside it crosses, a dip between
+    // the points it was traced on) a low bank is built up, at most STREAM_FILL (not in another channel's water, nor at
+    // a mouth on the sea; less what an airfield's blend will raise it by: FIELD_RAISE).
+    if (d > wet && !wetOther && out.river === -Infinity && c.level > 0.5 && dryS) {
+      const need = Math.min(c.level + 0.3 + 0.03 * (d - wet), hNatural + STREAM_FILL) - h - blendLift;
+      if (need > 0) h += need * (1 - smooth(bed + STREAM_SMOOTH[0] + 15, bed + STREAM_SMOOTH[1], d)) * open;
     }
-    const w = c.halfWidth * (1 - smooth(0, 60, c.beyondSource));
-    if (w <= 0.5) continue;
-    // A gorge below a fall (falls.ts): worn broadly, as a stream's breach.
-    if (c.breach > 0) h += (smin(h, breachLift(c.level + breachProfile(d, c.breach), h, d, c.reach, c.cut, wallHere), 3) - h) * open * (1 - smooth(0.8 * c.reach, c.reach, d));
-    let carved = smin(h, c.level + channelProfile(d, w), 3);
-    // A natural levee is a few metres at most: never a bank raised far over the plain (a wall).
-    // (Judged on the ground before a stream's banks raised it: a levee on top of a stream's bank would be a wall.)
-    if (d > w && d < w + 40 && !wetOther && c.level > 0.5 && c.level - Math.min(carved, hNatural) < 4) {
-      const levee = c.level + 0.3 + 0.03 * (d - w);
-      carved += (Math.max(carved, levee) - carved) * (1 - smooth(w + 25, w + 40, d));
-    }
-    h += (carved - h) * open;
-    if (d < w && h < c.level && open >= 1) out.river = Math.max(out.river, c.level);
+    if (d < wet && h < c.level && open >= 1) out.river = Math.max(out.river, c.level);
   }
   return h;
 }
@@ -1496,7 +1459,7 @@ function keepChannels(north: number, east: number, h: number, k: number, E: numb
   // wall at its edge.)
   for (let q = 0; q < nc; q++) {
     const o = channelNear[q];
-    if (!(o.dist < o.halfWidth + FIELD_KEEP)) continue;
+    if (!(o.dist < (o.wet ?? o.halfWidth) + FIELD_KEEP)) continue;
     const v = o.level + BANK_HEIGHT;
     if (v > keep1) {
       keep2 = keep1;
@@ -1509,8 +1472,8 @@ function keepChannels(north: number, east: number, h: number, k: number, E: numb
   for (let j = 0; j < nc; j++) {
     const c = channelNear[j];
     const d = c.dist;
-    const hw = c.halfWidth * (1 - smooth(0, 20, c.beyondSource));
-    if (hw <= 0.3) continue;
+    const hw = (c.wet ?? c.halfWidth) * (1 - smooth(0, 6 * c.bed, c.beyondSource));
+    if (hw <= 0.2) continue;
     const keep = keepLine === c.line ? keep2 : keep1;
     const kb = 0.5 + 0.3 * hw;
     if (d < hw || c.level + 0.3 * (d - hw - streamBankWidth(hw, c.bed)) - 4 < cut + kb) {
@@ -1527,7 +1490,7 @@ function keepChannels(north: number, east: number, h: number, k: number, E: numb
   h += (Math.min(cut, h) - h) * w;
   for (let j = 0; j < nc; j++) {
     const c = channelNear[j];
-    if (c.dist < c.halfWidth && h < c.level) out.river = Math.max(out.river, c.level);
+    if (c.dist < (c.wet ?? c.halfWidth) && h < c.level) out.river = Math.max(out.river, c.level);
   }
   return h;
 }

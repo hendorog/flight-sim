@@ -77,7 +77,7 @@ const RAG_CELL_B = 4.3;
 /** Where the rock gives way to soil: over the outer RAG_EDGE of its (ragged) reach. */
 const RAG_EDGE = 0.3;
 
-function valueNoise(x: number, y: number): number {
+export function valueNoise(x: number, y: number): number {
   const ix = Math.floor(x);
   const iy = Math.floor(y);
   const fx = x - ix;

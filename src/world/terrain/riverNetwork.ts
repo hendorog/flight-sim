@@ -13,19 +13,16 @@ import { hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
 import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type DrainLine, type LakeMask } from './drainage';
 import { channelCourse, courseSpline } from './erosion';
-import { bedWidth, breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
+import { bedWidth, breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, REGIME, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
+import { bendOf, fitSwing, formOf, hSmooth, layThread, sineAmplitude, stepWhite, threadDepth } from './channelForm';
 import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
 import { buildFaults, FaultIndex } from './faults';
 import { pitchPool, type PitchReport } from './pitchPool';
 import { macroAt, type Macro } from './seededLayout';
 import { AIRPORT } from '../../core/world';
 
-/** A loop is cut off when its neck has closed to this fraction of the meander length (or a few channel widths). */
-const NECK_FACTOR = 0.22;
 /** Oxbow water stands this far above the river level of its valley section, m (as hydrology.ts). */
 const OXBOW_LEVEL = 0.6;
-/** A river meanders less in a valley this deep on the macro ground, m, and not at all from the second (a gorge). */
-const GORGE_CUT = [100, 180];
 /** Past a lake's outlet the river keeps the lake's level over this stretch, m (while its banks stand over it). */
 const OUTLET_RUN = 800;
 /** A pond whose water stands this far above the river running into it is drained (see the levels below), m. */
@@ -54,8 +51,6 @@ const JOIN_PULL = 1000;
 const CONFLUENCE_GRADIENT = 0.3;
 /** ... a gully chain's stream (gullies.ts) as steep as the threshold slopes it comes down (hillslopes.ts SLOPES.sc). */
 const CHAIN_CONFLUENCE = 0.75;
-/** A stream's water narrows to this share of its width down a reach of gradient (m/m) from the first to the second. */
-const STEEP_SLOT = 0.45;
 /** A stream's water is raised towards the drawn ground where it runs more than RAISE_CUT m under the ground it was
  * traced on, to RAISE_DEPTH under the natural ground at most. */
 const RAISE_CUT = 2;
@@ -63,7 +58,6 @@ const RAISE_DEPTH = 1.2;
 /** ... and to at most this much over the lower of the ground either side, RAISE_SIDE m beyond its channel's half-width. */
 const RAISE_BANK = 2;
 const RAISE_SIDE = 25;
-const STEEP_NARROW = [0.05, 0.2];
 /** Round T repairs: a stream's water where it runs into standing water (a lake, a pond) stands at the water's surface,
  * not under it (riverNetwork.ts, after the pitches): see "Into standing water". */
 const AT_THE_SURFACE = true;
@@ -74,13 +68,29 @@ const LEAVE_BELOW = 1;
  * half-widths and RAISE_BESIDE_REACH of it, m. */
 const RAISE_BESIDE = 1;
 const RAISE_BESIDE_REACH = 20;
-/** ... not over its last this much, m (into its mouth). */
-const STEEP_MOUTH = 150;
 /** A hanging valley's lip lies where the alpine uplift (seededLayout.ts) is over this: high in the ranges. */
 const HANG_UPLIFT = 0.25;
 /** Catchment (km²) above which a river meanders on low ground, and the valley gradient below which it does. */
 const MEANDER_AREA = 250;
 const MEANDER_GRADIENT = 0.004;
+
+/** The channel-form law's single-thread bank-full width for a catchment (channelForm.ts formOf: W_s), m. */
+const formWs = (area: number): number => 4.47 * Math.pow(Math.max(0.05, area), 0.39);
+/** A river's room is read across its axis every ROOM_EVERY axis samples, a stream's every STREAM_ROOM_EVERY m of its
+ * course, out along ROOM_LADDER (then bisected), m. */
+const ROOM_EVERY = 4;
+const STREAM_ROOM_EVERY = 100;
+const ROOM_LADDER = [15, 30, 50, 80, 120, 170, 230, 300, 400, 520, 680, 880, 1150, 1500];
+/** The floor a bed is given at least (a river held under ground that falls away beside it still has a bed), m. */
+const FLOOR_MIN = 10;
+/** The thread's wavelength is at least this (six of the 8 m samples a level of detail keeps), m. */
+const LAMBDA_MIN = 48;
+/** A channel's water is checked against the valleys' carve every CARVE_CHECK m of its arc. */
+const CARVE_CHECK = 40;
+/** The bed's width varies as exp(WIDTH_SPREAD h) (DESIGN.md: a width CV about 0.45). */
+const WIDTH_SPREAD = 0.45;
+/** A reach with no white water draws at most this steepness (water.ts FLOW_FROM: placid below it). */
+const WHITE_FROM = 0.19;
 
 /** Channel half-width for a catchment area, m. */
 export const halfWidthFor = (area: number): number => Math.min(45, Math.max(3, 1.5 + 0.85 * Math.sqrt(area)));
@@ -228,7 +238,6 @@ interface Axis {
   halfWidth: Float64Array;
   belt: Float64Array;
   /** Meander strength, [0, 1] (streams wiggle a little at 0), and the meander wavelength along the valley, m. */
-  meander: Float64Array;
   wavelength: Float64Array;
   floodplain: Float64Array;
   influence: Float64Array;
@@ -298,20 +307,15 @@ export interface LevelStage {
  * meandering channel, shape the falls (falls.ts shapeLines), pitch the pitches and pools.
  */
 export const levelProbe: { on?: (stage: string, li: number, line: LevelStage) => void } = {};
+/** Probes: each river's law along its axis as it is laid (channelForm.ts), and its channel's samples. */
+export const formProbe: { on?: (li: number, axis: { north: Float64Array; east: Float64Array; s: Float64Array; area: Float64Array; level: Float64Array; S: Float64Array; roomL: Float64Array; roomR: Float64Array; rL: Float64Array; rR: Float64Array; Wa: Float64Array; lam2: Float64Array; om2: Float64Array; lam1: Float64Array; om1: Float64Array }) => void } = {};
 /** How far beyond its floodplain a river's valley is carved into the ground about it (carveNetwork), m, for a catchment
  * of `area` km². */
 export const valleyInfluence = (area: number): number => 500 + 1900 * smooth(30, 2000, area);
 /** Build a seeded world's hydrology from its drainage and lakes. */
 export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyDepth?: Float32Array, smoothGround: (north: number, east: number) => number = natural, markFloor?: (axes: Array<{ north: Float64Array; east: Float64Array; half: Float64Array; area: Float64Array }>) => void, pinned?: (north: number, east: number) => number, wallWeight?: (north: number, east: number) => number): Hydrology {
   const lines = d.lines;
-  /** The macro ground's valley depth at the lattice cell nearest a point, m (0 without it). */
-  const half = ((d.n - 1) * DRAIN_CELL) / 2;
-  const valleyAt = (north: number, east: number): number => {
-    if (!valleyDepth) return 0;
-    const ci = Math.min(d.n - 1, Math.max(0, Math.round((north + half) / DRAIN_CELL)));
-    const cj = Math.min(d.n - 1, Math.max(0, Math.round((east + half) / DRAIN_CELL)));
-    return valleyDepth[ci * d.n + cj];
-  };
+  void valleyDepth;
   // --- Courses: each line's is the model's own (erosion.ts channelCourse, over the drainage's tree), the course the
   // model carved its valley along. A tributary's last cell is its junction cell, on its parent's course; its course runs
   // on along that cell's piece to the middle of the leg to the cell's receiver (`ext`), where it meets its parent's
@@ -485,8 +489,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     capFall(pre[li]);
     levelProbe.on?.('C', li, pre[li]);
     const halfWidth = new Float64Array(count);
+    // The valley's own swing for its walls (wallStart): a few hundredths of a meander length. (The law's thread is laid
+    // in the room the floor this carves gives it, channelForm.ts: not wider.)
     const belt = new Float64Array(count);
-    const meander = new Float64Array(count);
     const wavelength = new Float64Array(count);
     const floodplain = new Float64Array(count);
     const influence = new Float64Array(count);
@@ -500,20 +505,12 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const lowland = 1 - smooth(MEANDER_GRADIENT * 0.5, MEANDER_GRADIENT, grad);
       const big = smooth(MEANDER_AREA * 0.6, MEANDER_AREA * 1.6, area[i]);
       const tail = L.joins >= 0 ? smooth(0, 2500, s[count - 1] - s[i]) : 1;
-      // No wide loops by the home runway.
-      const nearField = smooth(3000, 6000, runwayDistance(north[i], east[i]));
       // None across a lake (its water hides the course; the loops would only cost time).
       const mFree = (1 - wet[i]) * lowland * big * tail * clampUnit(0.8 + 0.4 * gnoise(s[i] / 5200 + li * 7.31, 2.7 + li));
-      // None where the river runs confined in a deep valley of the macro ground (a gorge, or a narrow mountain valley:
-      // erosion.ts valley): there its loops would swing off its floor into the walls, and an entrenched river keeps to
-      // its floor. (The floodplain keeps the free meanders' width, as by the home field.)
-      const m = mFree * nearField * (1 - smooth(GORGE_CUT[0], GORGE_CUT[1], valleyAt(north[i], east[i])));
-      meander[i] = m;
       // Meander wavelength about 18 channel widths (the long end of Leopold & Wolman's range: broad loops, as seed 0's
       // river has), varied along the river.
       wavelength[i] = Math.max(160, 36 * hw) * (0.85 + 0.3 * gnoise(s[i] / 3000 + li * 3.3, 9.1));
-      // Half-width of the belt the channel swings across (meanderChannel keeps the channel inside it).
-      belt[i] = wavelength[i] * (0.06 + 0.55 * m);
+      belt[i] = 0.06 * wavelength[i];
       // The floodplain keeps the width the free meanders would need, so it does not pinch where they are held in.
       const freeBelt = wavelength[i] * (0.06 + 0.55 * mFree);
       floodplain[i] = freeBelt + hw + CHANNEL_BANK + 4 * hw * Math.min(1, freeBelt / 200);
@@ -522,10 +519,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // The floodplain's width changes only gradually along the river: inside a bend the nearest axis point jumps from
     // one stretch to another, and two different widths there would leave a step in the valley wall.
     smoothAlong(floodplain, Math.ceil(1500 / AXIS_SPACING), 3);
-    // The belt stays inside the smoothed floodplain (less the channel and its bank): where it narrowed, a loop would
-    // swing off the floor into the valley's wall.
     for (let i = 0; i < count; i++) belt[i] = Math.max(0, Math.min(belt[i], floodplain[i] - halfWidth[i] - CHANNEL_BANK));
-    axes.push({ north, east, s, area, level, halfWidth, belt, meander, wavelength, floodplain, influence, ground: pre[li].ground, gapR: new Float64Array(count), gapL: new Float64Array(count) });
+    axes.push({ north, east, s, area, level, halfWidth, belt, wavelength, floodplain, influence, ground: pre[li].ground, gapR: new Float64Array(count), gapL: new Float64Array(count) });
   }
 
   // --- Water under the other valleys' carving. Each line's level came from the natural ground along it, but the
@@ -633,8 +628,6 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   for (let li = 0; li < lines.length; li++) {
     destair(pre[li]);
     levelProbe.on?.('E', li, pre[li]);
-    const a = axes[li];
-    confineBelt(natural, a.north, a.east, a.level, a.belt, a.wavelength);
   }
   // The walls' gaps (wallLift): on each side, how far the ground where the wall starts (past the floodplain and the
   // channel's swing, wallStart) stands over the valley's floor, where the threshold hillslopes' walls stand about it;
@@ -696,14 +689,219 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     return h;
   };
 
-  // --- Channels: meandering curves about the axis (Ferguson's disturbed periodic model), some loops cut off as oxbows; a tributary's end on its parent's channel.
+  // The ground the streams run down: the terrain's, with the rivers' valleys cut in (as carveNetwork cuts them); they
+  // are routed over it without its small-scale relief.
+  const routeValley: ValleyNear = { dist: 0, level: 0, floodplain: 0, influence: 0, gap: 0, swing: 0 };
+  const carvedGround = (h: number, pn: number, pe: number): number => {
+    let w = -1;
+    // (Each line's nearest stretch, as the levels were read: the terrain's blend about a switch moves the ground by a
+    // few metres at most, and the streams traced on it would wander off into other courses for it.)
+    valleyIndex.perLine(pn, pe, (lj, k, t, dd, side) => {
+      const v = routeValley;
+      const a = axes[lj];
+      v.floodplain = a.floodplain[k] + (a.floodplain[k + 1] - a.floodplain[k]) * t;
+      v.influence = a.influence[k] + (a.influence[k + 1] - a.influence[k]) * t;
+      v.level = a.level[k] + (a.level[k + 1] - a.level[k]) * t;
+      v.gap = gapAt(a, k, t, side);
+      v.swing = a.belt[k] + a.halfWidth[k] + (a.belt[k + 1] + a.halfWidth[k + 1] - a.belt[k] - a.halfWidth[k]) * t;
+      const f = v.floodplain;
+      const I = v.influence;
+      if (dd >= f + I) return false;
+      const lv = v.level;
+      const excess = Math.max(0, h - lv - valleyWall(f + I, f));
+      const u = Math.min(1, Math.max(0, (dd - f) / I));
+      let target = lv + valleyWall(dd, f) + excess * u * u;
+      // (As the terrain carves it: the threshold hillslopes' walls only lowered, wallLift.)
+      if (wallWeight && dd > f) {
+        if (w < 0) w = wallWeight(pn, pe);
+        target = wallLift(target, h, (dd - f) / I, I, v.gap, w, wallStart(f, I, v.swing));
+      }
+      const carved = sminN(h, target, 4);
+      h += (carved - h) * (1 - smooth(f + I * 0.75, f + I, dd));
+      return false;
+    });
+    return h;
+  };
+  // --- The channel-form law (channelForm.ts): each river's room on its floor, read across its axis on the ground its
+  // valleys carve (the floor's edge: where that ground first stands its bank and a metre over the floodplain's own
+  // height above the water, or falls under the water), and the law's widths, swings and wavelengths from its reach
+  // state (catchment, gradient, room) at every axis sample.
+  const floorGround = (pn: number, pe: number): number => carvedGround(smoothGround(pn, pe), pn, pe);
+  /**
+   * The room one side of a channel at (pn, pe), across (nn, ne): how far out the floor reaches, m - to where the ground
+   * as the valleys carve it first stands over `top` or falls under `bottom` (another valley), or comes into the home
+   * runway's clear zone (no channel swings into it: RUNWAY_CLEAR). Out along ROOM_LADDER, then bisected. Every line's
+   * room, river or stream, is read so (DESIGN.md section 1).
+   */
+  const roomAcross = (pn: number, pe: number, nn: number, ne: number, top: number, bottom: number): number => {
+    const out = (d: number): boolean => {
+      const qn = pn + nn * d;
+      const qe = pe + ne * d;
+      if (runwayDistance(qn, qe) < RUNWAY_CLEAR) return true;
+      const g = floorGround(qn, qe);
+      return g > top || g < bottom;
+    };
+    let prev = 0;
+    for (const d of ROOM_LADDER) {
+      if (out(d)) {
+        let l0 = prev;
+        let l1 = d;
+        for (let k = 0; k < 3; k++) {
+          const mid = 0.5 * (l0 + l1);
+          if (out(mid)) l1 = mid;
+          else l0 = mid;
+        }
+        return 0.5 * (l0 + l1);
+      }
+      prev = d;
+    }
+    return prev;
+  };
+  const roomOfAxis = (li: number): { roomL: Float64Array; roomR: Float64Array; S: Float64Array; swingL: Float64Array; swingR: Float64Array } => {
+    const a = axes[li];
+    const P = pre[li];
+    const m = a.north.length;
+    const roomL = new Float64Array(m);
+    const roomR = new Float64Array(m);
+    const S = new Float64Array(m);
+    for (let i = 0; i < m; i++) {
+      const Ws = formWs(a.area[i]);
+      const half = Math.max(100, 10 * Ws);
+      const lo = sampleAt(a.s, a.level, Math.max(0, a.s[i] - half));
+      const hi = sampleAt(a.s, a.level, Math.min(a.s[m - 1], a.s[i] + half));
+      const run = Math.min(a.s[m - 1], a.s[i] + half) - Math.max(0, a.s[i] - half);
+      S[i] = run > 1 ? Math.max(0, (lo - hi) / run) : 0;
+    }
+    // The floor read at stations along the axis (none in a lake: the water there is the lake's).
+    roomL.fill(NaN);
+    roomR.fill(NaN);
+    const station = (i: number): void => {
+      if (P.wet[i]) return;
+      const i0 = Math.max(0, i - 1);
+      const i1 = Math.min(m - 1, i + 1);
+      const tn = a.north[i1] - a.north[i0];
+      const te = a.east[i1] - a.east[i0];
+      const tl = Math.hypot(tn, te) || 1;
+      const nn = -te / tl;
+      const ne = tn / tl;
+      const lv = a.level[i];
+      const top = lv + FLOOR_OVER + formOf(a.area[i], S[i], 0).bankH + 1;
+      const bottom = lv + 0.5;
+      roomR[i] = roomAcross(a.north[i], a.east[i], nn, ne, top, bottom);
+      roomL[i] = roomAcross(a.north[i], a.east[i], -nn, -ne, top, bottom);
+    };
+    for (let i = 0; i < m; i += ROOM_EVERY) station(i);
+    if ((m - 1) % ROOM_EVERY !== 0) station(m - 1);
+    const isStation = (i: number): boolean => i % ROOM_EVERY === 0 || i === m - 1;
+    /** Between the stations the lower of the two, then smoothed along (over about a kilometre). */
+    const spread = (r: Float64Array): void => {
+      let last = 0;
+      for (let i = 1; i < m; i++) {
+        if (isStation(i)) {
+          for (let j = last + 1; j < i; j++) r[j] = Math.min(r[last], r[i]);
+          last = i;
+        }
+      }
+      smoothAlong(r, Math.ceil(500 / AXIS_SPACING), 2);
+    };
+    // The thread swings in the floor as read (none in a lake, easing in and out); the bed's width is capped by the floor
+    // as read inland: a station in a lake or at the sea (whose ground beside is the lake's bed or the shore) takes the
+    // floor of the nearest station that reads one, so a river keeps its width through a lake and to its mouth.
+    const swingL = Float64Array.from(roomL, (v) => (Number.isFinite(v) ? v : 0));
+    const swingR = Float64Array.from(roomR, (v) => (Number.isFinite(v) ? v : 0));
+    spread(swingL);
+    spread(swingR);
+    for (let i = 0; i < m; i++) {
+      if (!(a.level[i] < 1)) continue;
+      roomL[i] = NaN;
+      roomR[i] = NaN;
+    }
+    for (const r of [roomL, roomR]) {
+      let prevAt = -1;
+      const nearest = new Int32Array(m).fill(-1);
+      for (let i = 0; i < m; i++) if (isStation(i) && Number.isFinite(r[i])) prevAt = i;
+      else if (isStation(i)) nearest[i] = prevAt;
+      let nextAt = -1;
+      for (let i = m - 1; i >= 0; i--) {
+        if (!isStation(i)) continue;
+        if (Number.isFinite(r[i])) {
+          nextAt = i;
+          continue;
+        }
+        const b = nearest[i];
+        const pick = b < 0 ? nextAt : nextAt < 0 ? b : i - b <= nextAt - i ? b : nextAt;
+        r[i] = pick >= 0 ? r[pick] : 0.5 * FLOOR_MIN;
+      }
+      for (let i = 0; i < m; i++) if (isStation(i) && !Number.isFinite(r[i])) r[i] = 0.5 * FLOOR_MIN;
+      spread(r);
+    }
+    return { roomL, roomR, S, swingL, swingR };
+  };
+  /** Each river's room (floor) per axis sample, and per channel sample (filled as the channels are laid). */
+  const roomAx: Array<{ roomL: Float64Array; roomR: Float64Array; S: Float64Array; swingL: Float64Array; swingR: Float64Array }> = [];
+  const formCh: Array<{ s: Float64Array; kap: Float32Array; roomL: Float32Array; roomR: Float32Array }> = [];
+  const lawAx: Array<{ Wa: Float64Array; lam2: Float64Array }> = [];
+  /** Where the law's time goes (probes): the room transects, laying the threads, the rest of the channel loop. */
+  const formMs = { room: 0, lay: 0, chan: 0, form: 0 };
+  const layRiver = (li: number): { north: number[]; east: number[]; valleyS: number[]; off: number[] } => {
+    const a = axes[li];
+    const m = a.north.length;
+    const tR0 = performance.now();
+    const R = roomOfAxis(li);
+    formMs.room += performance.now() - tR0;
+    roomAx[li] = R;
+    const lam1 = new Float64Array(m);
+    const om1 = new Float64Array(m);
+    const lam2 = new Float64Array(m);
+    const om2 = new Float64Array(m);
+    const Wa = new Float64Array(m);
+    const rL = new Float64Array(m);
+    const rR = new Float64Array(m);
+    for (let i = 0; i < m; i++) {
+      const F = Math.max(FLOOR_MIN, R.roomL[i] + R.roomR[i]);
+      const f = formOf(a.area[i], R.S[i], F);
+      const w = f.phi * f.Wa;
+      // The thread's centre keeps its water on the floor (the runway's clear zone is not floor: roomAcross).
+      rL[i] = Math.max(0, Math.min(R.swingL[i], R.roomL[i]) - 0.5 * w);
+      rR[i] = Math.max(0, Math.min(R.swingR[i], R.roomR[i]) - 0.5 * w);
+      Wa[i] = f.Wa;
+      lam1[i] = f.lam1;
+      lam2[i] = Math.max(LAMBDA_MIN, f.lam2);
+      // The room filled from the smallest scale up: the thread keeps its swing (to 0.8 of the room), the belt the rest.
+      const room = 0.5 * (rL[i] + rR[i]);
+      const a2 = Math.min(sineAmplitude(lam2[i], f.om2), 0.8 * room);
+      om2[i] = fitSwing(lam2[i], f.om2, a2);
+      om1[i] = fitSwing(f.lam1, f.om1, Math.max(0, 0.8 * room - a2));
+    }
+    // (The valley's own bends: no offset on the inside of one deeper than half its radius, or the curve would fold.)
+    for (let i = 1; i < m - 1; i++) {
+      const tn0 = a.north[i] - a.north[i - 1];
+      const te0 = a.east[i] - a.east[i - 1];
+      const tn1 = a.north[i + 1] - a.north[i];
+      const te1 = a.east[i + 1] - a.east[i];
+      const turn = Math.atan2(tn0 * te1 - te0 * tn1, tn0 * tn1 + te0 * te1);
+      const k = Math.abs(turn) / Math.max(1, 0.5 * (a.s[i + 1] - a.s[i - 1]));
+      if (k < 1e-6) continue;
+      if (turn > 0) rR[i] = Math.min(rR[i], 0.5 / k);
+      else rL[i] = Math.min(rL[i], 0.5 / k);
+    }
+    lawAx[li] = { Wa, lam2 };
+    formProbe.on?.(li, { north: a.north, east: a.east, s: a.s, area: a.area, level: a.level, S: R.S, roomL: R.roomL, roomR: R.roomR, rL, rR, Wa, lam2, om2, lam1, om1 });
+    const tL0 = performance.now();
+    const laid = layThread(a.north, a.east, { lam1, om1, lam2, om2, Wa, roomL: rL, roomR: rR }, li + 1);
+    formMs.lay += performance.now() - tL0;
+    return laid;
+  };
+
+  // --- Channels: the law's thread about the axis (channelForm.ts), some loops cut off as oxbows; a tributary's end on its parent's channel.
   const rivers: Array<RiverLine & { valleyS: Float64Array }> = [];
   const oxbows: Array<{ north: Float64Array; east: Float64Array; level: number; halfWidth: number; depth: number }> = [];
+  const tChan0 = performance.now();
   for (let li = 0; li < lines.length; li++) {
     const a = axes[li];
     const total = a.s[a.s.length - 1];
-    const ch = meanderChannel(a, (hash2i(li, 0x3ea) & 0xffff) / 65536 * Math.PI * 2, valleyGround);
-    for (const o of cutOffLoops(ch, a, li)) {
+    const ch = layRiver(li);
+    for (const o of cutOffLoops(ch, a, li, lawAx[li].Wa)) {
       oxbows.push({
         north: o.north,
         east: o.east,
@@ -741,19 +939,48 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const halfWidth = new Float64Array(count);
     const wetAxis = pre[li].wet;
     const pinAxis = pre[li].pinned;
+    let lastCheck = -Infinity;
     for (let k = 0; k < count; k++) {
       if (k > 0) s[k] = s[k - 1] + Math.hypot(north[k] - north[k - 1], east[k] - east[k - 1]);
       let lv = sampleAt(a.s, a.level, valleyS[k]);
       // The channel swings off its axis (a meander, a bend that brings it near a lower stretch of its own valley or
-      // another's wall): its water no higher than the valleys carve the ground there (every other point).
-      if ((k & 1) === 0 && k < count - 1 && !wetAxis[segmentAt(a.s, valleyS[k])] && !pinAxis[segmentAt(a.s, valleyS[k])]) lv = Math.min(lv, carvedUnder(north[k], east[k], lv));
+      // another's wall): its water no higher than the valleys carve the ground there (every CARVE_CHECK m of arc).
+      if (s[k] - lastCheck >= CARVE_CHECK && k < count - 1 && !wetAxis[segmentAt(a.s, valleyS[k])] && !pinAxis[segmentAt(a.s, valleyS[k])]) {
+        lv = Math.min(lv, carvedUnder(north[k], east[k], lv));
+        lastCheck = s[k];
+      }
       level[k] = k === 0 ? lv : Math.min(level[k - 1], lv);
       halfWidth[k] = sampleAt(a.s, a.halfWidth, valleyS[k]);
+    }
+    // The thread's bends (their inside, point bars) and its room left and right on the floor at every sample.
+    {
+      const la = lawAx[li];
+      const smoothM = new Float64Array(count);
+      const peakM = new Float64Array(count);
+      const roomL = new Float32Array(count);
+      const roomR = new Float32Array(count);
+      const RA = roomAx[li];
+      for (let k = 0; k < count; k++) {
+        const vs = valleyS[k];
+        smoothM[k] = Math.max(12, sampleAt(a.s, la.lam2, vs) / 8);
+        peakM[k] = Math.max(30, sampleAt(a.s, la.lam2, vs) / 2);
+        // Its offset from the axis (right: +).
+        const i = segmentAt(a.s, vs);
+        const t = Math.min(1, Math.max(0, (vs - a.s[i]) / Math.max(1e-9, a.s[i + 1] - a.s[i])));
+        const tn = a.north[i + 1] - a.north[i];
+        const te = a.east[i + 1] - a.east[i];
+        const tl = Math.hypot(tn, te) || 1;
+        const off = (north[k] - a.north[i] - tn * t) * (-te / tl) + (east[k] - a.east[i] - te * t) * (tn / tl);
+        roomR[k] = Math.max(0, sampleAt(a.s, RA.roomR, vs) - off);
+        roomL[k] = Math.max(0, sampleAt(a.s, RA.roomL, vs) + off);
+      }
+      formCh[li] = { s: Float64Array.from(s), kap: bendOf(north, east, smoothM, peakM), roomL, roomR };
     }
     rivers.push({ north: Float64Array.from(north), east: Float64Array.from(east), level, halfWidth, s, valleyS: Float64Array.from(valleyS) });
     levelProbe.on?.('chan', li, rivers[li]);
   }
 
+  formMs.chan = performance.now() - tChan0;
   const tPhase: number[] = [performance.now()];
   /** Whether each river's head lies in a lake (its bed's stones are its own, bedGrain). */
   const P0wet = pre.map((P) => P.wet[0] === 1);
@@ -838,39 +1065,6 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   // The pools a river runs through.
   const riverPools = new Uint8Array(mask.pools.length);
   for (const P of pre) for (let i = 0; i < P.wet.length; i++) if (P.wet[i] && P.poolOf[i] >= 0) riverPools[P.poolOf[i]] = 1;
-  // The ground the streams run down: the terrain's, with the rivers' valleys cut in (as carveNetwork cuts them); they
-  // are routed over it without its small-scale relief.
-  const routeValley: ValleyNear = { dist: 0, level: 0, floodplain: 0, influence: 0, gap: 0, swing: 0 };
-  const carvedGround = (h: number, pn: number, pe: number): number => {
-    let w = -1;
-    // (Each line's nearest stretch, as the levels were read: the terrain's blend about a switch moves the ground by a
-    // few metres at most, and the streams traced on it would wander off into other courses for it.)
-    valleyIndex.perLine(pn, pe, (lj, k, t, dd, side) => {
-      const v = routeValley;
-      const a = axes[lj];
-      v.floodplain = a.floodplain[k] + (a.floodplain[k + 1] - a.floodplain[k]) * t;
-      v.influence = a.influence[k] + (a.influence[k + 1] - a.influence[k]) * t;
-      v.level = a.level[k] + (a.level[k + 1] - a.level[k]) * t;
-      v.gap = gapAt(a, k, t, side);
-      v.swing = a.belt[k] + a.halfWidth[k] + (a.belt[k + 1] + a.halfWidth[k + 1] - a.belt[k] - a.halfWidth[k]) * t;
-      const f = v.floodplain;
-      const I = v.influence;
-      if (dd >= f + I) return false;
-      const lv = v.level;
-      const excess = Math.max(0, h - lv - valleyWall(f + I, f));
-      const u = Math.min(1, Math.max(0, (dd - f) / I));
-      let target = lv + valleyWall(dd, f) + excess * u * u;
-      // (As the terrain carves it: the threshold hillslopes' walls only lowered, wallLift.)
-      if (wallWeight && dd > f) {
-        if (w < 0) w = wallWeight(pn, pe);
-        target = wallLift(target, h, (dd - f) / I, I, v.gap, w, wallStart(f, I, v.swing));
-      }
-      const carved = sminN(h, target, 4);
-      h += (carved - h) * (1 - smooth(f + I * 0.75, f + I, dd));
-      return false;
-    });
-    return h;
-  };
   tPhase.push(performance.now());
   const route = (pn: number, pe: number): number => carvedGround(smoothGround(pn, pe), pn, pe);
   const netMs = { refine: 0, shape: 0, pitch: 0, flow: 0, index: 0 };
@@ -897,6 +1091,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const s = r.s.slice(i0);
       for (let i = 0; i < s.length; i++) s[i] -= cut;
       rivers[li] = { north: r.north.slice(i0), east: r.east.slice(i0), level: r.level.slice(i0), halfWidth: r.halfWidth.slice(i0), s, valleyS: r.valleyS.slice(i0) };
+      const fc = formCh[li];
+      formCh[li] = { s: fc.s.slice(i0).map((v) => v - cut), kap: fc.kap.slice(i0), roomL: fc.roomL.slice(i0), roomR: fc.roomR.slice(i0) };
       channelArea[li] = channelArea[li].slice(i0);
       for (const st of traced.streams) if (st.joins === li) st.joinS = Math.max(0, st.joinS - cut);
       trimmed[li] = cut;
@@ -976,6 +1172,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const p = allLines[joinsOf(li)];
     return p.s[nearestOnChannel(p, c.north[c.north.length - 1], c.east[c.east.length - 1])];
   };
+  /** The catchment each river's width is read at (a dry head's tapered: below); a stream's is its own. */
+  const widthArea: Array<{ s: Float64Array; a: Float64Array } | undefined> = [];
   // --- Catchment and width down the network: never less downstream, stepping up at each confluence (the receiver
   // carries its own catchment above it plus what its lattice catchment gains within JOIN_PULL, and never less than the
   // tributary's own), tributaries before their receivers.
@@ -1009,23 +1207,23 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         const target = Math.max(At, Math.min(up + At, ahead));
         for (let i = i0; i < A.length; i++) A[i] = Math.max(A[i], target);
       }
-      // Its width follows (where the catchment grew), never narrowing downstream; a dry head tapers from the stream
-      // feeding it (or a trickle) to its width over HEAD_TAPER.
-      const hw = c.halfWidth;
-      for (let i = 0; i < hw.length; i++) if (A[i] > orig[i] + 0.01) hw[i] = Math.max(hw[i], channelHalfWidth(A[i]));
-      for (let i = 1; i < hw.length; i++) hw[i] = Math.max(hw[i], hw[i - 1]);
+      // Its width follows its catchment (the channel-form law, below); a dry head tapers from the stream feeding it (or
+      // a trickle) to its width over HEAD_TAPER: the catchment its width is read at.
+      void orig;
+      const WA = Float64Array.from(A);
       // (Its head in no lake now: a pond drained after the river was laid out leaves a dry basin at its head too.)
       if (headDry[li] || !(mask.at(c.north[0], c.east[0]) > -Infinity)) {
         // (A tributary joining within the taper brings its own width from where it joins.)
-        for (let k = 0; k < hw.length && c.s[k] < HEAD_TAPER; k++) {
+        for (let k = 0; k < WA.length && c.s[k] < HEAD_TAPER; k++) {
           let feed = HEAD_START_AREA + (A[k] - HEAD_START_AREA) * smooth(0, HEAD_TAPER, c.s[k]);
           // (All that has joined it by there: the width steps up at each confluence.)
           let joined = 0;
           for (const t of into[li]) if (t.s <= c.s[k]) joined += channelArea[t.li][channelArea[t.li].length - 1];
           feed = Math.max(feed, Math.min(A[k], joined));
-          hw[k] = Math.min(hw[k], channelHalfWidth(feed));
+          WA[k] = Math.min(A[k], feed);
         }
       }
+      widthArea[li] = { s: Float64Array.from(c.s), a: WA };
     }
   }
   // --- Falls (falls.ts), receivers first: each line's mouth on the water it joins and its last reach a cascade down to
@@ -1255,30 +1453,177 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const tF = performance.now();
   const flows = allLines.map((c, li) => flowOf(c, lipsOf[li]));
   netMs.flow += performance.now() - tF;
-  // A stream's water down a steep reach (a step-pool cascade) runs in a slot among the boulders of its bed, narrower
-  // than on a gentle reach: STEEP_SLOT of its width from the first of STEEP_NARROW to the second (the reach's gradient).
-  // (Wide water down a steep face stood over the ground beside it: streams.ts channelHalfWidth.)
-  for (let li = nR; li < allLines.length; li++) {
-    const hw = allLines[li].halfWidth;
-    const g = flows[li].gradient;
-    // (Not into its mouth: it meets the water it joins at its own width, never narrower than its head.)
-    const sEnd = allLines[li].s[hw.length - 1];
-    const s = allLines[li].s;
-    for (let i = 0; i < hw.length; i++) hw[i] = Math.max(0.4, hw[i] * (1 - (1 - STEEP_SLOT) * smooth(STEEP_NARROW[0], STEEP_NARROW[1], g[i]) * (1 - smooth(sEnd - STEEP_MOUTH, sEnd, s[i]))));
-  }
-  // Below a junction a stream's water is never narrower than what joined it there (its mouth is never narrowed).
-  for (let li = 0; li < allLines.length; li++) {
-    const j = joinsOf(li);
-    if (j < nR) continue;
-    const c = allLines[li];
-    const wIn = c.halfWidth[c.halfWidth.length - 1];
-    const P = allLines[j];
-    const sj = joinSOf(li);
-    for (let i = 0; i < P.s.length; i++) {
-      if (P.s[i] < sj - 1e-6) continue;
-      P.halfWidth[i] = Math.max(P.halfWidth[i], wIn);
+  // --- The channel-form law on every line, river or stream (channelForm.ts; organic-map DESIGN.md sections 2-4). From
+  // its reach state at each sample - catchment, water gradient over 20 single-thread widths (at least 200 m), the room
+  // its floor gives either side (roomAcross) - the law gives the bed (active) width, the water's share of it, the
+  // bank, the steps. The water's half-width each line carries is the law's (its catchment's water), never narrower
+  // below a junction than what joined it there (RN45, every line). The drawn form about the line: the bed's edges (a
+  // point bar inside each bend, a cut bank outside), the water's edges, both ragged by the heterogeneity field h at
+  // their own points and the bed kept on its floor; the depth (a pool at a bend's apex, a riffle at a crossing); white
+  // water only where a step is higher than the water is deep.
+  const formOfLine: Array<{ bedR: Float32Array; bedL: Float32Array; wetR: Float32Array; wetL: Float32Array; depth: Float32Array; bankH: Float32Array; bankTan: Float32Array }> = [];
+  const formStats = { samples: 0, braidLaw: 0, white: 0, ms: formMs };
+  const tForm0 = performance.now();
+  /** Each line's law per sample (catchment for its width, gradient, room each side, bend), then its widths. */
+  const lawLine = allLines.map((c, li) => {
+    const m = c.s.length;
+    // (Read by arc length: the falls may have put samples into the line since.)
+    const wa = widthArea[li];
+    const A = wa ? Float64Array.from(c.s, (sv, i) => Math.min(channelArea[li][i], lerpS(wa.s, wa.a, sv))) : channelArea[li];
+    const S = new Float32Array(m);
+    for (let i = 0; i < m; i++) {
+      const half = Math.max(100, 10 * formWs(A[i]));
+      const s0 = Math.max(0, c.s[i] - half);
+      const s1 = Math.min(c.s[m - 1], c.s[i] + half);
+      S[i] = s1 - s0 > 1 ? Math.max(0, (sampleAt(c.s, c.level, s0) - sampleAt(c.s, c.level, s1)) / (s1 - s0)) : 0;
     }
+    let roomL: Float32Array;
+    let roomR: Float32Array;
+    let kap: Float32Array;
+    const fc = li < nR ? formCh[li] : undefined;
+    if (fc) {
+      // (A river's, as its thread was laid in it, read by arc length: the falls may have put samples in since.)
+      roomL = Float32Array.from(c.s, (sv) => lerpS(fc.s, fc.roomL, sv));
+      roomR = Float32Array.from(c.s, (sv) => lerpS(fc.s, fc.roomR, sv));
+      kap = Float32Array.from(c.s, (sv) => lerpS(fc.s, fc.kap, sv));
+    } else {
+      // (A stream's, read across it every STREAM_ROOM_EVERY m, the lower of two stations between them; none in a lake.)
+      roomL = new Float32Array(m);
+      roomR = new Float32Array(m);
+      const st: number[] = [];
+      let next = 0;
+      for (let i = 0; i < m; i++) if (c.s[i] >= next || i === m - 1) {
+        st.push(i);
+        next = c.s[i] + STREAM_ROOM_EVERY;
+      }
+      const sL = new Float32Array(st.length).fill(NaN);
+      const sR = new Float32Array(st.length).fill(NaN);
+      for (let q = 0; q < st.length; q++) {
+        const i = st[q];
+        if (mask.at(c.north[i], c.east[i]) > -Infinity) continue;
+        const i0 = Math.max(0, i - 1);
+        const i1 = Math.min(m - 1, i + 1);
+        const tl = Math.hypot(c.north[i1] - c.north[i0], c.east[i1] - c.east[i0]) || 1;
+        const nn = -(c.east[i1] - c.east[i0]) / tl;
+        const ne = (c.north[i1] - c.north[i0]) / tl;
+        const top = c.level[i] + FLOOR_OVER + formOf(A[i], S[i], 0).bankH + 1;
+        sR[q] = roomAcross(c.north[i], c.east[i], nn, ne, top, c.level[i] + 0.5);
+        sL[q] = roomAcross(c.north[i], c.east[i], -nn, -ne, top, c.level[i] + 0.5);
+      }
+      // (A station in a lake takes the nearest that reads a floor.)
+      for (const r of [sL, sR]) {
+        let last = NaN;
+        for (let q = 0; q < r.length; q++) if (Number.isFinite(r[q])) last = r[q];
+        else if (Number.isFinite(last)) r[q] = last;
+        last = NaN;
+        for (let q = r.length - 1; q >= 0; q--) if (Number.isFinite(r[q])) last = r[q];
+        else r[q] = Number.isFinite(last) ? last : 0.5 * FLOOR_MIN;
+      }
+      for (let q = 0; q + 1 < st.length; q++) for (let i = st[q]; i <= st[q + 1]; i++) {
+        roomL[i] = Math.min(sL[q], sL[q + 1]);
+        roomR[i] = Math.min(sR[q], sR[q + 1]);
+      }
+      if (st.length === 1) roomL.fill(sL[0]), roomR.fill(sR[0]);
+      const smoothM = new Float64Array(m);
+      const peakM = new Float64Array(m);
+      for (let i = 0; i < m; i++) {
+        const lam2 = Math.max(LAMBDA_MIN, formOf(A[i], S[i], Math.max(FLOOR_MIN, roomL[i] + roomR[i])).lam2);
+        smoothM[i] = Math.max(12, lam2 / 8);
+        peakM[i] = Math.max(30, lam2 / 2);
+      }
+      kap = bendOf(c.north, c.east, smoothM, peakM);
+    }
+    const hw = new Float64Array(m);
+    for (let i = 0; i < m; i++) {
+      const f = formOf(A[i], S[i], Math.max(FLOOR_MIN, roomL[i] + roomR[i]));
+      hw[i] = 0.5 * f.phi * f.Wa;
+    }
+    return { A, S, roomL, roomR, kap, hw };
+  });
+  // Below a junction a line's water is never narrower than what joined it there (every line; tributaries' own widths
+  // first: until nothing changes).
+  for (let pass = 0; pass < 8; pass++) {
+    let changed = false;
+    for (let li = allLines.length - 1; li >= 0; li--) {
+      const j = joinsOf(li);
+      if (j < 0) continue;
+      const wIn = lawLine[li].hw[lawLine[li].hw.length - 1];
+      const P = allLines[j];
+      const hP = lawLine[j].hw;
+      const sj = joinSOf(li);
+      for (let i = 0; i < P.s.length; i++) {
+        if (P.s[i] < sj - 1e-6 || hP[i] >= wIn) continue;
+        hP[i] = wIn;
+        changed = true;
+      }
+    }
+    if (!changed) break;
   }
+  for (let li = 0; li < allLines.length; li++) {
+    const c = allLines[li];
+    const L = lawLine[li];
+    const m = c.s.length;
+    const fl = flows[li];
+    const out = { bedR: new Float32Array(m), bedL: new Float32Array(m), wetR: new Float32Array(m), wetL: new Float32Array(m), depth: new Float32Array(m), bankH: new Float32Array(m), bankTan: new Float32Array(m) };
+    for (let i = 0; i < m; i++) {
+      const roomL = L.roomL[i];
+      const roomR = L.roomR[i];
+      const f = formOf(L.A[i], L.S[i], Math.max(FLOOR_MIN, roomL + roomR));
+      const hw = L.hw[i];
+      // The bed (active) width the water's half-width gives at the law's share, varied by h at twice its width.
+      const Wb = Math.max(2 * hw / f.phi, 0.5);
+      const pn = c.north[i];
+      const pe = c.east[i];
+      const vary = Math.exp(WIDTH_SPREAD * hSmooth(pn / (2 * Wb), pe / (2 * Wb), 1));
+      const Wa = Wb * vary;
+      const w = 2 * hw * vary;
+      // The sample's direction, for its banks' own points.
+      const i0 = Math.max(0, i - 1);
+      const i1 = Math.min(m - 1, i + 1);
+      const tn = c.north[i1] - c.north[i0];
+      const te = c.east[i1] - c.east[i0];
+      const tl = Math.hypot(tn, te) || 1;
+      const rn = -te / tl;
+      const re = tn / tl;
+      const kap = L.kap[i];
+      const inR = kap > 0 ? 1 : 0;
+      const k = Math.abs(kap);
+      const inner = 0.5 * w + (Wa - w) * (0.2 + 0.94 * k);
+      const outer = 0.5 * w + 0.2 * (Wa - w);
+      for (const side of [1, -1]) {
+        const base = (side > 0) === (inR === 1) ? inner : outer;
+        const en = pn + side * rn * base;
+        const ee = pe + side * re * base;
+        const wetE = 0.5 * w * (1 + 0.12 * Math.max(-1.25, Math.min(1.25, hSmooth(en / (2 * Wa), ee / (2 * Wa), 3))));
+        const room = side > 0 ? roomR : roomL;
+        const bed = Math.max(wetE + 0.3, Math.min(Math.max(room, wetE + 0.3), base + 0.2 * Wa * hSmooth(en / (2 * Wa), ee / (2 * Wa), 2)));
+        if (side > 0) {
+          out.bedR[i] = bed;
+          out.wetR[i] = wetE;
+        } else {
+          out.bedL[i] = bed;
+          out.wetL[i] = wetE;
+        }
+      }
+      c.halfWidth[i] = hw;
+      out.depth[i] = threadDepth(w, f.beta, k);
+      out.bankH[i] = f.bankH;
+      out.bankTan[i] = f.bankTan;
+      // White water and the kind of flow from the steps (no 200 m gradient window): a riffle where the fall is not taken
+      // in steps, placid where the pattern is meandering too.
+      const white = stepWhite(f.stepH, out.depth[i]);
+      if (fl.regime[i] !== REGIME.fall) {
+        fl.steepness[i] = Math.min(fl.steepness[i], WHITE_FROM + (1 - WHITE_FROM) * white);
+        fl.regime[i] = f.sigma >= 0.4 ? REGIME.steppool : f.sigma >= 0.05 ? REGIME.rapids : f.pi < 0.3 ? REGIME.placid : REGIME.riffle;
+      }
+      formStats.samples++;
+      if (f.betaLaw > 0.2) formStats.braidLaw++;
+      if (white > 0) formStats.white++;
+    }
+    formOfLine[li] = out;
+  }
+  formMs.form = performance.now() - tForm0;
+  (traced.report as unknown as { form?: typeof formStats }).form = formStats;
   // The stones on each bed (falls.ts bedGrain).
   const feetOf: Array<Array<{ index: number; height: number }>> = allLines.map(() => []);
   for (const f of falls) feetOf[f.line].push({ index: f.index, height: f.height });
@@ -1345,6 +1690,18 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         o.beyondSource = i === 0 && u < 0 ? -u * Math.hypot(r.north[1] - r.north[0], r.east[1] - r.east[0]) : 0;
         const bd = bedOf[li];
         o.bed = bd ? bd[i] + (bd[i + 1] - bd[i]) * t : o.halfWidth;
+        const fm = formOfLine[li];
+        o.wet = undefined;
+        if (fm) {
+          // A river's bed, water edge, depth and bank on this side (the law's, channelForm.ts).
+          const bd2 = side > 0 ? fm.bedR : fm.bedL;
+          const we = side > 0 ? fm.wetR : fm.wetL;
+          o.bed = bd2[i] + (bd2[i + 1] - bd2[i]) * t;
+          o.wet = we[i] + (we[i + 1] - we[i]) * t;
+          o.depth = fm.depth[i] + (fm.depth[i + 1] - fm.depth[i]) * t;
+          o.bankH = fm.bankH[i] + (fm.bankH[i + 1] - fm.bankH[i]) * t;
+          o.bankTan = fm.bankTan[i] + (fm.bankTan[i + 1] - fm.bankTan[i]) * t;
+        }
         const br = breachReach[li];
         if (br && (br[i] > 0 || br[i + 1] > 0)) {
           const b = (r as { breach: Float64Array }).breach;
@@ -1352,14 +1709,27 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
           o.reach = Math.max(br[i], br[i + 1]);
           const ct = (r as { cut: Float64Array }).cut;
           o.cut = ct[i] + (ct[i + 1] - ct[i]) * t;
-          return dist < Math.max(o.halfWidth + CHANNEL_MARGIN, o.reach);
+          return dist < Math.max(Math.max(o.halfWidth, fm ? o.bed : 0) + CHANNEL_MARGIN, o.reach);
         }
         o.breach = 0;
-        return dist < o.halfWidth + CHANNEL_MARGIN;
+        return dist < Math.max(o.halfWidth, fm ? o.bed : 0) + CHANNEL_MARGIN;
       });
     },
   };
 
+  /** Each line's bed edges integrated along it (queryRiver's smoothing). */
+  const bedSum = allLines.map((r, li) => {
+    const m = r.s.length;
+    const R = new Float64Array(m);
+    const Lf = new Float64Array(m);
+    const f = formOfLine[li];
+    for (let i = 1; i < m; i++) {
+      const ds = r.s[i] - r.s[i - 1];
+      R[i] = R[i - 1] + 0.5 * (f.bedR[i] + f.bedR[i - 1]) * ds;
+      Lf[i] = Lf[i - 1] + 0.5 * (f.bedL[i] + f.bedL[i - 1]) * ds;
+    }
+    return { R, L: Lf };
+  });
   const queryRiver = (pn: number, pe: number, out: RiverHit): RiverHit => {
     out.dist = Infinity;
     out.side = 0;
@@ -1378,6 +1748,23 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         out.halfWidth = r.halfWidth[i] + (r.halfWidth[i + 1] - r.halfWidth[i]) * t;
         out.s = r.s[i] + (r.s[i + 1] - r.s[i]) * t;
         out.beyondSource = i === 0 && u < 0 ? -u * Math.hypot(r.north[1] - r.north[0], r.east[1] - r.east[0]) : 0;
+        // (A line's bed about its middle: the ground shader paints it, the trees keep off it. Asked for it smoothed
+        // along the line - a coarse tile's vertices, `out.smooth` m apart - its edges' mean over that much of the line
+        // either side: the bars and bays between two vertices are not drawn as spikes.)
+        const fm = formOfLine[li];
+        let bR = fm.bedR[i] + (fm.bedR[i + 1] - fm.bedR[i]) * t;
+        let bL = fm.bedL[i] + (fm.bedL[i + 1] - fm.bedL[i]) * t;
+        if (out.smooth && out.smooth > 0) {
+          const ci = bedSum[li];
+          const s0 = Math.max(0, out.s - out.smooth);
+          const s1 = Math.min(r.s[r.s.length - 1], out.s + out.smooth);
+          if (s1 - s0 > 1) {
+            bR = (lerpS(r.s, ci.R, s1) - lerpS(r.s, ci.R, s0)) / (s1 - s0);
+            bL = (lerpS(r.s, ci.L, s1) - lerpS(r.s, ci.L, s0)) / (s1 - s0);
+          }
+        }
+        out.bed = 0.5 * (bR + bL);
+        out.bedShift = 0.5 * (bR - bL);
       }
       return false;
     });
@@ -1395,6 +1782,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         out.dist = est;
         out.level = a.level[i] + (a.level[i + 1] - a.level[i]) * t;
         out.halfWidth = a.halfWidth[i];
+        out.bed = a.halfWidth[i];
+        out.bedShift = 0;
         out.s = 0;
       }
       return false;
@@ -1471,7 +1860,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       ? { north: mainAxis.north, east: mainAxis.east, level: mainAxis.level, floodplain: mainAxis.floodplain, s: mainAxis.s }
       : { north: new Float64Array(0), east: new Float64Array(0), level: new Float64Array(0), floodplain: new Float64Array(0), s: new Float64Array(0) },
     oxbows,
-    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR] } : {}), breach: (r as { breach: Float64Array }).breach, cut: (r as { cut: Float64Array }).cut, area: channelArea[li], ...flows[li], grain: grains[li], ...(pitchOf[li] ? { sigma: Float32Array.from(pitchOf[li]!.sigma), pitchOn: Float32Array.from(pitchOf[li]!.on) } : {}) })),
+    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR] } : {}), breach: (r as { breach: Float64Array }).breach, cut: (r as { cut: Float64Array }).cut, area: channelArea[li], ...flows[li], grain: grains[li], ...(pitchOf[li] ? { sigma: Float32Array.from(pitchOf[li]!.sigma), pitchOn: Float32Array.from(pitchOf[li]!.on) } : {}), bedR: formOfLine[li].bedR, bedL: formOfLine[li].bedL, wetR: formOfLine[li].wetR, wetL: formOfLine[li].wetL, depth: formOfLine[li].depth })),
     falls,
     faults,
     queryFlow,
@@ -1618,55 +2007,6 @@ function clearOfRunway(n: number[], e: number[]): void {
 const clampUnit = (x: number): number => Math.min(1, Math.max(0, x));
 
 /** Box-filter arr in place over +-half samples, `passes` times (ends shortened, never padded). */
-/**
- * Meanders stay on ground over the water: where the ground a loop could reach (half the belt and the whole belt out to
- * either side of the axis) lies under the river's level - a lower valley beside it, the floor of a valley the erosion
- * pass cut (erosion.ts) that the axis runs above - the belt narrows to the reach still over the water, so the loops
- * keep to the valley floor and do not swing out over lower ground with the water standing above it. Checked every
- * CONFINE_EVERY axis points where the belt is wide; the narrowed belt is spread along the river (the lowest of the
- * neighbouring checks), so it changes gradually.
- */
-function confineBelt(natural: (north: number, east: number) => number, north: Float64Array, east: Float64Array, level: Float64Array, belt: Float64Array, wavelength: Float64Array): void {
-  const count = north.length;
-  const limit: number[] = [];
-  for (let i = 0; i < count; i += CONFINE_EVERY) {
-    const b = belt[i];
-    if (b < CONFINE_MIN) {
-      limit.push(Infinity);
-      continue;
-    }
-    const i0 = Math.max(0, i - 1);
-    const i1 = Math.min(count - 1, i + 1);
-    const tl = Math.hypot(north[i1] - north[i0], east[i1] - east[i0]) || 1;
-    const un = -(east[i1] - east[i0]) / tl;
-    const ue = (north[i1] - north[i0]) / tl;
-    const floor = level[i] + 1;
-    // The widest of the tested reaches with ground over the water on both sides.
-    let ok = Infinity;
-    for (const f of [0.5, 1]) {
-      const r = b * f;
-      if (natural(north[i] + un * r, east[i] + ue * r) < floor || natural(north[i] - un * r, east[i] - ue * r) < floor) {
-        ok = f === 0.5 ? Math.max(CONFINE_MIN * 0.5, wavelength[i] * 0.06) : b * 0.5;
-        break;
-      }
-    }
-    limit.push(ok);
-  }
-  // Each point takes the lowest limit of the checks either side of it.
-  for (let i = 0; i < count; i++) {
-    const k = Math.floor(i / CONFINE_EVERY);
-    const lim = Math.min(limit[k], limit[Math.min(limit.length - 1, k + 1)], limit[Math.max(0, k - 1)]);
-    if (lim < belt[i]) belt[i] = lim;
-  }
-}
-/** meanderChannel: what the loops' scaling leaves past the valley's floor (a short loop, where the scale is spread along
- * the channel) is pressed into the floor's outer this share. */
-const BELT_EDGE = 0.2;
-/** heightfield.ts channelProfile's bank: it stands BANK_HEIGHT over the water (meanderChannel: a loop cuts that much). */
-const LOOP_BANK = 1.3;
-/** confineBelt's checks: every this many axis points, where the belt is at least CONFINE_MIN, m. */
-const CONFINE_EVERY = 4;
-const CONFINE_MIN = 150;
 
 function smoothAlong(arr: Float64Array, half: number, passes: number): void {
   const m = arr.length;
@@ -1682,179 +2022,6 @@ function smoothAlong(arr: Float64Array, half: number, passes: number): void {
     }
     arr.set(tmp);
   }
-}
-
-/** Bessel J0 (series; |x| < 2.5): the ratio of valley length to channel length of a sine-generated curve. */
-const besselJ0 = (x: number): number => {
-  const q = (x * x) / 4;
-  return 1 - q + (q * q) / 4 - (q * q * q) / 36 + (q * q * q * q) / 576;
-};
-
-/**
- * The channel about a valley axis (Ferguson 1976, the disturbed periodic model): its direction relative to the axis
- * follows a damped oscillator at the meander length driven by random disturbances, so the loops vary in size,
- * length and lean from one to the next. Big lowland rivers (meander near 1) swing widely enough for horseshoe loops;
- * streams wander a little. Marched in the axis frame (along, offset), steered back if it drifts outside the belt.
- */
-function meanderChannel(a: Axis, phase0: number, valleyGround: (north: number, east: number) => number): { north: number[]; east: number[]; valleyS: number[]; off: number[] } {
-  const total = a.s[a.s.length - 1];
-  const n: number[] = [];
-  const e: number[] = [];
-  const vs: number[] = [];
-  const os: number[] = [];
-  let along = 0;
-  let off = 0;
-  // Ferguson's disturbed periodic model: the channel's direction (relative to the valley) is a damped oscillator at
-  // the meander length, driven by random disturbances - an AR(2) process step by step. Its loops come in all sizes,
-  // lean either way and now and then double up, as real ones do; the damping wanders along the river, so some
-  // reaches swing regularly and others are confused.
-  let th1 = 0;
-  let th2 = 0;
-  const seed = Math.floor(phase0 * 1e6) | 0;
-  let step = 0;
-  /** How far the channel's centre may swing from the axis at valley arc length sv and keep its banks on the valley's
-   * floor: the floor the valley's carve keeps (the floodplain, or past the belt by SWING_KEEP, wallStart), less the
-   * channel's half-width and bank; narrowing to nothing over the last meander length, as the march's belt does. */
-  const floorAt = (sv: number): number => {
-    const i = segmentAt(a.s, sv);
-    const t = Math.min(1, Math.max(0, (sv - a.s[i]) / Math.max(1e-9, a.s[i + 1] - a.s[i])));
-    const lerp = (x: Float64Array): number => x[i] + (x[i + 1] - x[i]) * t;
-    const hw = lerp(a.halfWidth);
-    const floor = Math.max(lerp(a.floodplain), lerp(a.belt) + hw + SWING_KEEP) - hw - CHANNEL_BANK;
-    return Math.max(0, floor) * Math.min(1, Math.max(0, (total - sv) / Math.max(1, a.wavelength[i])));
-  };
-  const put = (sv: number, y: number, scaled: boolean): void => {
-    const i = segmentAt(a.s, sv);
-    const t = Math.min(1, Math.max(0, (sv - a.s[i]) / Math.max(1e-9, a.s[i + 1] - a.s[i])));
-    // (Whatever the scaling below leaves past the floor is pressed against its edge, smoothly over its outer BELT_EDGE:
-    // only where a loop was scaled - a loop that keeps to the floor keeps its shape.)
-    const b = floorAt(sv);
-    const k = (1 - BELT_EDGE) * b;
-    const ay = Math.abs(y);
-    if (scaled && ay > k) y = Math.sign(y) * (b > 0 ? k + (b - k) * Math.tanh((ay - k) / (b - k)) : 0);
-    const tn = a.north[i + 1] - a.north[i];
-    const te = a.east[i + 1] - a.east[i];
-    const tl = Math.hypot(tn, te) || 1;
-    // Offset to the left of the flow, which side does not matter.
-    n.push(a.north[i] + tn * t - (te / tl) * y);
-    e.push(a.east[i] + te * t + (tn / tl) * y);
-    vs.push(sv);
-    os.push(y);
-  };
-  // The march's points (valley arc length, offset), laid once it is done.
-  const rs: number[] = [];
-  const ry: number[] = [];
-  const mark = (sv: number, y: number): void => {
-    rs.push(sv);
-    ry.push(y);
-  };
-  mark(0, 0);
-  // A bound on the march: the channel is at most a few times longer than its valley.
-  const maxSteps = Math.ceil((total / 15) * 12) + 200;
-  for (let guard = 0; along < total && guard < maxSteps; guard++) {
-    const sv = Math.min(total, Math.max(0, along));
-    const i = segmentAt(a.s, sv);
-    const m = a.meander[i];
-    const lambda = a.wavelength[i];
-    // (Over its last meander length the belt narrows to nothing: the channel comes back onto the axis at its end
-    // by bends, not by one straight jump that could cut across its own last loop.)
-    const belt = a.belt[i] * Math.min(1, Math.max(0, (total - along) / Math.max(1, lambda)));
-    const ds = Math.min(40, Math.max(15, lambda / 10));
-    // How far it swings (the spread of the direction, as a sine of amplitude omega would have) and how orderly.
-    const omega = Math.min(2, 0.5 + 1.5 * m);
-    const damping = 0.22 + 0.3 * clampUnit(0.5 + 0.9 * gnoise(along / (4 * lambda) + phase0 * 13.1, 4.4));
-    // The oscillator's period is the meander length measured along the channel: the valley's, times the sinuosity.
-    const k = (2 * Math.PI * Math.max(0.25, besselJ0(omega))) / lambda;
-    const z = k * ds;
-    const r = Math.exp(-damping * z);
-    const a1 = 2 * r * Math.cos(z * Math.sqrt(1 - damping * damping));
-    const a2 = -r * r;
-    // Noise scaled so the process's stationary spread is omega / sqrt(2).
-    const sigma = (omega / Math.SQRT2) * Math.sqrt(Math.max(1e-9, ((1 + a2) * ((1 - a2) * (1 - a2) - a1 * a1)) / (1 - a2)));
-    let q = 0;
-    for (let j = 0; j < 4; j++) q += (hash2i(seed + j * 7919, step) & 0xffff) / 65536;
-    step++;
-    const eps = (q - 2) * Math.sqrt(3);
-    const th = a1 * th1 + a2 * th2 + sigma * eps;
-    th2 = th1;
-    th1 = Math.max(-2.3, Math.min(2.3, th));
-    // Keep within the belt: steer back in proportion to the drift, firmly once past the belt's edge.
-    const drift = off / Math.max(1, belt);
-    let theta = th1 - 0.22 * drift - 2 * Math.max(0, Math.abs(drift) - 1) * Math.sign(drift);
-    // Outside the belt it heads back across the valley but always downstream (a steer that turned it upstream could
-    // circle without ever reaching the end of the river).
-    const lim = Math.abs(drift) > 1 ? 1.2 : 2;
-    theta = Math.max(-lim, Math.min(lim, theta));
-    along += Math.cos(theta) * ds;
-    off += Math.sin(theta) * ds;
-    // The end of the line: back onto the axis.
-    if (along >= total) {
-      mark(total, 0);
-      break;
-    }
-    mark(Math.max(0, along), off);
-  }
-  // Not expected: had it stalled, close the gap along the axis rather than with one straight jump.
-  if (rs[rs.length - 1] < total) {
-    const from = Math.max(0, rs[rs.length - 1]);
-    const y0 = ry[ry.length - 1];
-    const k = Math.max(1, Math.ceil((total - from) / 40));
-    for (let j = 1; j <= k; j++) mark(from + ((total - from) * j) / k, y0 * (1 - j / k));
-  }
-  // The channel stays on its valley's floor where the valley has walls. The march only steers back once past the belt's
-  // edge, and a loop swung past it (up to twice the belt, where the belt narrows) cut its channel into the valley's
-  // wall, the water 100-250 m under the ground beside it. Each loop (a run of the offset on one side) that would take its
-  // banks off the floor the valley's carve keeps (the floodplain, or past the belt by SWING_KEEP, wallStart) onto a wall
-  // is scaled down to the floor, whole, so it keeps its round shape: a confined river follows its valley. A wall is
-  // ground standing over the river's water by more than the floor and the channel's own bank do (FLOOR_OVER and the
-  // bank's height, as the valleys carve the ground, at the point where the loop leaves its floor furthest): past the
-  // floodplain on open ground - where a tributary's valley opens in, or on a plain - the loop keeps its size. The scale
-  // changes gradually along the channel (over an eighth of a meander length either side), so the loops meet without a
-  // kink.
-  const m0 = rs.length;
-  const f = new Float64Array(m0).fill(1);
-  for (let a0 = 0; a0 < m0; ) {
-    const side = ry[a0] >= 0;
-    let z = a0;
-    while (z + 1 < m0 && ry[z + 1] >= 0 === side) z++;
-    let k = 1;
-    let far = -1;
-    let past = 0;
-    for (let q = a0; q <= z; q++) {
-      const ay = Math.abs(ry[q]);
-      const b = floorAt(rs[q]);
-      if (!(ay > b)) continue;
-      k = Math.min(k, b / ay);
-      if (ay - b > past) {
-        past = ay - b;
-        far = q;
-      }
-    }
-    if (far >= 0) {
-      const sv = rs[far];
-      const i = segmentAt(a.s, sv);
-      const t = Math.min(1, Math.max(0, (sv - a.s[i]) / Math.max(1e-9, a.s[i + 1] - a.s[i])));
-      const tn = a.north[i + 1] - a.north[i];
-      const te = a.east[i + 1] - a.east[i];
-      const tl = Math.hypot(tn, te) || 1;
-      const lv = a.level[i] + (a.level[i + 1] - a.level[i]) * t;
-      if (valleyGround(a.north[i] + tn * t - (te / tl) * ry[far], a.east[i] + te * t + (tn / tl) * ry[far]) - lv <= FLOOR_OVER + LOOP_BANK) k = 1;
-    }
-    for (let q = a0; q <= z; q++) f[q] = k;
-    a0 = z + 1;
-  }
-  for (let q = 0; q < m0; q++) {
-    const lam = a.wavelength[segmentAt(a.s, Math.max(0, rs[q]))];
-    const W = Math.max(1, Math.round(lam / (8 * Math.min(40, Math.max(15, lam / 10)))));
-    let sum = 0;
-    let cnt = 0;
-    for (let p = Math.max(0, q - W); p <= Math.min(m0 - 1, q + W); p++) {
-      sum += f[p];
-      cnt++;
-    }
-    put(rs[q], ry[q] * (sum / cnt), sum < cnt);
-  }
-  return { north: n, east: e, valleyS: vs, off: os };
 }
 
 /**
@@ -1940,20 +2107,18 @@ interface CutLoop {
 }
 
 /**
- * Neck cutoffs: where a strongly meandering channel has swung a loop round until its neck is narrow (two points with
- * a full loop of channel between them lie within NECK_FACTOR meander lengths), some loops are abandoned - the channel
- * takes the short way across the neck and the loop is left beside it as an oxbow lake, trimmed clear of the new
- * channel (about a third of the narrow necks; the rest stay as horseshoe loops). Edits the channel in place (it gets
- * shorter); returns the oxbows.
+ * Curls cut off: where the channel swings a loop round onto itself (two points with a loop of channel between them
+ * whose beds overlap: closer than 1.2 of the law's bed width `Wa`, per axis sample), the channel takes the short way across and the loop is left beside it as an
+ * oxbow lake, trimmed clear of the new channel. (The law's thread, its swing under 1.75 rad, rarely does: no neck is cut
+ * by chance, channelForm.ts.) Edits the channel in place (it gets shorter); returns the oxbows.
  */
-function cutOffLoops(ch: { north: number[]; east: number[]; valleyS: number[]; off: number[] }, a: Axis, li: number): CutLoop[] {
+function cutOffLoops(ch: { north: number[]; east: number[]; valleyS: number[]; off: number[] }, a: Axis, li: number, Wa: Float64Array): CutLoop[] {
   const out: CutLoop[] = [];
   const { north, east, valleyS, off } = ch;
   const N = north.length;
   const cuts: Array<[number, number]> = [];
-  let lastCut = -Infinity;
-  // Arc length along the channel, and its points on a grid: each point looks only at the points near it (a loop's
-  // neck or a curl), not along the whole loop.
+  // Arc length along the channel, and its points on a grid: each point looks only at the points near it (a curl), not
+  // along the whole loop.
   const cum = new Float64Array(N);
   for (let j = 1; j < N; j++) cum[j] = cum[j - 1] + Math.hypot(north[j] - north[j - 1], east[j] - east[j - 1]);
   const grid = new Map<number, number[]>();
@@ -1968,16 +2133,11 @@ function cutOffLoops(ch: { north: number[]; east: number[]; valleyS: number[]; o
   while (k < N - 2) {
     const i = segmentAt(a.s, Math.max(0, valleyS[k]));
     const lambda = a.wavelength[i];
-    const hw = a.halfWidth[i];
+    // (The bed's half-width by the law, channelForm.ts: two stretches whose beds overlap touch.)
+    const hw = 0.5 * Wa[i];
     // The nearest point a loop or more further on (a loop's channel is about 1-3 meander lengths; a tight curl less).
-    const touchAt = 2 * hw + 2 * CHANNEL_BANK;
-    // Of the merely narrow necks on strongly meandering stretches, about a third, spaced along the river.
-    const neck = Math.max(NECK_FACTOR * lambda, 3 * hw + 30);
-    const mayCut = a.meander[i] >= 0.45 && valleyS[k] - lastCut >= 2000 && (hash2i(li * 7919 + k, 0x0b0) & 0xff) <= 90;
-    const reach = mayCut ? Math.max(touchAt, neck) : touchAt;
-    const minArc = Math.max(8 * hw + 4 * CHANNEL_BANK, 0.4 * lambda, 1.1 * lambda);
-    let best = -1;
-    let bestD = Infinity;
+    const touchAt = 2.4 * hw;
+    const reach = touchAt;
     let touch = -1;
     const pn = north[k];
     const pe = east[k];
@@ -1997,26 +2157,21 @@ function cutOffLoops(ch: { north: number[]; east: number[]; valleyS: number[]; o
           const d = Math.hypot(north[j] - pn, east[j] - pe);
           // A loop swung round onto itself (always cut: a river cannot cross its own channel); the furthest such point.
           if (d < touchAt && j > touch) touch = j;
-          if (arc >= minArc && (d < bestD || (d === bestD && j < best))) {
-            bestD = d;
-            best = j;
-          }
         }
       }
     }
-    if (touch >= 0) {
-      best = touch;
-    } else if (!(mayCut && best >= 0 && bestD <= neck)) {
+    if (touch < 0) {
       k++;
       continue;
     }
+    const best = touch;
     // The loop's crescent, clear of the short channel across the neck.
     const cn = north[k];
     const ce = east[k];
     const dn = north[best] - cn;
     const de = east[best] - ce;
     const l2 = dn * dn + de * de || 1;
-    const clear = 2 * hw + CHANNEL_BANK + 15;
+    const clear = 2 * hw + 15;
     const on: number[] = [];
     const oe: number[] = [];
     for (let j = k; j <= best; j++) {
@@ -2028,11 +2183,8 @@ function cutOffLoops(ch: { north: number[]; east: number[]; valleyS: number[]; o
     }
     // A loop too small to leave a lake behind is still cut when it touches itself.
     if (on.length >= 5) out.push({ north: Float64Array.from(on), east: Float64Array.from(oe), valleyS: valleyS[(k + best) >> 1], halfWidth: hw, age: (hash2i(li, k) & 0xffff) / 65536 });
-    if (on.length >= 5 || touch >= 0) {
-      cuts.push([k, best]);
-      lastCut = valleyS[best];
-      k = best;
-    } else k++;
+    cuts.push([k, best]);
+    k = best;
   }
   if (cuts.length === 0) return out;
   // Rebuild the channel: each cut loop replaced by the neck, sampled every 20 m.
@@ -2080,6 +2232,14 @@ function segmentAt(s: Float64Array, sv: number): number {
     else hi = mid;
   }
   return lo;
+}
+
+/** Linear interpolation of arr (any array) at arc length sv. */
+function lerpS(s: Float64Array, arr: ArrayLike<number>, sv: number): number {
+  if (s.length === 1) return arr[0];
+  const i = segmentAt(s, sv);
+  const t = Math.min(1, Math.max(0, (sv - s[i]) / Math.max(1e-9, s[i + 1] - s[i])));
+  return arr[i] + (arr[i + 1] - arr[i]) * t;
 }
 
 /** Linear interpolation of arr at arc length sv. */
