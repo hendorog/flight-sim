@@ -16,11 +16,12 @@
 //   Caveats: the net exists only inside the slopes' mask (the mountains), so the gully half covers the mountain rivers
 //   only; the lines-per-10-km half is domain-wide. The net's catchment counts only nodes inside the pass, so a gully
 //   by the mask's edge reads small.
-// Printed per seed: totals, by gully band (1.5-10 km², >= 10 km²: CHAIN_AREA, where a chain is traced), by river
+// Printed per seed: totals, by gully band (1.5-10 km², >= 10 km²: the old CHAIN_AREA), by river
 // catchment band, and the rivers with the most gullies that have no drawn stream. FC_OUT gets the per-river table.
 import { it } from 'vitest';
 import { hydrology, terrainHeight } from '../../src/world/terrain/heightfield';
 import { gullyNet, receiverOf } from '../../src/world/terrain/gullies';
+import { streamDebug } from '../../src/world/terrain/streams';
 import { setWorldSeed } from '../../src/world/worldSeed';
 const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
 const fs = (await import(/* @vite-ignore */ 'node:fs' as string)) as { writeFileSync(p: string, d: string): void; mkdirSync(p: string, o: unknown): void };
@@ -82,7 +83,9 @@ it('feed count', () => {
     const L = (hydrology.rivers ?? []) as unknown as Line[];
     const rep = hydrology.streamReport as unknown as { chains?: { traced: number } };
     const nR = L.filter((r) => (r.kind ?? 0) === 0).length;
-    // The chain block (as onStreams / cornerGate): after the outlets, heads (6 km²) and feeders (5 km²).
+    // The chain lines: by the pass that built each (streams.ts streamDebug.src, Round V B); else the chain block (as
+    // onStreams / cornerGate): after the outlets, heads (6 km²) and feeders (5 km²).
+    const src = streamDebug.src;
     let cs = nR;
     for (let i = nR; i < L.length; i++) {
       const a0 = L[i].area?.[0] ?? 0;
@@ -90,7 +93,7 @@ it('feed count', () => {
       else if (a0 >= 9.95 && a0 < 10.05 && i > cs + 30) break;
     }
     const ce = cs + (rep.chains?.traced ?? 0);
-    const isChain = (i: number): boolean => i >= cs && i < ce;
+    const isChain = (i: number): boolean => (src && src.length === L.length - nR ? src[i - nR] === 'chain' : i >= cs && i < ce);
     const riv = new Pts(250);
     for (let li = 0; li < nR; li++) along(L[li], 50, (n, e) => riv.add(n, e, li));
     const str = new Pts(200);

@@ -27,11 +27,11 @@
 
 import { breachAllowance, DOMAIN_HALF, DRAIN_CELL, HOLLOW_TOL, LAKE_MARGIN, LAKE_MIDDLE_DEPTH, LAKE_RASTER, MinHeap, RASTER_N, RIVER_AREA, type Drainage, type LakeMask } from './drainage';
 import { hash2i } from './noise';
-import { chainArea, gullyNet, receiverOf } from './gullies';
+import { gullyNet, receiverOf } from './gullies';
+import { slopeParams } from './hillslopes';
+import { CHANNEL_AREA } from './erosion';
 import { AIRPORT } from '../../core/world';
 
-/** Catchment, km², from which a headwater stream is drawn (the lattice cells reaching it whose donors do not). */
-export const STREAM_AREA = 35;
 /** Water stands this far under the ground at each raster point of a stream's course, m. */
 const STREAM_DEPTH = 1.0;
 /** Catchment a stream gathers along its course from the slopes either side, km² per km. */
@@ -40,24 +40,9 @@ const LATERAL_GAIN = 2;
  * catchment over HEAD_RAMP, m. */
 export const HEAD_START_AREA = 6;
 const HEAD_RAMP = 2000;
-/** A river head's feeders (traceStreams feedHeads): each climbs towards the top of a chain of the lattice's largest
- * donors, where the catchment falls under FEED_AREA km²; a second donor gets its own from FEED_SECOND km²; each joins its
- * river within FEED_JOIN m of its head (the river then starts there, riverNetwork.ts). */
-const FEED_AREA = 5;
-const FEED_SECOND = 15;
+/** A river whose head is in no lake begins where the first stream joins it, when that is within FEED_JOIN m of its head
+ * (riverNetwork.ts trims its head there: no trickle runs on above its first tributary). */
 export const FEED_JOIN = 1500;
-/** A feeder's walk up: each step rises at least WALK_RISE m; it bends towards its target by FEED_BEND (a slope's worth
- * per unit of 1 - cos of the angle off it); it ends within WALK_ARRIVE m of the target; a feeder is at least
- * FEED_MIN_STEPS raster steps long. */
-const WALK_RISE = 0.2;
-const FEED_BEND = 0.08;
-const WALK_ARRIVE = 350;
-const FEED_MIN_STEPS = 2;
-/** A feeder's catchment grows this much along it, km² per km (the lattice's chains of largest donors gain about 6). */
-const FEED_GAIN = 6;
-/** A feeder is at most this long, m; the second one up a river's head FEED_LEN2. */
-const FEED_LEN = 2000;
-const FEED_LEN2 = 1000;
 /** The ground under every this many stream samples is checked for a dip between the raster points. */
 const LEVEL_EVERY = 3;
 /** ... and those between them too where the level falls this much from one to the next, m. */
@@ -100,9 +85,6 @@ const CURVE_FLOORS = false;
 const FLOOR_PASSES = 4;
 const FLOOR_LAY = 90;
 const FLOOR_KEEP_END = 3;
-/** A chain stream's samples between two of its points take the points' ground where the routing ground there is the
- * slopes' own within this, m (away from a river's carved valley). */
-const CHAIN_PLAIN = 2;
 /** A chain come onto a river's floor (gullies.ts GullyNet.floor) crosses it to the river's nearest sample within
  * FLOOR_CROSS m, where the ground on the way (looked at every FLOOR_STEP m) rises no more than FLOOR_RISE m over the
  * chain's there, and the water there lies no more than FLOOR_DROP m under the chain's ground (a floor, not a valley
@@ -381,7 +363,9 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
   const { d, mask, rivers } = p;
   streamDebug.route = p.route;
   streamDebug.src = [];
-  const minArea = p.minArea ?? STREAM_AREA;
+  // (A stream heads where the routing it runs on makes a channel: the model's lattice from its channel area, CHANNEL_AREA -
+  // the carve draws its channels from there - and the slopes' own routing from theirs, SlopeParams.ac, below.)
+  const minArea = p.minArea ?? CHANNEL_AREA;
   const n = d.n;
   const R = RASTER_N;
   const nR = rivers.length;
@@ -893,7 +877,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     }
     return tryAt(j0);
   };
-  const build = (path: number[], endAt: End, first: { north: number; east: number; level: number } | null, area0: number, pool: number, areaEnd = -1, pathArea: number[] | null = null, startAt: { north: number; east: number } | null = null, pathVee: number[] | null = null): void => {
+  const build = (path: number[], endAt: End, first: { north: number; east: number; level: number } | null, area0: number, pool: number, pathArea: number[] | null = null, startAt: { north: number; east: number } | null = null, pathVee: number[] | null = null): void => {
     const bt0 = performance.now();
     const m = path.length;
     let end = endAt;
@@ -1148,17 +1132,8 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     const ol: number[] = [];
     const og: number[] = [];
     const oa: number[] = [];
-    /** Whether each sample lies between two of a chain's points where the routing ground is the slopes' own (not a
-     * river's valley carved into it): its ground is the points' interpolated. */
-    const oc: boolean[] = [];
     /** A chain stream's pin at each sample (1 at its raster points in a V, 0 on an open floor). */
     const op: number[] = [];
-    const gnH = pathArea ? gullyNet() : null;
-    const plain = (i: number): boolean => {
-      if (!gnH || !(pa[i] === pa[i]) || (pin && pin[i] < 1)) return false;
-      const k = path[i - (first ? 1 : 0)];
-      return k !== undefined && Math.abs(G(k) - gnH.h[k]) < CHAIN_PLAIN;
-    };
     // (A chain stream: its points' catchment past the chain the last one's, gathering LATERAL_GAIN as a headwater's.)
     let chainEnd = -1;
     let chainSamples = 0;
@@ -1183,7 +1158,6 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         ol.push(lv[i] + (lv[i + 1] - lv[i]) * t);
         og.push(gp[i] + (gp[i + 1] - gp[i]) * t);
         if (pathArea) oa.push(pa[i] + (pa[i + 1] - pa[i]) * t);
-        oc.push(plain(i) && plain(i + 1));
         if (pathVee && pin) op.push(pin[i] + (pin[i + 1] - pin[i]) * t);
         else if (free) op.push((free[i] ? 0 : 1) + ((free[i + 1] ? 0 : 1) - (free[i] ? 0 : 1)) * t);
         if (i < chainEnd) chainSamples++;
@@ -1194,7 +1168,6 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     ol.push(lv[lv.length - 1]);
     og.push(gp[gp.length - 1]);
     if (pathArea) oa.push(pa[pa.length - 1]);
-    oc.push(false);
     // A chain stream's open-floor reaches: the raster course (points 250 m apart, turning in 45 degree steps) laid as a
     // curve through them (FLOOR_SMOOTH passes at the samples' spacing), not as the raster's straight runs and corners.
     if ((pathVee || (free && free.some((x) => x))) && pin && op.length) {
@@ -1232,19 +1205,11 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     // lake: the one it leaves or the one it ends in), then the level kept falling.
     const groundAt = p.route;
     const wetAt = (n: number, e: number): boolean => mask.at(n, e) > -Infinity;
-    /** The samples whose ground was looked at (og then holds it, not the raster points' interpolated). */
-    // (The chain samples' ground is their points' while the course is as laid: not where a loop was cut out of it.)
-    const untangled = !pathArea || on.length !== before;
-    const onChain = (i: number): boolean => !untangled && !!oc[i];
+    /** The samples whose ground was looked at (og then holds it, not the raster points' interpolated): every stream's,
+     * a chain's too (its V's floor between two raster points need not fall straight). */
     const seen = new Uint8Array(count);
     seen[0] = seen[count - 1] = 1;
-    // (A chain sample's ground is its points' already: as good as looked at.)
-    for (let i = 1; i < count - 1; i++) if (onChain(i)) seen[i] = 1;
-    // (A chain stream's samples along its chain are not looked at again: the chain runs from raster point to raster point
-    // on the slopes' channel floor, which falls straight between them, so the raster points' ground, interpolated, is
-    // the floor's.)
     for (let i = 1; i < count - 1; i += LEVEL_EVERY) {
-      if (onChain(i)) continue;
       const g = seenG[i] === seenG[i] ? seenG[i] : groundAt(north[i], east[i]);
       if (seenG[i] !== seenG[i]) report.levelSamples++;
       og[i] = g;
@@ -1255,7 +1220,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     }
     // And the samples between where the level falls steeply there (a cliff can lie between two looked at).
     for (let i = 2; i < count - 1; i++) {
-      if ((i - 1) % LEVEL_EVERY === 0 || onChain(i)) continue;
+      if ((i - 1) % LEVEL_EVERY === 0) continue;
       const lo = i - ((i - 1) % LEVEL_EVERY);
       if (level[lo] - level[Math.min(count - 1, lo + LEVEL_EVERY)] < STEEP_RECHECK) continue;
       const g = groundAt(north[i], east[i]);
@@ -1327,15 +1292,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     }
     // A headwater's catchment as the lattice saw it at its head (minArea or more) comes in over its first HEAD_RAMP:
     // the stream begins as a trickle (its channel above the head is finer than the lattice) and widens as it gathers.
-    // A river head's feeder gathers FEED_GAIN km² per km of its course (as the lattice's chains of largest donors do),
-    // up to `areaEnd` (its donor's catchment) at the junction.
-    if (pathArea) {
-      // (Set above.)
-    } else if (areaEnd >= 0) {
-      const gain = Math.max(0, Math.min(FEED_GAIN / 1000, (areaEnd - area0) / Math.max(1, s[count - 1])));
-      for (let i = 0; i < count; i++) area[i] = area0 + gain * s[i];
-    }
-    else for (let i = 0; i < count; i++) area[i] = (pool < 0 ? HEAD_START_AREA + (area0 - HEAD_START_AREA) * smooth(0, HEAD_RAMP, s[i]) : area0) + (LATERAL_GAIN * s[i]) / 1000;
+    if (!pathArea) for (let i = 0; i < count; i++) area[i] = (pool < 0 ? HEAD_START_AREA + (area0 - HEAD_START_AREA) * smooth(0, HEAD_RAMP, s[i]) : area0) + (LATERAL_GAIN * s[i]) / 1000;
     const id = nR + streams.length;
     streams.push({ north, east, level, halfWidth: new Float64Array(count), s, area, breach, cut, joins, joinS, end: end.kind, pool, held, chainS, endK: path.length ? path[path.length - 1] : -1, continued: false });
     streamDebug.src?.push(srcTag);
@@ -1531,194 +1488,10 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     build(t.path, t.end, first, Math.max(1, a0), id);
   }
 
-  /**
-   * The feeders of the rivers' heads. A river (a lattice line from RIVER_AREA) whose head is in no lake and that no
-   * stream joins within FEED_JOIN of its head gathers its water from the slopes above it, which the lattice only sums:
-   * its head cell's largest donors (the largest, and the next where it drains FEED_SECOND km² or more), each followed
-   * up its own chain of largest donors to where the catchment falls under FEED_AREA (the chain's top). The raster finds
-   * the way: from the river's head a walk climbs the way water comes down - each step to a neighbour higher by
-   * WALK_RISE or more whose own steepest way down is the point it left, the least steep of them within two directions
-   * of the last step, bent towards the chain's top (FEED_BEND) - until it is within WALK_ARRIVE of that top, has gone
-   * FEED_LEN (FEED_LEN2 for the second), or can climb no further (no neighbour drains to it, or the next would be another line, a lake, home).
-   * Water runs back down the walk to the river (the first raster point by it, as a trace stops): the feeder, falling
-   * all the way, never into a hollow. A second walk climbs towards the second donor's top beside the first: the two
-   * meet at the river's head. (Where the walk from the head finds no way up, or meets the river where it is held over
-   * the ground the walk came down, the next raster point down the river, within FEED_JOIN; riverNetwork.ts then starts
-   * the river at the junction.) A feeder starts as a trickle (FEED_AREA) and gathers FEED_GAIN km² per km, at most its
-   * donor's catchment at the junction: the river's head is as wide as what joins it there.
-   */
-  function feedHeads(): void {
-    const tf = performance.now();
-    const s0 = report.samples;
-    const firstFeeder = nR + streams.length;
-    const fr: Record<string, number> = { rivers: 0, fedAlready: 0, fed: 0, feeders: 0, unfed: 0, short: 0, held: 0, heldAfter: 0, km: 0, steps: 0 };
-    const stops: Record<string, number> = {};
-    const joinAt: number[] = [];
-    // The first junction on each river so far.
-    const first = headFrom;
-    for (const st of streams) if (st.joins >= 0 && st.joins < nR) first[st.joins] = Math.min(first[st.joins], st.joinS);
-    const donors = (c: number): number[] => {
-      const out: number[] = [];
-      const ci = Math.floor(c / n);
-      const cj = c % n;
-      for (let a = 0; a < 8; a++) {
-        const qi = ci + DI[a];
-        const qj = cj + DJ[a];
-        if (qi < 0 || qj < 0 || qi >= n || qj >= n) continue;
-        if (d.receiver[qi * n + qj] === c) out.push(qi * n + qj);
-      }
-      return out.sort((x, y) => d.area[y] - d.area[x] || x - y);
-    };
-    const taken = new Set<number>();
-    /** Start points with no way up. */
-    const dead = new Set<number>();
-    const cand: Array<{ q: number; r: number; slope: number; score: number }> = [];
-    /** The walk up from raster point k0 (river li's) towards (tn, te): its raster points, k0 first. */
-    const walk = (li: number, k0: number, tn: number, te: number, maxLen: number): number[] => {
-      const path = [k0];
-      let len = 0;
-      let dir = -1;
-      for (;;) {
-        const p = path[path.length - 1];
-        const pi = Math.floor(p / R);
-        const pj = p % R;
-        const dn = tn - (ORIGIN + pi * LAKE_RASTER);
-        const de = te - (ORIGIN + pj * LAKE_RASTER);
-        const dT = Math.hypot(dn, de);
-        if (dT < WALK_ARRIVE) {
-          stops.arrived = (stops.arrived ?? 0) + 1;
-          break;
-        }
-        if (len > maxLen) {
-          stops.long = (stops.long ?? 0) + 1;
-          break;
-        }
-        if (pi <= 1 || pj <= 1 || pi >= R - 2 || pj >= R - 2) break;
-        const g0 = G(p);
-        let best = -1;
-        let bestDir = -1;
-        let why = 'top';
-        // The candidates up from p (least steep first, bent towards the target), each taken only if its steepest way
-        // down is to p: the walk climbs the way water comes down.
-        cand.length = 0;
-        for (let r = dir < 0 ? 0 : dir - 2; r <= (dir < 0 ? 7 : dir + 2); r++) {
-          const a = RING[(r + 8) & 7];
-          const qi = pi + DI[a];
-          const qj = pj + DJ[a];
-          const q = qi * R + qj;
-          if (taken.has(q)) continue;
-          const o = occ[q];
-          if ((o !== 0 && occLine(o) !== li) || mask.poolAt(qi, qj) >= 0 || byHome(q)) {
-            why = o !== 0 ? 'line' : 'lake';
-            continue;
-          }
-          const dist = (DI[a] && DJ[a] ? SQRT2 : 1) * LAKE_RASTER;
-          const rise = G(q) - g0;
-          if (rise < WALK_RISE) continue;
-          cand.push({ q, r: (r + 8) & 7, slope: rise / dist, score: rise / dist + FEED_BEND * (1 - ((DI[a] * dn + DJ[a] * de) * LAKE_RASTER) / (dist * dT)) });
-        }
-        cand.sort((x, y) => x.score - y.score || x.r - y.r);
-        for (const c of cand) {
-          const qi = Math.floor(c.q / R);
-          const qj = c.q % R;
-          const gq = G(c.q);
-          let down = true;
-          for (let b = 0; b < 8 && down; b++) {
-            const ni = qi + DI[b];
-            const nj = qj + DJ[b];
-            if (ni === pi && nj === pj) continue;
-            if ((gq - G(ni * R + nj)) / ((DI[b] && DJ[b] ? SQRT2 : 1) * LAKE_RASTER) > c.slope) down = false;
-          }
-          if (down) {
-            best = c.q;
-            bestDir = c.r;
-            break;
-          }
-        }
-        if (best < 0) {
-          stops[why] = (stops[why] ?? 0) + 1;
-          break;
-        }
-        path.push(best);
-        taken.add(best);
-        len += (DI[RING[bestDir]] && DJ[RING[bestDir]] ? SQRT2 : 1) * LAKE_RASTER;
-        dir = bestDir;
-        fr.steps++;
-      }
-      return path;
-    };
-    for (let li = 0; li < nR; li++) {
-      const r = rivers[li];
-      if (mask.at(r.north[0], r.east[0]) > -Infinity || li >= d.lines.length) continue;
-      fr.rivers++;
-      if (first[li] <= FEED_JOIN) {
-        fr.fedAlready++;
-        continue;
-      }
-      const c0 = d.lines[li].cells[0];
-      const ds = donors(c0).filter((q, i) => d.area[q] >= (i === 0 ? FEED_AREA : FEED_SECOND)).slice(0, 2);
-      let fed = 0;
-      for (let di = 0; di < ds.length; di++) {
-        const dn = ds[di];
-        // The chain of largest donors up from the donor while the catchment stays at FEED_AREA or more: its top.
-        let top = dn;
-        for (;;) {
-          const q = donors(top)[0];
-          if (q === undefined || d.area[q] < FEED_AREA) break;
-          top = q;
-        }
-        const tn = ORIGIN + Math.floor(top / n) * DRAIN_CELL;
-        const te = ORIGIN + (top % n) * DRAIN_CELL;
-        // From the river's head, or the next raster point down it, within FEED_JOIN.
-        let built = false;
-        for (let i = 0; i < r.s.length && r.s[i] <= FEED_JOIN && !built; i++) {
-          if (i > 0 && Math.floor(r.s[i] / LAKE_RASTER) === Math.floor(r.s[i - 1] / LAKE_RASTER)) continue;
-          const ki = Math.round((r.north[i] - ORIGIN) / LAKE_RASTER);
-          const kj = Math.round((r.east[i] - ORIGIN) / LAKE_RASTER);
-          const k0 = ki * R + kj;
-          if ((taken.has(k0) && i > 0) || dead.has(k0)) continue;
-          const w = walk(li, k0, tn, te, di === 0 ? FEED_LEN : FEED_LEN2);
-          // Down the walk to the first point on the river's band (where a trace would join it).
-          const path = w.reverse();
-          let m = 0;
-          while (m < path.length && occ[path[m]] === 0) m++;
-          if (m >= path.length || m < FEED_MIN_STEPS || occLine(occ[path[m]]) !== li) {
-            fr.short++;
-            // (No way up from there: nor for the next donor's walk.)
-            if (w.length < FEED_MIN_STEPS + 1) dead.add(k0);
-            for (const k of w) if (k !== k0) taken.delete(k);
-            continue;
-          }
-          const o = occ[path[m]];
-          const j = occIdx(o);
-          const before = streams.length;
-          srcTag = 'feed';
-          build(path.slice(0, m + 1), { kind: 'channel', line: li, idx: j, pool: -1, ok: true }, null, FEED_AREA, -1, d.area[dn]);
-          const st = streams[before];
-          if (!st || st.joins !== li) continue;
-          built = true;
-          fed++;
-          fr.feeders++;
-          fr.km += st.s[st.s.length - 1] / 1000;
-          joinAt.push(st.joinS);
-          first[li] = Math.min(first[li], st.joinS);
-        }
-      }
-      if (fed) fr.fed++;
-      else fr.unfed++;
-    }
-    joinAt.sort((a, b) => a - b);
-    const q = (f: number): number => Math.round(joinAt[Math.min(joinAt.length - 1, Math.floor(f * joinAt.length))] ?? -1);
-    report.feed = { ...(report.feed ?? {}), ...fr, firstFeeder, stops, joinP50: q(0.5), joinP90: q(0.9), ms: Math.round(performance.now() - tf), samples: report.samples - s0 };
-  }
-
-
-
-  report.tracePhases.push(performance.now() - t0);
-  report.outletSamples = report.samples;
-  /** Where each river's water starts to be fed (the first stream joining it, or the lake a feeder flows into), m. */
   const headFrom = new Float64Array(nR).fill(Infinity);
-  // --- Headwaters: the lattice cells whose catchment reaches minArea (but not RIVER_AREA) whose donors' do not.
+  // --- Headwaters: the lattice cells whose catchment reaches minArea (but not RIVER_AREA) whose donors' do not, where
+  // the lattice is the finest routing (in the slopes' mountains their own routing heads the streams, the chains below).
+  const gn = gullyNet();
   const N = n * n;
   const hasDonor = new Uint8Array(N);
   for (let c = 0; c < N; c++) {
@@ -1733,23 +1506,24 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     const k = Math.floor(c / n) * PER_CELL * R + (c % n) * PER_CELL;
     const ki = Math.floor(k / R);
     const kj = k % R;
-    if (occ[k] !== 0 || mask.poolAt(ki, kj) >= 0 || byHome(k) || G(k) <= 0.5) continue;
+    if (occ[k] !== 0 || mask.poolAt(ki, kj) >= 0 || byHome(k) || G(k) <= 0.5 || (gn && gn.n === R && gn.dir[k])) continue;
     const t = trace([k], -1, G(k), false, d.area[c]);
     srcTag = 'head';
     build(t.path, t.end, null, d.area[c], -1);
   }
-  feedHeads();
   // --- The gully chains (gullies.ts, a seeded world's mountains), after every other stream (the outlets, the lattice's
   // headwaters and the rivers' head feeders are traced first, exactly as without them, so they keep their courses):
-  // every chain of the threshold hillslopes' own routing from where its catchment reaches chainArea() (below that the
-  // ground shader paints it, rills.ts) is a stream down its chain, sized by the chain's catchment, on to where another
+  // every chain of the threshold hillslopes' own routing from where the pass makes it a channel (its channel-head
+  // catchment, SlopeParams.ac: where its V begins; the ground shader paints the rills above, rills.ts) is a stream down
+  // its chain, sized by the chain's catchment, on to where another
   // line, a lake or the sea takes it (or, where the pass ends, on down the ground as any trace). The longest chains
   // first: a valley's trunk is one line, each side gully's stream joins it.
-  const gn = gullyNet();
   const chainStats = { heads: 0, traced: 0, km: 0, skipped: 0, crossed: 0, ms: 0, msTrace: 0, msBuild: 0, samples0: report.samples };
   if (gn && gn.n === R) {
     const tc = performance.now();
-    const AV = chainArea();
+    // (A channel heads where the pass's routing makes one: its channel-head catchment, SlopeParams.ac - the V its
+    // channels cut begins there, and so does the stream in it.)
+    const AV = slopeParams().ac;
     const up = new Uint8Array(R * R);
     for (let q = 0; q < R * R; q++) {
       if (!gn.dir[q] || gn.area[q] < AV) continue;
@@ -1927,7 +1701,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       if (cross) chainStats.crossed++;
       const tb = performance.now();
       srcTag = 'chain';
-      build(t.path, t.end, null, gn.area[q], -1, -1, pathA, null, pathV);
+      build(t.path, t.end, null, gn.area[q], -1, pathA, null, pathV);
       chainStats.msTrace += tb - tt;
       chainStats.msBuild += performance.now() - tb;
       if (streams.length > before) {

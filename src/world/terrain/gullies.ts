@@ -1,10 +1,11 @@
 // The gully network of a seeded world's mountains (foundation streams, out/fs/REPORT.md): the threshold hillslopes'
 // own routing (hillslopes.ts SlopeField.dir, the steepest descent over the ground the pass built, on the 250 m fine
 // grid) with its catchment summed down it. Every V the pass cut runs along it, so the water does too:
-//   - streams.ts starts a traced stream (a ribbon, its channel carved) where a chain's catchment reaches CHAIN_AREA and
-//     follows the chain down, sized by the chain's own catchment;
+//   - streams.ts starts a traced stream (a ribbon, its channel carved) where the pass makes a chain a channel (its
+//     channel-head catchment, hillslopes.ts SlopeParams.ac: the V begins there) and follows the chain down, sized by
+//     the chain's own catchment;
 //   - rills.ts reads a chain's catchment for a rill whose catchment reaches beyond its window (it would otherwise be
-//     drawn at its window's cap), so the painted streams above CHAIN_AREA's hand-off are sized as the ribbons are;
+//     drawn at its window's cap), so the painted streams are sized as the ribbons are;
 //   - placement.ts keeps trees off the beds of the bigger painted ones.
 // Pure (no three.js). Built in every thread from the slopes' fields (about 30 ms); null where a world has none (seed 0,
 // a narrow orogen's seeds).
@@ -12,16 +13,6 @@
 import type { SlopeField } from './hillslopes';
 import { SLOPE_DI, SLOPE_DJ } from './hillslopes';
 import { DOMAIN_HALF, LAKE_RASTER } from './drainage';
-
-/** Catchment, km², from which a chain is traced as a stream (a ribbon with its channel) rather than painted by the
- * ground shader (rills.ts): the hand-off between the two, at one width (streams.ts channelHalfWidth). */
-export const CHAIN_AREA = 10;
-/** Probes: the hand-off's catchment (null: CHAIN_AREA). */
-let chainOverride: number | null = null;
-export function setChainArea(a: number | null): void {
-  chainOverride = a;
-}
-export const chainArea = (): number => chainOverride ?? CHAIN_AREA;
 
 export interface GullyNet {
   /** Nodes per side, spacing (m) and the south-west node (north, east) of the fine grid. */
