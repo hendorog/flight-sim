@@ -819,16 +819,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
           last = i;
         }
       }
-      // (Smoothed only downward: a station that reads no floor - the sea's or a lower valley's edge beside it - keeps
-      // its room; smoothed both ways, the room beside the coast reached out over the sea and the thread swung onto it.)
-      const raw = Float64Array.from(r);
-      for (let i = 0; i < m; i++) {
-        let lo = raw[i];
-        for (let j = Math.max(0, i - ROOM_EVERY); j <= Math.min(m - 1, i + ROOM_EVERY); j++) lo = Math.min(lo, raw[j]);
-        r[i] = lo;
-      }
       smoothAlong(r, Math.ceil(500 / AXIS_SPACING), 2);
-      for (let i = 0; i < m; i++) r[i] = Math.min(r[i], raw[i]);
     };
     // The thread swings in the floor as read (none in a lake, easing in and out); the bed's width is capped by the floor
     // as read inland: a station in a lake or at the sea (whose ground beside is the lake's bed or the shore) takes the
@@ -1226,26 +1217,6 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const at = (arr: Float64Array): Float64Array => Float64Array.from(vs, (v) => sampleAt(st.s, arr, v));
       const level = at(st.level);
       for (let i = 1; i < n; i++) level[i] = Math.min(level[i], level[i - 1]);
-      // (Never off its floor: where the thread's place, read between the room's stations, has ground under its water
-      // - the room's own edge, the ground within half a metre of the water - it eases back onto its course there,
-      // over a quarter of its wavelength either side.)
-      {
-        const cn = at(st.north);
-        const ce = at(st.east);
-        const keep = new Float64Array(n).fill(1);
-        for (let i = 0; i < n; i += 2) {
-          if (Math.hypot(t.north[i] - cn[i], t.east[i] - ce[i]) < 2) continue;
-          if (!(route(t.north[i], t.east[i]) < level[i] + 0.5)) continue;
-          const half = 0.25 * sampleAt(st.s, lam2, vs[i]);
-          for (let q = i; q >= 0 && vs[i] - vs[q] <= half; q--) keep[q] = Math.min(keep[q], smooth(0, half, vs[i] - vs[q]));
-          for (let q = i; q < n && vs[q] - vs[i] <= half; q++) keep[q] = Math.min(keep[q], smooth(0, half, vs[q] - vs[i]));
-        }
-        for (let i = 0; i < n; i++) {
-          if (keep[i] >= 1) continue;
-          t.north[i] = cn[i] + (t.north[i] - cn[i]) * keep[i];
-          t.east[i] = ce[i] + (t.east[i] - ce[i]) * keep[i];
-        }
-      }
       const sNew = new Float64Array(n);
       for (let i = 1; i < n; i++) sNew[i] = sNew[i - 1] + Math.hypot(t.north[i] - t.north[i - 1], t.east[i] - t.east[i - 1]);
       const oldS = st.s;
