@@ -13,6 +13,7 @@ import { hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
 import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type DrainLine, type LakeMask } from './drainage';
 import { channelCourse } from './erosion';
+import { A2 } from './a2Probe';
 import { bedWidth, breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
 import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
 import { buildFaults, FaultIndex } from './faults';
@@ -300,7 +301,7 @@ export interface LevelStage {
 export const levelProbe: { on?: (stage: string, li: number, line: LevelStage) => void } = {};
 /** How far beyond its floodplain a river's valley is carved into the ground about it (carveNetwork), m, for a catchment
  * of `area` km². */
-export const valleyInfluence = (area: number): number => 500 + 1900 * smooth(30, 2000, area);
+export const valleyInfluence = (area: number): number => (A2.noValley ? 1 : 500 + 1900 * smooth(30, 2000, area));
 /** Build a seeded world's hydrology from its drainage and lakes. */
 export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyDepth?: Float32Array, smoothGround: (north: number, east: number) => number = natural, markFloor?: (axes: Array<{ north: Float64Array; east: Float64Array; half: Float64Array; area: Float64Array }>) => void, pinned?: (north: number, east: number) => number, wallWeight?: (north: number, east: number) => number): Hydrology {
   const lines = d.lines;

@@ -26,6 +26,7 @@
 // floor keeps falling. C1 everywhere, so the terrain has no facets or creases at the lattice lines and no beads along
 // a channel that steps diagonally. The change may raise the ground as well as lower it; nothing clamps it at 0.
 
+import { A2, A2rec } from './a2Probe';
 import { DOMAIN_HALF, DRAIN_CELL, HOME_MOUND, HOME_RADIUS, LAKE_HOME_CLEAR, RIVER_AREA } from './drainage';
 import type { SlopeField } from './hillslopes';
 import { placeBlock, type Structure } from './structure';
@@ -555,6 +556,7 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
   for (let k = 0; k < order.length; k++) {
     const c = order[k];
     const r = receiver[c];
+    if (A2.cornerOff === 'all') break;
     if (r < 0 || !diag[c] || area[c] < CORNER_AREA) continue;
     const mid = 0.5 * (h[c] + Math.max(h[r], LAND_MIN));
     const ic = (c / n) | 0;
@@ -578,6 +580,13 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
     eroded[c] = base[c] + change[c];
     routing[c] = base[c] + (routedCells[c] - h0[c]);
   }
+  // (Round V A2 probe only, a2Probe.ts.)
+  if (A2.record) {
+    A2rec.deltaRouted = Float32Array.from(routedCells, (v, c) => v - h0[c]);
+    copyEdges(A2rec.deltaRouted, n);
+    A2rec.lowered = Float32Array.from(routedCells, (v, c) => v - h[c]);
+  }
+  if (A2.cornerOff === 'delta') for (let c = 0; c < n * n; c++) change[c] = routedCells[c] - h0[c];
   copyEdges(change, n);
   const N = CUT_N;
   const surface = upsample(eroded, n);
@@ -827,6 +836,22 @@ function residualFade(x: number): number {
   }
   fadeD = (6 * t * (1 - t)) / (b - a);
   return t * t * (3 - 2 * t);
+}
+
+/** Round V A2 probe only (a2Probe.ts): at a point, the drawn change without the corner fix (B-spline), the valley
+ * depth's fade g, a drawn river's floor mark k (markCourse), and the slope pass's river core (0-1, Catmull-Rom) with
+ * the core at the nearest fine node (0-255). */
+export function a2Sample(f: Pick<ErosionField, 'valley' | 'course' | 'courseAny' | 'slopes'>, north: number, east: number): { dRouted: number; g: number; k: number; kr: number; coreNode: number } {
+  const dRouted = A2rec.deltaRouted ? bicubic(A2rec.deltaRouted, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true) : NaN;
+  const g = residualFade(bicubic(f.valley, LATTICE_N, DOMAIN_LO, DRAIN_CELL, north, east, true));
+  const fy = (north - DOMAIN_LO) / CUT_CELL;
+  const fx = (east - DOMAIN_LO) / CUT_CELL;
+  const inside = fy >= 1 && fx >= 1 && fy < CUT_N - 2 && fx < CUT_N - 2;
+  const k = inside && f.courseAny[cellAt(north, east)] ? Math.min(1, Math.max(0, catmullRomU8(f.course, CUT_N, fy, fx) / 255)) : 0;
+  const sl = f.slopes;
+  const kr = sl && inside ? catmullRomU8(sl.core, CUT_N, fy, fx) / 255 : 0;
+  const coreNode = sl && inside ? sl.core[Math.round(fy) * CUT_N + Math.round(fx)] : 0;
+  return { dRouted, g, k, kr, coreNode };
 }
 
 /** The model at (north, east), into `out`. */

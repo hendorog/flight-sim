@@ -20,7 +20,8 @@ import { breachWall } from './streams';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth, type Drainage } from './drainage';
 import { gullyNetOf, setGullyNet } from './gullies';
-import { attachSlopes, buildErosion, CUT_CELL as CUT_CELL_M, CUT_N, erosionGullies, upsample, markCourse, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, slopeSmoothDelta, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
+import { A2, A2rec } from './a2Probe';
+import { a2Sample, attachSlopes, buildErosion, CUT_CELL as CUT_CELL_M, CUT_N, erosionGullies, upsample, markCourse, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, slopeSmoothDelta, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
 import { buildNetworkHydrology, valleyInfluence, wallLift, wallStart } from './riverNetwork';
 import { riverCore, slopeKey, slopeParams, thresholdSlopes, type SlopeField } from './hillslopes';
 import { structParams, structureFor } from './structure';
@@ -507,6 +508,29 @@ export function debugMacro(north: number, east: number): { s: ErosionSample; coa
   return { s, coarseRaw, coarse, ground };
 }
 
+/** Round V A2 probe only (a2Probe.ts, with A2.record): the drawn ground at a point in parts that sum to it -
+ * coarseRaw (the noise ground without gullies) + d + c - res (the model's offset: change, carve, the finer relief taken
+ * away) = gModel; + the slope pass's blend m (hs - gModel) = gBlend; + gullies and small relief = ground; + the
+ * network's carve (airfields and a stream's smoothing first, `pre`; its second valley, `valley`; its channels) = drawn -
+ * with the corner fix's share of d, the parts of the fade w, and the pass's river core. */
+export function debugA2(north: number, east: number): Record<string, number> | null {
+  if (!erosion) return null;
+  const coarseRaw = seededNaturalHeight(north, east, false, false);
+  const gBlend = seededNaturalHeight(north, east, false, true);
+  const ground = seededNaturalHeight(north, east, true, true);
+  const s: ErosionSample = { d: 0, c: 0, f: 0, w: 0, r: 0, keep: 1, o: 0, m: 0, hs: 0, ch: 0, mg: 0, mw: 0, north: 0, east: 0 };
+  sampleErosion(erosion, north, east, s);
+  const off = macroOffset(s, coarseRaw);
+  const gModel = applyMacro(coarseRaw, off);
+  const x = a2Sample(erosion, north, east);
+  const out: TerrainSample = makeSample();
+  A2rec.pre = A2rec.valley = NaN;
+  sampleTerrain(north, east, out);
+  const drawn = out.ground;
+  const sp = slopeParams();
+  return { coarseRaw, d: s.d, dRouted: x.dRouted, corner: s.d - x.dRouted, c: s.c, w: s.w, f: s.f, g: x.g, k: x.k, r: s.r, res: s.w * (coarseRaw - s.r), off, gModel, m: s.m, hs: s.hs, ch: s.ch, mw: s.mw, kr: x.kr, held: x.coreNode >= Math.round(255 * sp.courseHold) ? 1 : 0, pass: gBlend - gModel, gBlend, gullies: ground - gBlend, ground, pre: A2rec.pre - ground, valley: A2rec.valley - A2rec.pre, chan: drawn - A2rec.valley, drawn, river: out.river, standing: out.standing };
+}
+
 /** A seeded world's natural terrain without its small-scale relief (the ledges and knobs under 200 m, and the finest
  * gullies): streams.ts routes its streams down it (they follow the gullies and valleys, not the knobs and rills). */
 export const naturalHeightSmooth = (north: number, east: number): number => seededNaturalHeight(north, east, true, true, true, false);
@@ -961,7 +985,7 @@ function buildWater(): void {
     // their own floors, and the streams are traced down the slopes' valleys.
     try {
       presentHydro = buildNetworkHydrology(naturalHeight, drainage, mask, eroded.valley, naturalHeightSmooth, (axes) => {
-        markCourse(eroded, axes, byLake);
+        if (!A2.noMarkCourse) markCourse(eroded, axes, byLake);
         const t1 = performance.now();
         const slopes = (handed && handed.slopes) || mountainSlopes(inputs, sp, axes);
         if (!(handed && handed.slopes)) modelMs += performance.now() - t1;
@@ -1065,7 +1089,7 @@ function mountainSlopes(inputs: ModelInputs, sp: ReturnType<typeof slopeParams>,
   // The rivers' own floors: the axis and its floodplain or the 80 m either side its level is read from (the marks'
   // half less their fine-grid margin, riverNetwork.ts floorHalf).
   const half = axes.map((a) => ({ north: a.north, east: a.east, half: Array.from(a.half, (h) => Math.max(0, h - FLOOR_GRID_MARGIN)) }));
-  const core = riverCore(CUT_N, CUT_CELL_M, half);
+  const core = riverCore(CUT_N, CUT_CELL_M, A2.noCore ? [] : half);
   // (The ground in a river's valley, as far as its carve reaches beyond its floor, riverNetwork.ts valleyInfluence, is
   // raised by SlopeParams.riverLift of the rest: the carve, carveNetwork, blends its valley's walls into the ground
   // there, and over ground raised high it leaves a step at its reach.)
@@ -1273,6 +1297,7 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
   const hNatural = h;
   const dryS = maskLevel === -Infinity;
   if (calmS > 0 && dryS) h = Math.min(h - lastSmall * calmS, hNatural + STREAM_FILL);
+  if (A2.record) A2rec.pre = h;
   const nv = net.valleys(north, east, valleyNear);
   // Beside a lake a valley keeps its ground over the lake's water (drainage.ts LakeMask.holds: the domain and a raster
   // point round it), or the water would stand against nothing at the domain's edge.
@@ -1293,6 +1318,7 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     if (hold > 0) carved += hold * Math.max(0, Math.min(h, holdLevel + 0.5) - carved);
     h += (carved - h) * (1 - smooth(f + I * 0.75, f + I, d));
   }
+  if (A2.record) A2rec.valley = h;
 
   // Oxbow lakes, as carveRiver cuts them (not under a lake's water).
   presentHydro.queryOxbow(north, east, oxbowHit);
