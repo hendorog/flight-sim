@@ -1529,6 +1529,10 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
             if (c.level[i] <= cap) break;
             c.level[i] = cap;
           }
+        } else {
+          // (Its receiver's water raised over its mouth - a reach the receiver's own cut was raised back on: its last
+          // reach backs up to it, as at any mouth, never running up into it.)
+          for (let i = m - 1; i >= 0 && c.level[i] < mouth; i--) c.level[i] = mouth;
         }
       }
       const fs: number[] = [];
