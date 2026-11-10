@@ -80,6 +80,13 @@ const formWs = (area: number): number => 4.47 * Math.pow(Math.max(0.05, area), 0
  * course, out along ROOM_LADDER (then bisected), m. */
 const ROOM_EVERY = 4;
 const STREAM_ROOM_EVERY = 100;
+/** A bend of radius BEND_APEX active widths or tighter is an apex (a pool's full depth: bendOf). */
+const BEND_APEX = 3;
+/** The heterogeneity field h is read in cells of H_CELL x 2 single-thread widths (gnoise loses its correlation within
+ * about half a cell: the width's and the edges' changes come every 2-4 widths, DESIGN.md section 2). */
+const H_CELL = 3;
+/** The law's wet share and bed width along a line are averaged over this many single-thread widths either side. */
+const FORM_RUN = 5;
 /** A stream joining another stream meets its thread at the nearest point within this much of the thread's arc where its
  * course joined, m. */
 const JOIN_LOOK = 300;
@@ -966,7 +973,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       for (let k = 0; k < count; k++) {
         const vs = valleyS[k];
         smoothM[k] = Math.max(12, sampleAt(a.s, la.lam2, vs) / 8);
-        peakM[k] = Math.max(30, sampleAt(a.s, la.lam2, vs) / 2);
+        peakM[k] = BEND_APEX * sampleAt(a.s, la.Wa, vs);
         // Its offset from the axis (right: +).
         const i = segmentAt(a.s, vs);
         const t = Math.min(1, Math.max(0, (vs - a.s[i]) / Math.max(1e-9, a.s[i + 1] - a.s[i])));
@@ -1728,20 +1735,29 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       for (let i = 0; i < m; i++) {
         const lam2 = Math.max(LAMBDA_MIN, formOf(A[i], S[i], Math.max(FLOOR_MIN, roomL[i] + roomR[i])).lam2);
         smoothM[i] = Math.max(12, lam2 / 8);
-        peakM[i] = Math.max(30, lam2 / 2);
+        peakM[i] = BEND_APEX * formOf(A[i], S[i], Math.max(FLOOR_MIN, roomL[i] + roomR[i])).Wa;
       }
       kap = bendOf(c.north, c.east, smoothM, peakM);
     }
     // The water's half-width the law gives here (drawn: below), and the line's (its catchment's water: never narrower
     // downstream, RN45).
-    const loc = new Float64Array(m);
+    // (The wet share and the bed's width from the law, each a smooth function of the reach along it: averaged over
+    // FORM_RUN single-thread widths of the line either side - a reach's gradient read sample by sample steps where a
+    // pitch or a riffle does, and its width would jump with it.)
+    const phi = new Float64Array(m);
+    const waLaw = new Float64Array(m);
     for (let i = 0; i < m; i++) {
       const f = formOf(A[i], S[i], Math.max(FLOOR_MIN, roomL[i] + roomR[i]));
-      loc[i] = 0.5 * f.phi * f.Wa;
+      phi[i] = f.phi;
+      waLaw[i] = f.Wa;
     }
+    const runOf = (i: number): number => FORM_RUN * formWs(A[i]);
+    const phiS = smoothArc(c.s, phi, runOf);
+    const waS = smoothArc(c.s, waLaw, runOf);
+    const loc = Float64Array.from(phiS, (p, i) => 0.5 * p * waS[i]);
     const hw = Float64Array.from(loc);
     for (let i = 1; i < m; i++) hw[i] = Math.max(hw[i], hw[i - 1]);
-    return { A, S, roomL, roomR, kap, hw, loc };
+    return { A, S, roomL, roomR, kap, hw, loc, phi: phiS };
   });
   // Nor below a junction narrower than what joined it there (every line; tributaries' own widths first: until nothing
   // changes).
@@ -1768,16 +1784,26 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const m = c.s.length;
     const fl = flows[li];
     const out = { bedR: new Float32Array(m), bedL: new Float32Array(m), wetR: new Float32Array(m), wetL: new Float32Array(m), depth: new Float32Array(m), bankH: new Float32Array(m), bankTan: new Float32Array(m) };
+    // (The line's points integrated along it: its smoothed line, the bed's axis.)
+    const cumN = new Float64Array(m);
+    const cumE = new Float64Array(m);
+    for (let i = 1; i < m; i++) {
+      const ds = c.s[i] - c.s[i - 1];
+      cumN[i] = cumN[i - 1] + 0.5 * (c.north[i] + c.north[i - 1]) * ds;
+      cumE[i] = cumE[i - 1] + 0.5 * (c.east[i] + c.east[i - 1]) * ds;
+    }
     for (let i = 0; i < m; i++) {
       const roomL = L.roomL[i];
       const roomR = L.roomR[i];
       const f = formOf(L.A[i], L.S[i], Math.max(FLOOR_MIN, roomL + roomR));
       const hw = L.loc[i];
-      // The bed (active) width the water's half-width gives at the law's share, varied by h at twice its width.
-      const Wb = Math.max(2 * hw / f.phi, 0.5);
+      // The bed (active) width the water's half-width gives at the law's share, varied by h at twice its width (the
+      // field read at the catchment's own width: a stationary field, not one stretched sample by sample).
+      const Wb = Math.max((2 * hw) / L.phi[i], 0.5);
       const pn = c.north[i];
       const pe = c.east[i];
-      const vary = Math.exp(WIDTH_SPREAD * hSmooth(pn / (2 * Wb), pe / (2 * Wb), 1));
+      const Wh = H_CELL * formWs(L.A[i]);
+      const vary = Math.exp(WIDTH_SPREAD * hSmooth(pn / (2 * Wh), pe / (2 * Wh), 1));
       const Wa = Wb * vary;
       const w = 2 * hw * vary;
       // The sample's direction, for its banks' own points.
@@ -1788,18 +1814,29 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const tl = Math.hypot(tn, te) || 1;
       const rn = -te / tl;
       const re = tn / tl;
-      const kap = L.kap[i];
-      const inR = kap > 0 ? 1 : 0;
-      const k = Math.abs(kap);
-      const inner = 0.5 * w + (Wa - w) * (0.2 + 0.94 * k);
-      const outer = 0.5 * w + 0.2 * (Wa - w);
+      const k = Math.abs(L.kap[i]);
+      // The bed lies about the thread's own line smoothed over its wavelength (the bed's axis), as far either way as
+      // the bed leaves room beyond the water: where the thread swings out to a bend's outer bank the bed stays, and the
+      // gravel between is the point bar inside the bend; a thread swinging wider than its bed carries the bed with it.
+      // (Set from the thread's curvature alone, each bar a wedge from crossing to apex: a saw-tooth outline.)
+      const half = 0.5 * Math.max(LAMBDA_MIN, f.lam2);
+      const s0 = Math.max(0, c.s[i] - half);
+      const s1 = Math.min(c.s[m - 1], c.s[i] + half);
+      let dAx = 0;
+      if (s1 - s0 > 1) {
+        const mn = (lerpS(c.s, cumN, s1) - lerpS(c.s, cumN, s0)) / (s1 - s0);
+        const me = (lerpS(c.s, cumE, s1) - lerpS(c.s, cumE, s0)) / (s1 - s0);
+        dAx = (mn - pn) * rn + (me - pe) * re;
+      }
+      const sway = Math.max(0, 0.5 * (Wa - w));
+      const dEff = Math.max(-sway, Math.min(sway, dAx));
       for (const side of [1, -1]) {
-        const base = (side > 0) === (inR === 1) ? inner : outer;
+        const base = Math.max(0.5 * w, side * dEff + 0.5 * Wa);
         const en = pn + side * rn * base;
         const ee = pe + side * re * base;
-        const wetE = 0.5 * w * (1 + 0.12 * Math.max(-1.25, Math.min(1.25, hSmooth(en / (2 * Wa), ee / (2 * Wa), 3))));
+        const wetE = 0.5 * w * (1 + 0.12 * Math.max(-1.25, Math.min(1.25, hSmooth(en / (2 * Wh), ee / (2 * Wh), 3))));
         const room = side > 0 ? roomR : roomL;
-        const bed = Math.max(wetE + 0.3, Math.min(Math.max(room, wetE + 0.3), base + 0.2 * Wa * hSmooth(en / (2 * Wa), ee / (2 * Wa), 2)));
+        const bed = Math.max(wetE + 0.3, Math.min(Math.max(room, wetE + 0.3), base + 0.2 * Wa * hSmooth(en / (2 * Wh), ee / (2 * Wh), 2)));
         if (side > 0) {
           out.bedR[i] = bed;
           out.wetR[i] = wetE;
@@ -2419,6 +2456,26 @@ function segmentAt(s: Float64Array, sv: number): number {
     else hi = mid;
   }
   return lo;
+}
+
+/** arr averaged along a line (arc lengths s) over run(i) m either side of each sample. */
+function smoothArc(s: ArrayLike<number>, arr: ArrayLike<number>, run: (i: number) => number): Float64Array {
+  const m = s.length;
+  const out = new Float64Array(m);
+  if (m < 2) {
+    if (m === 1) out[0] = arr[0];
+    return out;
+  }
+  const cum = new Float64Array(m);
+  for (let i = 1; i < m; i++) cum[i] = cum[i - 1] + 0.5 * (arr[i] + arr[i - 1]) * (s[i] - s[i - 1]);
+  const S = Float64Array.from(s);
+  for (let i = 0; i < m; i++) {
+    const r = run(i);
+    const s0 = Math.max(0, s[i] - r);
+    const s1 = Math.min(s[m - 1], s[i] + r);
+    out[i] = s1 - s0 > 1e-6 ? (lerpS(S, cum, s1) - lerpS(S, cum, s0)) / (s1 - s0) : arr[i];
+  }
+  return out;
 }
 
 /** Linear interpolation of arr (any array) at arc length sv. */

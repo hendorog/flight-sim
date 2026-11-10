@@ -785,11 +785,11 @@ float fMist = 0.0;
 }
 `;
 
-/** A seeded world's ribbon is lifted over the coarse terrain from 300 m away, 1.5 mm a metre (to 8 m): a thread narrower than a coarse tile's triangles, its bars a metre over its water, stays one thread
+/** A seeded world's ribbon is lifted over the coarse terrain from 300 m away, 3 mm a metre (to 15 m): a thread narrower than a coarse tile's triangles, its bars a metre over its water, stays one thread
  * instead of breaking into pools where a triangle's corners stand on the bars. */
 const FLOW_LIFT = `{
   vec3 lw = (modelMatrix * vec4(position, 1.0)).xyz;
-  transformed.y += clamp((distance(lw, cameraPosition) - 300.0) * 0.0015, 0.0, 8.0);
+  transformed.y += clamp((distance(lw, cameraPosition) - 300.0) * 0.003, 0.0, 15.0);
 }
 `;
 /** A seeded world's ribbon spans its bed (ribbonRows: vDepth -1 at the bed's edge, 0 at the water's): from
@@ -801,7 +801,7 @@ const FLOW_BARS = `{
   float bK = (1.0 - smoothstep(-0.12, -0.02, vDepth)) * (1.0 - smoothstep(0.85, 1.0, -vDepth)) * smoothstep(${BAR_NEAR.toFixed(1)}, ${BAR_FAR.toFixed(1)}, wDist);
   if (bK > 0.0) {
     vec4 bN = texture(tNoise, vWaterPos.xz * (1.0 / 37.0) + 0.23);
-    vec3 bAlb = vec3(0.24, 0.235, 0.215) * (0.82 + 0.36 * bN.g) * (1.0 - 0.25 * smoothstep(-0.2, -0.05, vDepth));
+    vec3 bAlb = vec3(0.2, 0.196, 0.18) * (0.82 + 0.36 * bN.g) * (1.0 - 0.25 * smoothstep(-0.2, -0.05, vDepth));
     vec3 bIrr = (reflectedLight.directDiffuse + reflectedLight.indirectDiffuse) / max(diffuseColor.rgb * RECIPROCAL_PI, vec3(1e-5));
     gl_FragColor = gl_FragColor * (1.0 - bK) + vec4(bAlb * bIrr * RECIPROCAL_PI, 1.0) * bK;
   }

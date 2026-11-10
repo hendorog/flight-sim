@@ -18,8 +18,8 @@ import { valueNoise } from './bedrock';
 /** From BAR_NEAR m away a seeded world's ribbon draws its bed's gravel bars, all of them from BAR_FAR, and the terrain's
  * paint of them fades out over the same distances (water.ts FLOW_BARS, terrainMaterial.ts): beyond, the terrain's
  * triangles are coarser than the bars. */
-export const BAR_NEAR = 600;
-export const BAR_FAR = 1200;
+export const BAR_NEAR = 250;
+export const BAR_FAR = 550;
 
 export const smooth = (e0: number, e1: number, x: number): number => {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
@@ -465,9 +465,9 @@ export function layThread(axisN: ArrayLike<number>, axisE: ArrayLike<number>, la
 /**
  * Signed bend of a polyline at each point over its local peak (DESIGN.md κ̂: 0 at a crossing, ±1 at an apex; + where
  * it turns right, its inside on the right): heading smoothed over `smoothM` m of arc, curvature over the largest
- * within `peakM` m either side.
+ * against a bend of radius `refR` (m) at each point: 1 there or tighter.
  */
-export function bendOf(north: ArrayLike<number>, east: ArrayLike<number>, smoothM: ArrayLike<number>, peakM: ArrayLike<number>): Float32Array {
+export function bendOf(north: ArrayLike<number>, east: ArrayLike<number>, smoothM: ArrayLike<number>, refR: ArrayLike<number>): Float32Array {
   const m = north.length;
   const out = new Float32Array(m);
   if (m < 3) return out;
@@ -505,15 +505,9 @@ export function bendOf(north: ArrayLike<number>, east: ArrayLike<number>, smooth
     const b = Math.min(m - 1, i + 1);
     k[i] = (sm[b] - sm[a]) / Math.max(1e-6, s[b] - s[a]);
   }
-  // Over the local peak.
-  let q0 = 0;
-  for (let i = 0; i < m; i++) {
-    const r = peakM[i];
-    while (q0 < i && s[q0] < s[i] - r) q0++;
-    let pk = 1e-9;
-    for (let j = q0; j < m && s[j] <= s[i] + r; j++) pk = Math.max(pk, Math.abs(k[j]));
-    out[i] = Math.max(-1, Math.min(1, k[i] / pk));
-  }
+  // Against a full bend's curvature: a radius of refR or tighter is an apex (1); a gentle bend's a share of one, a
+  // straight reach's none - not each wiggle over its own local peak, which made every sample's noise an apex.
+  for (let i = 0; i < m; i++) out[i] = Math.max(-1, Math.min(1, k[i] * refR[i]));
   return out;
 }
 
