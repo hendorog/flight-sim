@@ -524,8 +524,15 @@ export function formSection(d: number, wet: number, bed: number, depth: number, 
   }
   const top = Math.max(WET_EDGE, 0.6 * bankH);
   if (d < bed) return WET_EDGE + ((top - WET_EDGE) * (d - wet)) / Math.max(0.01, bed - wet);
-  return top + (d - bed) * bankTan;
+  // The bank rises its own height at its angle; past it the cut joins the ground it was made in (a valley's side, a
+  // floor) at no gentler than BANK_JOIN: at the bank's angle (14 degrees on a floor) it reached out past the carve's
+  // reach and left a step there, the ground cut away 100-250 m beside a stream in a V.
+  const b = d - bed;
+  const run = (bankH * 0.4) / Math.max(1e-3, bankTan);
+  return b <= run ? top + b * bankTan : top + run * bankTan + (b - run) * Math.max(bankTan, BANK_JOIN);
 }
+/** formSection: the cut face past a bank rises at least this steeply (m/m) to the ground. */
+const BANK_JOIN = 1;
 /** The bed stands this far over the water at the wet edge, m (the water's edge lies just inside it). */
 const WET_EDGE = 0.08;
 
