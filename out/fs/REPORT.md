@@ -1063,6 +1063,8 @@ What a pilot sees:
 ## Round T repairs: pond inflow, streams into standing water, line 720 by KPMH, slow tests (`f654e1c` .. `cc7f23a`)
 
 The round-T checkers found four regressions at `3f9d795` (code `09bd446`). Each is fixed in its own commit.
+verifyR1 then checked these repairs and found six problems; they are answered in "Second pass" at the end of this
+section (`0911f22` .. `f168159`).
 
 Before and after:
 - **Before** is `3f9d795`. Its pictures are verifyT2's `-F` renders (`out/fs/verifyT2/pictures`, the same code)
@@ -1312,4 +1314,292 @@ assertion (10.1 µs against 10 µs). That is not a time limit.
 | `527cde0` | item 2: streams into standing water stand at its surface (where their banks hold it); no channel paint under a lake |
 | `d2e6c40` | item 3: a traced stream keeps its channel through a field's blend into its flat |
 | `cc7f23a` | item 4: time limits for the ten files that ran over their budget in a full parallel suite run |
+| (this) | report |
+
+### Second pass: verifyR1's six problems (`0911f22` .. `f168159`)
+
+verifyR1 checked the repairs above and found six problems: its pictures are in `out/fs/verifyR1/pictures`, its code
+checks in `out/fs/verifyR1/gates-code`. Each problem was confirmed here before any work on it.
+
+Where things are:
+- Probes: `out/fs/R2/probes` (run with `--config out/fs/R2/probes/vitest.config.ts`). The new committed probe is
+  `scripts/probes/junctionGate.test.ts`. Logs are in `out/fs/R2` (untracked).
+- Pictures: `out/fs/R2/pictures`, rendered from the worktree on port 5222 (the shot tool's own vite, one shot at a time,
+  started and stopped per shot; `out/fs/R2/shots.sh`, cameras in `out/fs/R2/views.txt`).
+  - `-p1` is after the raise (`c662af9`'s code), `-p2` adds earth banks, `-p3` the neighbour cap (`d0f5c9e`), and
+    `-p4` is the final code (`f168159`).
+  - Before is verifyR1's `-A` (`00866e4`, code `d2e6c40`) or its gates-code `-VH` (the same code).
+  - No render log says "preload timed out" or "never set window.__ready". Nothing is left running on 5222.
+- Battery: `out/fs/finalR2` (`finalS.sh finalR2 suite`, then `out/fs/extrasR2.sh`).
+
+#### Short version
+
+| problem | verdict | what a pilot sees now |
+|---|---|---|
+| 1. KHLT, line 734: a 9 m V gully with its water hidden | **fixed** (`c662af9`, `d0f5c9e`, `f168159`) | a small stream with water in a shallow channel down the approach slope; no pale smear |
+| 2. 720 by KPMH: pale scallops on the far cut bank | **fixed** (`0b40438`, `f168159`) | a continuous blue-grey stream with a thin earthy bank line; no teeth or fans. From the cockpit the reach by the runway still reads as a grey beaded line, from its corners (problem 3) |
+| 3. 720's approach reach: ladder of pools, serrated bank, pale band; square corners by the runway | **not fixed** | as before; the cause is now measured |
+| 4. 567 into pool 26 reads dry | **not fixed** | as before |
+| 5. AT_THE_SURFACE: water running uphill at junctions | **fixed for 474 -> 2267** (`0911f22`); the two step-ups inside lakes are drowned mouths of blocked inflows, the same case as problem 6 | no visible change: the junction is under canopy |
+| 6. 567's wall of water at pool 26 | **not fixed** | as before: a blue sheet where the notch meets the pond |
+
+#### 1. KHLT, line 734: fixed
+
+**Confirmed.** verifyR1's `profile-734across-A.log` crosses 734 at 19950..20060,31780 at `d2e6c40`. It is a V 9 m
+deep and about 30 m across: ground 396.5 m 13 m off, 387.6 m at the centre, 402.1 m 20 m the other side, water
+388.2 m. `cmp-xR734-low-BvsA.png` shows it from 60 m as a broad pale band.
+
+**Cause.**
+- KHLT, at about 414.6 m, stands above 734. Its blend into the flat follows the carve, so it raised the ground over the
+  stream. At s 220 the blend weight is 0.62 and the ground rose about 9 m.
+- `d2e6c40` cut the stream back into that ground at its own level, with the network's stream banks. Those are rock
+  walls at 30-50 degrees, so the cut opened into a V as deep as the blend had raised the ground.
+
+**The fix.**
+- FIELD_RAISE (`c662af9`; heightfield.ts `fieldOver`, riverNetwork.ts `holdUnder`): where a field's blend raises the
+  ground over a stream, the stream's water rises with it, to where the blended ground stands no more than RAISE_UNDER
+  (1.5 m) over it.
+  - A blend of weight k towards the field's elevation E leaves ground h at E + (h - E) k.
+  - The target is the lower of two levels. One is E + (t - E) k - 1.5, where t is the ground the stream was levelled
+    on, trimmed under the approaches. The other is E - (1.5 - 1.3 k) / (1 - k): where that ground stands higher, the
+    carve leaves the banks 1.3 m over the water.
+  - A raise never goes over the water above it. A stream joining a raised reach is backed up to it, receivers first.
+  - The carve no longer builds a stream's banks up by what the blend will add (`blendLift`). Built up first and then
+    blended, they stood 5-7 m over the raised water.
+- `d0f5c9e`: a raise stays within RAISE_BESIDE (1 m) of another stream's water beside it. 1727 runs beside 734, 8 m
+  bank to bank, for its last 40 m before joining it. Raised alone, 734 stood 3 m over 1727 with a 4-5 m wall between
+  them.
+- Problem 2's earth banks (`0b40438`, `f168159`) shape the cut.
+
+**Numbers.**
+- 734's water at s 160-220 is 396.3 m; it was 388.2 m.
+- Its banks at hw + 3 m are 1-1.5 m over the water from s 80 to s 400 (`line734-p3.log`).
+- Across at s 220 (`profile-734across-p4.log`):
+  - ground 397.3 m 5 m off;
+  - 395.7 m at the centre, with the water at 396.3 m;
+  - then rising 1.4 m every 4 m on the other side (398.0, 399.4, 400.8 m).
+  - Beyond 6 m it is the field's slope as before the repairs.
+- Steepest bank face (`fieldFaces`, problem 2's table): 734 over 35 degrees 470 -> 160 m, over 45 degrees 360 -> 30 m.
+- Lower ground at hw + 12 m standing more than 7 m over the water (`fieldBanks`): 734 200 -> 0 m.
+
+**Pictures.**
+- `cmp-xR734-low-AvsP4.png`, 60 m up on verifyR1's camera.
+  - Before: a pale translucent band 25-30 m wide lies down the approach slope, with no water in it.
+  - After: a thin stream with water, grey-blue with white flecks where it steepens, runs down the slope in a shallow
+    channel. A thin brownish line follows its far bank.
+- `cmp-k734-close-HvsP4.png`, 500 m: the pale V scar from the approach down to the river is gone. A faint thin line
+  runs down the slope, which is how a stream 3-5 m wide looks from there.
+- `cmp-xR734-zoom-AvsP4.png`, 800 m, zoomed 2.5 times: before the repairs (`-B`) a narrow brown dry groove; at `-A` a
+  broad pale feathered smear; now a thin dark line down the approach corridor, with a faint pale wisp at its head and
+  near its foot.
+- `cmp-k734-mouth-HvsP4.png`, the same camera zoomed 2.5 times on the mouth: 734 runs down to its receiver with water,
+  white water and an earthy far bank. The dark sawtooth at its junction with 1727, seen at `-p2` before `d0f5c9e`, is
+  gone.
+
+#### 2. Line 720 by KPMH: the pale scallops are fixed
+
+**Confirmed.**
+- verifyR1's `profile-720across-s2000-A.log` shows a channel 4.4 m deep, its far (SW) face rising 4.4 m in about 9 m.
+- verifyR1's pictures (`cmp-xR720-comb-BvsA.png`, `cmp-xR720-side-comb-A.png`, `cmp-xR720-obl-ne-BvsA.png`) show a
+  regular row of pale scallops along it.
+- A land-cover debug render (`xR720-comb-dbg1.png`, terrain debug view 1, albedo by cover weight) still shows the band
+  pale with every cover weight zero. So it is light off the face, not cover paint. The bank's wet-gravel paint has a
+  roughness of 0.45, and the face is steep.
+- The scallops are the bank profile itself. `streamBanks` is a gorge's rock wall, with ledges and buttresses that
+  change along the stream every few tens of metres.
+
+**The fix** (heightfield.ts `keepChannels`, `fieldBanks`).
+- `0b40438`: the cut through a blend keeps the bed and the low strip, then an earth bank rising at FIELD_BANK_SLOPE
+  (0.35), with no noise and no ledges.
+- `0b40438`: the cut's weight is now how far the blend moved the ground at the stream's water, (1 - k) |E - level|,
+  which is smooth along the stream. Before, it was how far the blend moved the ground at the point, which followed the
+  carved ledges.
+- `0b40438`: the cut keeps the ground over another stream's water only on that stream's own banks (FIELD_KEEP, 6 m).
+- `f168159`: the earth bank is cut fully only out to 8 m beyond the low strip, then fades out over 16 m. Carried on at
+  0.35 it reached a hillside 75 m off 720's SE reach. The nearest segment's water level changes from one 4 m cell to
+  the next along the winding course, so it cut that hillside as a row of teeth (`p720-se-p3`).
+- Problem 1's raise also takes the 3.7 m drop at s 1980-2080 down to 0.5 m. The water is at 404.6-404.05 m to s 2290,
+  with its banks 1.8-2 m over it.
+
+**Numbers.** `fieldFaces` takes the streams in a field's blend every 10 m and measures the steepest slope across hw ..
+hw + 15 m:
+
+| | over 35 degrees | over 45 degrees |
+|---|---|---|
+| seed 777777 | 1730 -> 240 m | 1370 -> 40 m |
+| 720 | 1180 -> 60 m | 950 -> 0 m |
+| seed 42 (692 at KIVY) | 350 -> 10 m | 70 -> 0 m |
+| seed 1 | 60 -> 50 m | 0 -> 0 m |
+
+- Across 720 at s 2000 (`profile-720across-s2000-p4.log`) the water is at 404.3 m. The SW bank rises 1 m in 3 m and
+  2.6 m in 12 m; the NE bank rises 1.5 m in 6 m. It was a 4.4 m face in 9 m.
+- On a 4 m grid of 600 x 600 m round -14950,32700 (`grid.test.ts` against verifyR1's VH tree), slopes over 0.7 cover
+  2684 cells (VH 3234), of which 2 are new.
+
+**Pictures** (verifyR1's cameras):
+- `cmp-xR720-comb-AvsP4.png` (30 m up, 80 m off):
+  - Before: white water under a pale scalloped band with a feathered top.
+  - After: a continuous blue-grey stream, its far bank a thin earthy line under grass.
+- `cmp-xR720-side-AvsP4.png` (20 m over the runway): the row of pale fans is gone. A thin tan bank line is left.
+- `cmp-xR720-obl-ne-AvsP4.png` (180 m): the teeth are gone. A thin dark stream line runs between smooth banks.
+- `cmp-p720-se-HvsP4.png` (30 m over the SE reach): before, the stream had dark serrated banks on both sides. After,
+  it runs with water between smooth banks, and the slope beside it is clean.
+- `cmp-fly7-abeam-near-AvsP4.png` (cockpit, 300 m abeam): the reach beside the runway is no longer a white rope; its
+  far end is a thin grey-blue line. The near part still reads as a grey beaded line. The beads are the course's 44 m
+  chords, which turn 5-15 degrees at each sample: problem 3's square corners.
+- `cmp-xR720-AvsP4.png` (800 m) and `cmp-xR720-low-AvsP4.png` (115 m): the water is continuous past the runway, as in
+  `-A`.
+- `cmp-xR692-low-AvsP4.png` (seed 42, KIVY): 692 has water and white water, and the pale fringe on its far bank is
+  thinner.
+
+#### 3. 720's approach reach: not fixed
+
+**Confirmed.** `cmp-B720-AvsP4.png` shows the approach reach as verifyR1 found it:
+- the ladder of rectangular pools;
+- the serrated right bank;
+- the pale translucent band over the valley floor. This is the approach's obstacle-clear zone: no trees, ending along a
+  straight line at the approach's end.
+
+The zigzag reach by the runway has water and keeps its corners.
+
+**What was measured** (`dump720-p1.log`, `dump720-runway-p2.log`).
+- On the approach reach the water lies flat for 44-133 m at a time: i 134-137 (432.09 m), i 145-147 (420.71 m) and
+  i 156-157 (407.61 m). Steep runs of 4-6 % lie between them.
+- At the flats the water runs 1.3-2.7 m under the ground it is carved into. Elsewhere that depth is 0.4-0.9 m.
+- The flats are therefore holdUnder's running minimum. Under the approach, the trimmed ground rises along the stream as
+  it weaves across the corridor's edge, and the held water keeps its lower level until the ground falls again. This
+  confirms the first pass's suspicion.
+- The samples are 44 m apart, and the course turns 5-15 degrees at most of them, so each pool is one straight chord.
+- The same chords make the square corners of the reach by the runway, and the beads seen from the cockpit.
+- The raise of problem 1 does not act on the approach reach, which lies outside the blend (weight 1.0).
+
+**Not done.**
+- A graded profile under the staircase would lower the water by up to 5 m mid-run and cut that much deeper.
+- Smoothing the approach trim along the corridor's edge would move the airfield siting gates.
+- The corners are round S/T's square-corner work, which regressed when it was tried.
+
+#### 4 and 6. Line 567 into pool 26 (seed 7): not fixed
+
+**Confirmed.**
+- `out/fs/R2/dump567.log`: 567 comes down into a hollow where the natural ground is 12.8-13.5 m (s 750-1006). Its
+  water there is 12.38-11.69 m.
+- It then climbs north-east for 1.3 km through a notch at 11.69 m. The natural ground along the notch rises to
+  28.5-32 m, so the notch is cut 15-19.3 m deep.
+- It meets pool 26 (26.96 m) at s 2267, 15.3 m under the pond's surface.
+- `cmp-x567-up-HvsP3.png` shows the same blue sheet at the notch's end as verifyR1's `x567-up-VH.png`.
+
+**What was found** (`poolMap-567-route.log`: the stream pass's routing ground on the 250 m lake raster).
+- The hollow 567 is held in lies at 14 m (-14250,124250 and -14500,124000).
+- Its lowest way out is about 25 m, to the west: -14250,124000 at 22 m, then -14000,123750 at 25 m. Beyond that a
+  coastal lowland falls to the sea (`poolMap-567-west.log`).
+- Pool 26's basin is north-east of the hollow, beyond a ridge of 27-35 m on the routing ground. The trace notched
+  through that ridge.
+- The stream report's fill for 567 is pool 26: "fill: pond (2.19 km², its sill 22.3 m over the pit)". Its inflow is
+  43.5 + lost 8.3 km², to outlet 2621.
+- That pit level (4.7 m) matches neither the routing ground (14 m at the hollow) nor the natural ground (12.8 m). How
+  deadEnd's fill reached pool 26's basin was not traced to the line.
+
+**Why no fix was made.**
+- The stream's water cannot reach the pond's surface. The hollow it comes through lies 12-14 m under it, and the
+  hollow's own way out (about 25 m) is lower than the pond.
+- Raising the notch's water to the pond would stand it 14 m over the hollow's banks. That is AT_THE_SURFACE's block.
+- Lowering pool 26 to the notch (11.7 m) would cut its outlet 15.3 m through its rim. That is over the owner's 15 m
+  limit, and the owner's rule keeps a new lake under 3 km² whole.
+- A consistent fix belongs in the stream pass: fill the hollow 567 is held in up to its own way out, about 25 m to the
+  west, so that 567 ends in that pond and its outlet runs west. Pool 26 would then lose 567's inflow. That changes
+  ponds and outlets on every seed, so it was not made in a repair pass.
+- 738 (seed 1, pool 86, 4.5 m) is in the same class, as are all 53 blocked runs.
+
+#### 5. Water running uphill at junctions: fixed for 474 -> 2267
+
+**Confirmed** at `00866e4`.
+- Line 2267 runs flat at 204.26 m in a notch along lake 12's edge (212.68 m) for 234 m (i 191-196), then on for 10 km.
+- AT_THE_SURFACE backed the 5 km above it up to 212.68 m.
+- 474 joins 2267's head and was processed first, so it stayed at 204.26 m: an 8.42 m step up (verifyR1's
+  `junctions-VH.log`).
+
+**The fix** (`0911f22`, riverNetwork.ts AT_THE_SURFACE).
+- Only a lake a line ends in or stays in backs it up. A line that passes a lake keeps its levels as traced: its water
+  is already more than LEAVE_BELOW (1 m) under the lake's level as it comes to it, it does not come down while in the
+  lake, and it leaves that lake for good under that level.
+- Lines that come down into a lake and leave it below its level are raised as before (537, 634, 510, ...).
+- Lines are taken receivers first: a continuation before the stream it continues.
+
+**Junction gate** (new: `scripts/probes/junctionGate.test.ts`). At every junction it compares the joining line's last
+water with the receiver's water, interpolated along the receiver's course. Step-ups over 0.5 / 2 / 5 m outside lakes:
+
+| seed | before AT_THE_SURFACE (`f654e1c`) | `00866e4` | now |
+|---|---|---|---|
+| 1 | 177 / 76 / 43 | 177 / 76 / 43 | 177 / 76 / 43 |
+| 42 | 166 / 69 / 32 | 165 / 69 / 32 | 165 / 69 / 32 |
+| 777777 | 199 / 72 / 45 | 200 / 73 / 46 | 199 / 72 / 45 |
+| 7 | 208 / 84 / 52 | 207 / 84 / 52 | 207 / 84 / 52 |
+| 1234 | 146 / 55 / 30 | 146 / 55 / 30 | 146 / 55 / 30 |
+| 99991 | 200 / 83 / 58 | 200 / 83 / 58 | 200 / 83 / 58 |
+
+- The battery's rule is no more step-ups than before AT_THE_SURFACE. It holds.
+- Two step-ups in a lake, made by AT_THE_SURFACE, remain: 2075 -> 784 (seed 777777, 32.6 m) and 1298 -> 530
+  (seed 1234, 18.9 m). Both joining lines are blocked inflows whose water runs under the lake's surface on the way in,
+  so both waters lie under the lake's water at the junction. They belong with problem 6.
+- **The 150-210 step-ups per seed outside lakes are old.** They were there before AT_THE_SURFACE, up to 73 m (seed
+  777777, 2019 -> 1458). Most are tributaries joining a stream 300-550 m from its head. They are not this round's, and
+  they are listed in `junctionGate-before-item2.log`.
+- underLake (seeds 1 / 42 / 777777 / 7) is unchanged on 1, 42 and 7. On 777777 the water more than 3 m under a lake's
+  surface inside it goes 6.79 -> 7.07 km, and shore steps over 1 m go 13 -> 14. Both are 2267's 234 m along lake 12,
+  as before AT_THE_SURFACE.
+- Pictures `j2267-top-p3.png` and `j2267-lo-p3.png`: the junction is under the forest canopy, as in verifyR1's
+  renders.
+
+#### Battery (`out/fs/finalR2`, the code at `f168159`) against the first pass (`out/fs/finalR`)
+
+| gate | first pass (finalR, `d2e6c40`) | now (finalR2, `f168159`) | rule | |
+|---|---|---|---|---|
+| dead ends, endsGate IG_MIN 10 (seed 7 too); climbed reaches | 0 / 0 / 0 / 0; 148.8 / 220.5 / 295.7 / 224.8 km | identical log | 0 | held |
+| outlet loops; cycles through lakes | 0; 0 | identical logs | 0 | held |
+| junctionGate step-ups outside lakes > 0.5 / 2 / 5 m (new; first pass measured on its code, `junctionGate-HEAD.log`) | 777777 200 / 73 / 46 (474 -> 2267) | 177/76/43, 165/69/32, 199/72/45, 207/84/52, 146/55/30, 200/83/58 (seeds 1 / 42 / 777777 / 7 / 1234 / 99991) | <= before AT_THE_SURFACE (`f654e1c`) | held |
+| overGround > 10 m; > 2 m | 8 / 58 / 35; 507 / 645 / 589 | 8 / 58 / 35; 507 / 645 / **598** | > 10 m <= 8 / 58 / 35 | held (see below) |
+| steps > 100 m; > 50 m | 0; 40 / 15 / 43 | 0; 40 / 15 / 43 | 0 | held |
+| riverZero | 0.2 / 2.2 / 0.0 km | the same | no worse | held |
+| lakes | 71 / 74 / 61 | 71 / 74 / 61, ponds identical | the same | held |
+| drawnGate (i); (ii); (iii) | 96.0 / 95.7 / 95.6 % | 96.0 / 95.7 / 95.6 % (777777: 9784 -> 9790 profiles) | (i) >= 95.6 | held |
+| wallsGate class 4 (water > 10 m over its centre ground) | 0.2 / 0.6 / 1.1 km | 0.2 / 0.6 / 1.1 km (777777: classes 1, 2 and 5 one line or 0.2 km more) | no worse | held |
+| heldOver (> 3 m over both banks by the fields) | 4 / 0 / 18 | 4 / 0 / 18 (fieldHeld 1098 -> 1057 and 203 -> 199: those samples are raised now, not lowered) | no worse | held |
+| bankHeight > 10 m | 92 / 121 / 90 | 92 / 121 / 90 | no worse | held |
+| waterWalls > 10 m; corrected | 1856 / 1906 / 1740; 1118 / 835 / 1215 | the same (777777 > 2 m 8046 -> 8050) | reported | held |
+| underLake (shore steps > 1 m; water > 3 m under inside) | 13 / 11 / 13 / 10; 4.43 / 5.72 / 6.79 / 2.69 km | 13 / 11 / **14** / 10; 4.43 / 5.72 / **7.07** / 2.69 km | reported | 2267's run, as before AT_THE_SURFACE |
+| dryNear (water hidden by the fields) | 120 / 115 / 87 m | 120 / 115 / 87 m | no worse | held |
+| fieldFaces (new: bank face > 35 / > 45 degrees in a field's blend) | 60 / 0, 350 / 70, 1730 / 1370 m | 50 / 0, 10 / 0, 240 / 40 m | reported | better |
+| homeCheck | 8/8 | 8/8 | 8/8 | held |
+| moved.py (f3 courses) | 3 / 2 / 6 | identical | reported | held |
+| gullyGate, rillGate, cornerGate, creaseGate, paintedLoops, turnClass | | identical logs (streamTurns: 777777 n 1936 -> 1937) | no worse | held |
+| seed boxes b; pits10 (validate) | 1.27 / 1.26 / 1.35; 2.92 / 1.89 / 1.94 | identical | b <= 1.3 (seed 42) | held |
+| suite (finalS.sh: four directories, --no-file-parallelism) | 745 / 745 | **745 / 745**; the seven slow files with --testTimeout=120000 80 / 80 | 738 / 745 | met |
+| seededWorld; airfields; presentGuard (seed 0) | pass | pass (in the suite); tests/fixtures and tests/era untouched, never re-pinned | all | held |
+| build time (phaseTimes, one run in the battery, seeds 42 / 1 / 777777) | 10.4 / 8.2 / 9.7 s (under load) | 6.1 / 5.6 / 5.8 s | reported | |
+
+**overGround over 2 m on seed 777777, 589 -> 598.**
+- overGround measures the water against the *natural* ground. FIELD_RAISE puts 734's head 3.6-9.2 m over its
+  natural ground (23 samples from s 238 to s 376), and the field's blend raises the drawn ground over that water. The
+  water stands 1-1.5 m under its banks there (`line734-p3.log`).
+- Over 10 m is unchanged, as is wallsGate class 4 (water over its own *drawn* centre ground).
+
+#### Left
+
+- **Blocked inflows** (problems 4 and 6): 53 runs over the four seeds, including FILL_DEAD_ENDS ponds 567 / pool 26 and
+  738. The fix is in the stream pass: fill the hollow a stream is held in up to its own way out (567: about 25 m, west).
+- **720's approach reach** (problem 3): holdUnder's staircase under the approach trim, and the 44 m chords. The pale
+  band is the approach's obstacle-clear zone.
+- **Old junction step-ups**: 150-210 per seed outside lakes, before AT_THE_SURFACE (`junctionGate`).
+- The first pass's other items are as listed there: 1853's straight tail, 2188 -> 692 over f3, river 15 under lake 1,
+  heightfield.test.ts's speed assertion.
+
+#### Commits
+
+| commit | what |
+|---|---|
+| `0911f22` | problem 5: no backwater from a lake a stream only passes; receivers first; junctionGate |
+| `c662af9` | problem 1: a stream's water rises with the ground a field's blend raises over it; banks not built up by what the blend adds |
+| `0b40438` | problem 2: a stream cut again through a field's blend has earth banks, its cut weighed at its water, kept only on another stream's own banks |
+| `d0f5c9e` | problem 1: a raise stays within 1 m of another stream's water beside it (1727 by 734) |
+| `f168159` | problem 2: the earth bank's cut fades out beyond 8 m (the teeth on the slope by 720's SE reach); extrasR2.sh |
 | (this) | report |
