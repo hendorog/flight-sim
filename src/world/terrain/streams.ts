@@ -2011,7 +2011,9 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     }
     report.continued = conts.length;
   }
-  /** Whether a straight reach from stream st's end to (tn, te) crosses its own course. */
+  /** Whether a straight reach from stream st's end to (tn, te) crosses its own course - or touches it: a reach that runs
+   * through its course's own points (a raster diagonal over the points it came by) loops round as surely as one that
+   * crosses between them (seed 99991: a stream's reach into a pond ran back over three of its own points). */
   const crossesOwn = (st: StreamLine, tn: number, te: number, upTo = -1, skip = 2): boolean => {
     const m0 = upTo >= 0 ? upTo : st.north.length - 1;
     const ax = st.east[m0], ay = st.north[m0];
@@ -2022,7 +2024,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       const d2 = (te - ax) * (dy - ay) - (tn - ay) * (dx - ax);
       const d3 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx);
       const d4 = (dx - cx) * (tn - cy) - (dy - cy) * (te - cx);
-      if (d1 * d2 < 0 && d3 * d4 < 0) return true;
+      if (d1 * d2 <= 0 && d3 * d4 <= 0) return true;
     }
     return false;
   };
@@ -2109,19 +2111,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         // (Not across its own course.)
         const T = lineAt(occLine(o));
         const tn = T.north[occIdx(o)], te = T.east[occIdx(o)];
-        const m0 = st.north.length - 1;
-        const ax = st.east[m0], ay = st.north[m0];
-        let cross = false;
-        for (let i = 0; i + 2 < m0 && !cross; i++) {
-          const cx = st.east[i], cy = st.north[i], dx = st.east[i + 1], dy = st.north[i + 1];
-          if (Math.max(cx, dx) < Math.min(ax, te) - 1 || Math.min(cx, dx) > Math.max(ax, te) + 1 || Math.max(cy, dy) < Math.min(ay, tn) - 1 || Math.min(cy, dy) > Math.max(ay, tn) + 1) continue;
-          const d1 = (te - ax) * (cy - ay) - (tn - ay) * (cx - ax);
-          const d2 = (te - ax) * (dy - ay) - (tn - ay) * (dx - ax);
-          const d3 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx);
-          const d4 = (dx - cx) * (tn - cy) - (dy - cy) * (te - cx);
-          if (d1 * d2 < 0 && d3 * d4 < 0) cross = true;
-        }
-        if (cross) continue;
+        if (crossesOwn(st, tn, te)) continue;
         bd = d;
         best = o;
       }
@@ -2472,6 +2462,15 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
           }
         }
         if (st.north.length > Math.max(2, cutAt + 1)) cutInto(j, Math.max(2, cutAt + 1));
+        // (On to the middle of the pond's point it came into, so it ends in the pond's water, not at its edge: cut where
+        // it first came in, half-way between raster points, the stream ended where the pond's water is not drawn.)
+        {
+          const me0 = st.north.length - 1;
+          const q = rasterOf(st.north[me0], st.east[me0]);
+          const qn = ORIGIN + Math.floor(q / R) * LAKE_RASTER;
+          const qe = ORIGIN + (q % R) * LAKE_RASTER;
+          if (ptsSet.has(q) && Math.hypot(qn - st.north[me0], qe - st.east[me0]) > 1) appendTo(st, qn, qe, level);
+        }
       } else {
         cutInto(j, runFrom + 1);
         appendTo(st, ORIGIN + Math.floor(runTo / R) * LAKE_RASTER, ORIGIN + (runTo % R) * LAKE_RASTER, level);

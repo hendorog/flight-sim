@@ -1,7 +1,8 @@
 #!/bin/bash
 # extrasR2.sh [OUT]: round T repairs 2 - extrasR.sh's gates (round T's standalone gates) into out/fs/OUT (default
 # finalR2), after finalS.sh OUT suite; plus the junction gate (scripts/probes/junctionGate), the round's under-lake, dry-near and
-# field-bank probes (out/fs/R and out/fs/R2 probes).
+# field-bank probes (out/fs/R and out/fs/R2 probes). Round V A3r: dryNear, fieldFaces, fieldBanks and heldOver measure every
+# line of every kind at every generated field (the fields follow the terrain); worstN and beltOut are the world-wide gates.
 cd "$(dirname "$(readlink -f "$0")")/../.."  # the tree this script lives in (out/fs/..)
 G=$PWD/out/fs/${1:-finalR2}; mkdir -p $G
 P="npx vitest run --config scripts/probes/vitest.config.ts"
@@ -16,6 +17,10 @@ run creaseGate creaseGate CG_SEEDS=1,42,777777
 run paintedLoops paintedLoops JV_SEEDS=1,42,777777
 run junctionGate junctionGate JN_SEEDS=1,42,777777,7,1234,99991
 for s in 1 42 777777; do run wallsGate wallsGate-s$s SEED=$s SKIP_SCAN=1 OUT=$G/walls-s$s.json; done
+# Round V A3r: the world-wide gates and their worst sites (no site named): worstN per seed, and the rivers' channels
+# against their valleys' floors (beltOut).
+for s in 1 42 777777; do run worstN worstN-s$s WN_SEEDS=$s WN_OUT=$G/worstN-views-s$s; done
+run beltOut beltOut BO_SEEDS=1,42,777777
 ( timeout 1800 $C out/fs/verifyT1/code/probes/heldOver.test.ts --silent=false --disable-console-intercept > $G/heldOver.log 2>&1; echo "heldOver exit $?" ) &
 ( timeout 1800 $C out/fs/verifyT1/code/probes/cycles.test.ts --silent=false --disable-console-intercept > $G/cycles.log 2>&1; echo "cycles exit $?" ) &
 wait

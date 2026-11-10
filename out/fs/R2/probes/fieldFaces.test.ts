@@ -1,4 +1,5 @@
-// Round T repairs 2: the steepest bank face of the streams in an airfield's blend. Every stream (kind 1) within a
+// Round T repairs 2: the steepest bank face of the lines in an airfield's blend. Every line (Round V A3r: rivers too, every
+// kind; the airfields follow the terrain, so no field or line is named) within a
 // generated field's reach, every FF_STEP m where the field's blend acts (airportBlend < 1 at its centre): the steepest
 // slope of the drawn ground across hw .. hw + 15 m either side (1 m steps). Lengths where it is over 0.7 (35 degrees)
 // and over 1 (45 degrees) - a cut face, not a bank - per seed (FF_SEEDS); the worst lines.
@@ -18,7 +19,6 @@ it('field faces', () => {
     const tot = { reach: 0, f07: 0, f10: 0 };
     const per: Array<{ li: number; f: string; reach: number; f07: number; f10: number; worst: number; at: string }> = [];
     L.forEach((r, li) => {
-      if (r.kind !== 1) return;
       const m = r.s.length;
       let fName = '';
       const near = (n: number, e: number): boolean => {

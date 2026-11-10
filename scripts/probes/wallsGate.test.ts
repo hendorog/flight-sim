@@ -1,7 +1,8 @@
 // wallsGate (round T, from inv-walls' invWalls; part 1 off unless SCAN=1): where a river's water stands above the dry
 // ground beside it. Group the JSON with out/fs/tools2/group.py.
 //   SEED=42 OUT=out/fs/T0/walls-s42.json npx vitest run --config scripts/probes/vitest.config.ts wallsGate --silent=false --disable-console-intercept
-// Default ACID spots: the owner's valley (-12000,-41933; -11800,-41800) and line 141 (-21504,-26494) on seed 42.
+// No default ACID spots (Round V A3r: no gate names a site; the worst perched rivers world-wide are worstN's 'perched'
+// class). ACID=n,e;... checks given spots.
 // Part 1 re-derives waterWalls' river edges > 10 m (a 50 m grid point in a channel, its 4-neighbour dry and > 10 m
 // under the water) and splits them by what the neighbour really is:
 //   sea-surface: the neighbour is the sea (ground < 0.5) and the water is within 10 m of the sea's surface (0 m);
@@ -231,7 +232,7 @@ it('walls gate', () => {
     return W.h;
   };
   // Acid test: the walk at given points (nearest line), printed.
-  for (const p of (process.env.ACID ?? (seed === 42 ? '-12000,-41933;-11800,-41800;-21504,-26494' : '')).split(';').filter(Boolean)) {
+  for (const p of (process.env.ACID ?? '').split(';').filter(Boolean)) {
     const [an, ae] = p.split(',').map(Number);
     let bl = -1, bd = Infinity, bi = 0;
     for (let li = 0; li < L.length; li++) { const q = nearestOn(li, an, ae); if (q.d < bd) { bd = q.d; bl = li; bi = q.i; } }

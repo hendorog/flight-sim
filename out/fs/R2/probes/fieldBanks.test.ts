@@ -1,4 +1,5 @@
-// Round T repairs 2: how deep the streams run under the ground the airfields shape. Every stream (kind 1) within a
+// Round T repairs 2: how deep the lines run under the ground the airfields shape. Every line (Round V A3r: rivers too, every kind; the
+// airfields follow the terrain, so no field or line is named) within a
 // generated field's reach (or the home field's approaches: heightfield.ts nearField's rule), every FB_STEP m: its water
 // against the drawn ground at its centre and at hw + 3 / hw + 12 m either side. Lengths where the water is hidden (centre
 // ground over it), where the lower bank at hw + 3 stands over the water by > 2.5 / > 4 m (a deep cut), and where the
@@ -19,7 +20,6 @@ it('field banks', () => {
     const tot = { reach: 0, hidden: 0, bank25: 0, bank4: 0, gully4: 0, gully7: 0 };
     const per: Array<{ li: number; f: string; reach: number; bank4: number; gully7: number; worst: number; at: string }> = [];
     L.forEach((r, li) => {
-      if (r.kind !== 1) return;
       const m = r.s.length;
       let fName = '';
       const near = (n: number, e: number): boolean => {

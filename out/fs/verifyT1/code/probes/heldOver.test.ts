@@ -1,4 +1,5 @@
-// Checker T1: after FIELD_HOLD, does a held stream's water still stand over the drawn ground beside it?
+// Checker T1: after FIELD_HOLD, does a held line's water still stand over the drawn ground beside it? (Round V A3r: every
+// line, rivers too - the airfields follow the terrain.)
 // For each stream sample (20 m walk) inside an airfield's reach (nearField, copied), the drawn ground at the channel's
 // edge + 3 m both sides (sampleTerrain) against the line's water. Also the same outside the airfields' reach.
 import { it } from 'vitest';
@@ -32,7 +33,6 @@ it('held over', () => {
     const perLine = new Map<number, { n: number; worst: number; where: string }>();
     for (let li = 0; li < L.length; li++) {
       const r = L[li];
-      if ((r.kind ?? 0) === 0) continue;
       const m = r.north.length;
       for (let i = 0; i < m - 1; i++) {
         const seg = r.s[i + 1] - r.s[i];

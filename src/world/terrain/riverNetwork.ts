@@ -1497,7 +1497,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         flows[li].regime.set(f.regime);
         flows[li].speed.set(f.speed);
       };
-      for (let li = nR; li < allLines.length; li++) {
+      // Every line, river or stream: the airfields are sited on the terrain, wherever it puts them, and a river through
+      // a field's reach is held as a stream is (rivers ran up to 1.5 m under the blends of re-sited fields).
+      for (let li = 0; li < allLines.length; li++) {
         const r = allLines[li] as HeldLine;
         const m = r.level.length;
         // (The ground each sample was levelled on, and its water, before.)
@@ -1511,14 +1513,14 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
           // channel into it, blended into their flats after: heightfield.ts fieldTrim, fieldUnder.)
           // (Or raised where a blend into a flat raises the ground over it, to under that ground as blended - over the
           // ground the channel is carved into before the blend, which the blend then raises over it: heightfield.ts
-          // fieldOver - but no more than RAISE_BESIDE over another stream's water beside it: two streams side by side,
-          // one raised, stood a wall apart - seed 777777 line 734 3 m over 1727, their banks 8 m apart, under KHLT.)
+          // fieldOver - but no more than RAISE_BESIDE over another line's water beside it: two streams side by side,
+          // one raised, stood a wall apart, their banks 8 m apart.)
           let u = over ? over(g, r.north[i], r.east[i]) : -Infinity;
           if (u > r.level[i] + 0.01) {
             const nh = network.channels(r.north[i], r.east[i], beside);
             for (let q = 0; q < nh; q++) {
               const o = beside[q];
-              if (o.line !== li && o.kind === 1 && o.dist < o.halfWidth + r.halfWidth[i] + RAISE_BESIDE_REACH) u = Math.min(u, Math.max(r.level[i], o.level + RAISE_BESIDE));
+              if (o.line !== li && o.dist < o.halfWidth + r.halfWidth[i] + RAISE_BESIDE_REACH) u = Math.min(u, Math.max(r.level[i], o.level + RAISE_BESIDE));
             }
           }
           const raise = u > r.level[i] + 0.01;
@@ -1536,20 +1538,20 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         for (let i = 1; i < m; i++) r.level[i] = Math.min(r.level[i], r.level[i - 1]);
         settle(li, og, was);
       }
-      // A stream joining a reach so raised, under its water now, backs up to it (receivers first).
+      // A line joining a reach so raised, under its water now, backs up to it (receivers first).
       if (over) {
         const seen = new Uint8Array(allLines.length);
         const chain: number[] = [];
-        for (let l0 = nR; l0 < allLines.length; l0++) {
+        for (let l0 = 0; l0 < allLines.length; l0++) {
           chain.length = 0;
-          for (let l = l0; l >= nR && l < allLines.length && !seen[l]; l = joinsOf(l)) {
+          for (let l = l0; l >= 0 && l < allLines.length && !seen[l]; l = joinsOf(l)) {
             seen[l] = 1;
             chain.push(l);
           }
           for (let q = chain.length - 1; q >= 0; q--) {
             const li = chain[q];
             const j = joinsOf(li);
-            if (j < nR || !raisedLine[j]) continue;
+            if (j < 0 || !raisedLine[j]) continue;
             const r = allLines[li] as HeldLine;
             const m = r.level.length;
             const mouth = levelOn(allLines[j], joinSOf(li));
@@ -1653,6 +1655,9 @@ function confineBelt(natural: (north: number, east: number) => number, north: Fl
     if (lim < belt[i]) belt[i] = lim;
   }
 }
+/** meanderChannel: what the loops' scaling leaves past the valley's floor (a short loop, where the scale is spread along
+ * the channel) is pressed into the floor's outer this share. */
+const BELT_EDGE = 0.2;
 /** confineBelt's checks: every this many axis points, where the belt is at least CONFINE_MIN, m. */
 const CONFINE_EVERY = 4;
 const CONFINE_MIN = 150;
@@ -1701,9 +1706,25 @@ function meanderChannel(a: Axis, phase0: number): { north: number[]; east: numbe
   let th2 = 0;
   const seed = Math.floor(phase0 * 1e6) | 0;
   let step = 0;
+  /** How far the channel's centre may swing from the axis at valley arc length sv and keep its banks on the valley's
+   * floor: the floor the valley's carve keeps (the floodplain, or past the belt by SWING_KEEP, wallStart), less the
+   * channel's half-width and bank; narrowing to nothing over the last meander length, as the march's belt does. */
+  const floorAt = (sv: number): number => {
+    const i = segmentAt(a.s, sv);
+    const t = Math.min(1, Math.max(0, (sv - a.s[i]) / Math.max(1e-9, a.s[i + 1] - a.s[i])));
+    const lerp = (x: Float64Array): number => x[i] + (x[i + 1] - x[i]) * t;
+    const hw = lerp(a.halfWidth);
+    const floor = Math.max(lerp(a.floodplain), lerp(a.belt) + hw + SWING_KEEP) - hw - CHANNEL_BANK;
+    return Math.max(0, floor) * Math.min(1, Math.max(0, (total - sv) / Math.max(1, a.wavelength[i])));
+  };
   const put = (sv: number, y: number): void => {
     const i = segmentAt(a.s, sv);
     const t = Math.min(1, Math.max(0, (sv - a.s[i]) / Math.max(1e-9, a.s[i + 1] - a.s[i])));
+    // (Whatever the scaling below leaves past the floor is pressed against its edge, smoothly over its outer BELT_EDGE.)
+    const b = floorAt(sv);
+    const k = (1 - BELT_EDGE) * b;
+    const ay = Math.abs(y);
+    if (ay > k) y = Math.sign(y) * (b > 0 ? k + (b - k) * Math.tanh((ay - k) / (b - k)) : 0);
     const tn = a.north[i + 1] - a.north[i];
     const te = a.east[i + 1] - a.east[i];
     const tl = Math.hypot(tn, te) || 1;
@@ -1713,7 +1734,14 @@ function meanderChannel(a: Axis, phase0: number): { north: number[]; east: numbe
     vs.push(sv);
     os.push(y);
   };
-  put(0, 0);
+  // The march's points (valley arc length, offset), laid once it is done.
+  const rs: number[] = [];
+  const ry: number[] = [];
+  const mark = (sv: number, y: number): void => {
+    rs.push(sv);
+    ry.push(y);
+  };
+  mark(0, 0);
   // A bound on the march: the channel is at most a few times longer than its valley.
   const maxSteps = Math.ceil((total / 15) * 12) + 200;
   for (let guard = 0; along < total && guard < maxSteps; guard++) {
@@ -1754,17 +1782,45 @@ function meanderChannel(a: Axis, phase0: number): { north: number[]; east: numbe
     off += Math.sin(theta) * ds;
     // The end of the line: back onto the axis.
     if (along >= total) {
-      put(total, 0);
+      mark(total, 0);
       break;
     }
-    put(Math.max(0, along), off);
+    mark(Math.max(0, along), off);
   }
   // Not expected: had it stalled, close the gap along the axis rather than with one straight jump.
-  if (vs[vs.length - 1] < total) {
-    const from = Math.max(0, vs[vs.length - 1]);
-    const y0 = os[os.length - 1];
+  if (rs[rs.length - 1] < total) {
+    const from = Math.max(0, rs[rs.length - 1]);
+    const y0 = ry[ry.length - 1];
     const k = Math.max(1, Math.ceil((total - from) / 40));
-    for (let j = 1; j <= k; j++) put(from + ((total - from) * j) / k, y0 * (1 - j / k));
+    for (let j = 1; j <= k; j++) mark(from + ((total - from) * j) / k, y0 * (1 - j / k));
+  }
+  // The channel stays on its valley's floor, the floor the valley's carve keeps (wallStart). The march only steers back
+  // once past the belt's edge, and a loop swung past it (up to twice the belt, where the belt narrows) cut its channel
+  // into the valley's wall, the water 100-250 m under the ground beside it. Each loop (a run of the offset on one side)
+  // that would take its banks off the floor is scaled down to it, whole, so it keeps its round shape: a confined river
+  // follows its valley. The scale changes gradually along the channel (over an eighth of a meander length either side),
+  // so the loops meet without a kink.
+  const m0 = rs.length;
+  const f = new Float64Array(m0).fill(1);
+  for (let a0 = 0; a0 < m0; ) {
+    const side = ry[a0] >= 0;
+    let z = a0;
+    while (z + 1 < m0 && ry[z + 1] >= 0 === side) z++;
+    let k = 1;
+    for (let q = a0; q <= z; q++) if (Math.abs(ry[q]) > 1e-6) k = Math.min(k, floorAt(rs[q]) / Math.abs(ry[q]));
+    for (let q = a0; q <= z; q++) f[q] = k;
+    a0 = z + 1;
+  }
+  for (let q = 0; q < m0; q++) {
+    const lam = a.wavelength[segmentAt(a.s, Math.max(0, rs[q]))];
+    const W = Math.max(1, Math.round(lam / (8 * Math.min(40, Math.max(15, lam / 10)))));
+    let sum = 0;
+    let cnt = 0;
+    for (let p = Math.max(0, q - W); p <= Math.min(m0 - 1, q + W); p++) {
+      sum += f[p];
+      cnt++;
+    }
+    put(rs[q], ry[q] * (sum / cnt));
   }
   return { north: n, east: e, valleyS: vs, off: os };
 }
