@@ -34,8 +34,9 @@
 // Held at G: ground outside the orogen's mountain mask (the ranges' uplift share `ur`, `onset` to `full`), the sea,
 // the home field's held ground and protected surfaces (erosion.ts `hard`, `cap`). Fixed at their own level: the floors
 // the 1 km model carved (erosion.ts FloorLines: every channel's course, its B-spline, about every 40 m, with the
-// floor's half-width; at the model's ground there), the base level the slopes are graded up from. The nodes on a floor
-// stand at its level; the envelope never raises them. The terrain draws the floors along their lines (erosion.ts
+// floor's half-width, or the nodes within half a node of its line where the floor is narrower; at the model's ground
+// there), the base level the slopes are graded up from along every course. The nodes on a floor stand at its level; the
+// envelope never raises them. The terrain draws the floors along their lines (erosion.ts
 // floorGround), so the rivers laid on them (riverNetwork.ts) read the model's floor as their level.
 
 import { DOMAIN_HALF } from './drainage';
@@ -82,7 +83,7 @@ export function setSlopeParams(p: Partial<SlopeParams> | null): void {
 export const slopeParams = (): SlopeParams => ({ ...SLOPES, ...(override ?? {}) });
 /** The settings as part of the model's cache key (heightfield.ts), with the pass's version (bump when what it holds or
  * hands on changes meaning). */
-const SLOPE_VERSION = 'lf2';
+const SLOPE_VERSION = 'lf3';
 export const slopeKey = (p: SlopeParams): string => [SLOPE_VERSION, p.sc, p.ac, p.ks, p.theta, p.onset, p.full, p.iterations, p.gully, p.fine, p.lift, p.soft, p.crown].join('_');
 
 /** What the pass hands the terrain (erosion.ts ErosionField.slopes), on the fine grid (n x n from (-DOMAIN_HALF,
@@ -228,7 +229,7 @@ class Heap {
 }
 
 /** Probes: what the last pass did (nodes, iterations' changed receivers, ms per part). */
-export const slopeStats = { active: 0, sampled: 0, changed: [] as number[], corners: 0, msSample: 0, msPass: 0, floorLines: 0, floorPoints: 0, floorNodes: 0, floorWalls: 0, msFloor: 0, msLevels: 0 };
+export const slopeStats = { active: 0, sampled: 0, changed: [] as number[], corners: 0, msSample: 0, msPass: 0, floorLines: 0, floorPoints: 0, floorNodes: 0, floorWalls: 0, msFloor: 0, msLevels: 0, lines: null as FloorLines | null };
 
 /** A model's floor bounds the nodes' ground this far past its edge, m (FloorLines; past that the pass's own build from
  * its receivers stands under the floor's slopes anyway). */
@@ -254,10 +255,11 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, g
     w8[q] = Math.round(255 * Math.min(1, v));
     W[q] = w8[q] / 255;
   }
-  // The model's floors: the weighted nodes within a floor's half-width of its line lie on it, fixed at the model's own
-  // ground there (the pass's base level); about them, within FLOOR_REACH past a floor's edge, the lowest of the floors'
-  // walls - the edge's level (the model's ground at it, on the node's side) rising past it at the node's threshold
-  // gradient (sc by its weight, as the build's) - which the nodes built from their receivers never stand over.
+  // The model's floors: the weighted nodes within a floor's half-width of its line, or within half a node of it, lie on
+  // it, fixed at the model's own ground there (the pass's base level); about them, within FLOOR_REACH past a floor's
+  // edge, the lowest of the floors' walls - the edge's level (the model's ground at it, on the node's side) rising past it
+  // at the node's threshold gradient (sc by its weight, as the build's) - which the nodes built from their receivers
+  // never stand over.
   const fz = new Float32Array(N).fill(Infinity);
   const floor = new Uint8Array(N);
   {
@@ -301,16 +303,21 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, g
       }
       for (const q of touched) {
         const past = bw[q];
+        const d = bd[q];
         bd[q] = Infinity;
         if (bo[q] || past > FLOOR_REACH) continue;
-        // (On a floor: the model's own ground there, marked; past it, its edge's level rising at the threshold.)
-        if (past <= 0) floor[q] = 255;
+        // (On a floor: the model's own ground there, marked - as is the node nearest its line where the floor is narrower
+        // than the nodes are apart, every node within half a node of the line: the line is the base level along all its
+        // length, not only where its floor is wide enough to hold a node. Past it, its edge's level rising at the
+        // threshold.)
+        if (past <= 0 || d <= 0.5 * cell) floor[q] = 255;
         else fz[q] = Math.min(fz[q], bz[q] + (p.sc / W[q]) * past);
       }
       touched.length = 0;
     }
   }
   slopeStats.floorLines = lines.start.length - 1;
+  slopeStats.lines = lines;
   slopeStats.floorPoints = lines.north.length;
   slopeStats.floorNodes = 0;
   slopeStats.floorWalls = 0;

@@ -13,6 +13,9 @@
 //   poolcut   a fall's pool (every fall) whose water stands under the drawn ground 60 m beside it on both sides (a slot)
 //   cross     a line that crosses itself (seededWorld's check, every line)
 //   stepup    a junction where the receiver's water stands over the joining line's (junctionGate's measure, > 0.5 m)
+//   slot      a line's water in a box slot: the drawn ground 15 m beyond each bank (half-width + 15 m) on both sides over
+//             the water, the lower of the two (every 50 m, every line, not in standing water; the A3 checker's chkSlot);
+//             km over 20 / 40 m by kind
 // Also each class's world-wide totals per seed. WN_OUT: a views file (name query) of every site's camera.
 //   WN_SEEDS=1,42,777777 WN_OUT=out/fs/A3r/worstN npx vitest run --config scripts/probes/vitest.config.ts worstN
 import { it } from 'vitest';
@@ -68,7 +71,7 @@ function worst(all: Site[], N: number, apart: number): Site[] {
 it('worst N', () => {
   const N = Number(env.WN_N ?? 3);
   const APART = Number(env.WN_APART ?? 3000);
-  const classes = (env.WN_CLASSES ?? 'perched,step,face,hidden,poolcut,cross,stepup').split(',');
+  const classes = (env.WN_CLASSES ?? 'perched,step,face,hidden,poolcut,cross,stepup,slot').split(',');
   const views: string[] = [];
   const s = makeSample();
   for (const seed of (env.WN_SEEDS ?? '1,42,777777').split(',').map(Number)) {
@@ -288,6 +291,32 @@ it('worst N', () => {
       });
       found.stepup = worst(all, N, APART);
       totals.push(`stepup: junction step-ups > 0.5 / 2 / 5 m ${c.join(' / ')} (in lakes and out)`);
+    }
+
+    if (classes.includes('slot')) {
+      const all: Site[] = [];
+      const km = [[0, 0], [0, 0]];
+      const ss = makeSample();
+      L.forEach((r, li) => {
+        const k = (r.kind ?? 0) === 0 ? 0 : 1;
+        let last = -1e9;
+        for (let i = 1; i < r.north.length - 1; i++) {
+          if (r.s[i] - last < 50) continue;
+          last = r.s[i];
+          sampleTerrain(r.north[i], r.east[i], ss);
+          if (Number.isFinite(ss.standing) && ss.standing > 0 && ss.standing >= r.level[i] - 0.05) continue;
+          const dn = r.north[i + 1] - r.north[i - 1], de = r.east[i + 1] - r.east[i - 1];
+          const dl = Math.hypot(dn, de) || 1;
+          const un = -de / dl, ue = dn / dl, d = r.halfWidth[i] + 15;
+          const a = terrainHeight(r.north[i] + un * d, r.east[i] + ue * d), b = terrainHeight(r.north[i] - un * d, r.east[i] - ue * d);
+          const slot = Math.min(a, b) - r.level[i];
+          if (slot > 20) km[k][0] += 0.05;
+          if (slot > 40) km[k][1] += 0.05;
+          if (slot > 20) all.push({ cls: 'slot', v: slot, n: r.north[i], e: r.east[i], z: r.level[i], key: `${li}`, text: `line ${li} (kind ${r.kind ?? 0}) water ${r.level[i].toFixed(1)} in a slot ${slot.toFixed(0)} m deep (walls ${a.toFixed(0)} / ${b.toFixed(0)} at ${d.toFixed(0)} m)` });
+        }
+      });
+      found.slot = worst(all, N, APART);
+      totals.push(`slot: water in a box slot (both walls 15 m past the banks over it) > 20 / > 40 m, km: rivers ${km[0].map((x) => x.toFixed(2)).join(' / ')}, streams ${km[1].map((x) => x.toFixed(2)).join(' / ')}`);
     }
 
     for (const t of totals) console.log(`WN seed ${seed} TOTAL ${t}`);

@@ -676,6 +676,10 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       return false;
     });
     if (low - 1.3 >= level) return Infinity;
+    return valleyGround(pn, pe) - 1.3;
+  };
+  /** The ground at (pn, pe) as the valleys carve it: their floors and walls cut into the ground, m. */
+  const valleyGround = (pn: number, pe: number): number => {
     let h = natural(pn, pe);
     valleyIndex.perLine(pn, pe, (lj, k, t, d) => {
       const v = axes[lj];
@@ -689,7 +693,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       h += (carved - h) * (1 - smooth(f + I * 0.75, f + I, d));
       return false;
     });
-    return h - 1.3;
+    return h;
   };
 
   // --- Channels: meandering curves about the axis (Ferguson's disturbed periodic model), some loops cut off as oxbows; a tributary's end on its parent's channel.
@@ -698,7 +702,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   for (let li = 0; li < lines.length; li++) {
     const a = axes[li];
     const total = a.s[a.s.length - 1];
-    const ch = meanderChannel(a, (hash2i(li, 0x3ea) & 0xffff) / 65536 * Math.PI * 2);
+    const ch = meanderChannel(a, (hash2i(li, 0x3ea) & 0xffff) / 65536 * Math.PI * 2, valleyGround);
     for (const o of cutOffLoops(ch, a, li)) {
       oxbows.push({
         north: o.north,
@@ -1658,6 +1662,8 @@ function confineBelt(natural: (north: number, east: number) => number, north: Fl
 /** meanderChannel: what the loops' scaling leaves past the valley's floor (a short loop, where the scale is spread along
  * the channel) is pressed into the floor's outer this share. */
 const BELT_EDGE = 0.2;
+/** heightfield.ts channelProfile's bank: it stands BANK_HEIGHT over the water (meanderChannel: a loop cuts that much). */
+const LOOP_BANK = 1.3;
 /** confineBelt's checks: every this many axis points, where the belt is at least CONFINE_MIN, m. */
 const CONFINE_EVERY = 4;
 const CONFINE_MIN = 150;
@@ -1690,7 +1696,7 @@ const besselJ0 = (x: number): number => {
  * length and lean from one to the next. Big lowland rivers (meander near 1) swing widely enough for horseshoe loops;
  * streams wander a little. Marched in the axis frame (along, offset), steered back if it drifts outside the belt.
  */
-function meanderChannel(a: Axis, phase0: number): { north: number[]; east: number[]; valleyS: number[]; off: number[] } {
+function meanderChannel(a: Axis, phase0: number, valleyGround: (north: number, east: number) => number): { north: number[]; east: number[]; valleyS: number[]; off: number[] } {
   const total = a.s[a.s.length - 1];
   const n: number[] = [];
   const e: number[] = [];
@@ -1717,14 +1723,15 @@ function meanderChannel(a: Axis, phase0: number): { north: number[]; east: numbe
     const floor = Math.max(lerp(a.floodplain), lerp(a.belt) + hw + SWING_KEEP) - hw - CHANNEL_BANK;
     return Math.max(0, floor) * Math.min(1, Math.max(0, (total - sv) / Math.max(1, a.wavelength[i])));
   };
-  const put = (sv: number, y: number): void => {
+  const put = (sv: number, y: number, scaled: boolean): void => {
     const i = segmentAt(a.s, sv);
     const t = Math.min(1, Math.max(0, (sv - a.s[i]) / Math.max(1e-9, a.s[i + 1] - a.s[i])));
-    // (Whatever the scaling below leaves past the floor is pressed against its edge, smoothly over its outer BELT_EDGE.)
+    // (Whatever the scaling below leaves past the floor is pressed against its edge, smoothly over its outer BELT_EDGE:
+    // only where a loop was scaled - a loop that keeps to the floor keeps its shape.)
     const b = floorAt(sv);
     const k = (1 - BELT_EDGE) * b;
     const ay = Math.abs(y);
-    if (ay > k) y = Math.sign(y) * (b > 0 ? k + (b - k) * Math.tanh((ay - k) / (b - k)) : 0);
+    if (scaled && ay > k) y = Math.sign(y) * (b > 0 ? k + (b - k) * Math.tanh((ay - k) / (b - k)) : 0);
     const tn = a.north[i + 1] - a.north[i];
     const te = a.east[i + 1] - a.east[i];
     const tl = Math.hypot(tn, te) || 1;
@@ -1794,12 +1801,16 @@ function meanderChannel(a: Axis, phase0: number): { north: number[]; east: numbe
     const k = Math.max(1, Math.ceil((total - from) / 40));
     for (let j = 1; j <= k; j++) mark(from + ((total - from) * j) / k, y0 * (1 - j / k));
   }
-  // The channel stays on its valley's floor, the floor the valley's carve keeps (wallStart). The march only steers back
-  // once past the belt's edge, and a loop swung past it (up to twice the belt, where the belt narrows) cut its channel
-  // into the valley's wall, the water 100-250 m under the ground beside it. Each loop (a run of the offset on one side)
-  // that would take its banks off the floor is scaled down to it, whole, so it keeps its round shape: a confined river
-  // follows its valley. The scale changes gradually along the channel (over an eighth of a meander length either side),
-  // so the loops meet without a kink.
+  // The channel stays on its valley's floor where the valley has walls. The march only steers back once past the belt's
+  // edge, and a loop swung past it (up to twice the belt, where the belt narrows) cut its channel into the valley's
+  // wall, the water 100-250 m under the ground beside it. Each loop (a run of the offset on one side) that would take its
+  // banks off the floor the valley's carve keeps (the floodplain, or past the belt by SWING_KEEP, wallStart) onto a wall
+  // is scaled down to the floor, whole, so it keeps its round shape: a confined river follows its valley. A wall is
+  // ground standing over the river's water by more than the floor and the channel's own bank do (FLOOR_OVER and the
+  // bank's height, as the valleys carve the ground, at the point where the loop leaves its floor furthest): past the
+  // floodplain on open ground - where a tributary's valley opens in, or on a plain - the loop keeps its size. The scale
+  // changes gradually along the channel (over an eighth of a meander length either side), so the loops meet without a
+  // kink.
   const m0 = rs.length;
   const f = new Float64Array(m0).fill(1);
   for (let a0 = 0; a0 < m0; ) {
@@ -1807,7 +1818,28 @@ function meanderChannel(a: Axis, phase0: number): { north: number[]; east: numbe
     let z = a0;
     while (z + 1 < m0 && ry[z + 1] >= 0 === side) z++;
     let k = 1;
-    for (let q = a0; q <= z; q++) if (Math.abs(ry[q]) > 1e-6) k = Math.min(k, floorAt(rs[q]) / Math.abs(ry[q]));
+    let far = -1;
+    let past = 0;
+    for (let q = a0; q <= z; q++) {
+      const ay = Math.abs(ry[q]);
+      const b = floorAt(rs[q]);
+      if (!(ay > b)) continue;
+      k = Math.min(k, b / ay);
+      if (ay - b > past) {
+        past = ay - b;
+        far = q;
+      }
+    }
+    if (far >= 0) {
+      const sv = rs[far];
+      const i = segmentAt(a.s, sv);
+      const t = Math.min(1, Math.max(0, (sv - a.s[i]) / Math.max(1e-9, a.s[i + 1] - a.s[i])));
+      const tn = a.north[i + 1] - a.north[i];
+      const te = a.east[i + 1] - a.east[i];
+      const tl = Math.hypot(tn, te) || 1;
+      const lv = a.level[i] + (a.level[i + 1] - a.level[i]) * t;
+      if (valleyGround(a.north[i] + tn * t - (te / tl) * ry[far], a.east[i] + te * t + (tn / tl) * ry[far]) - lv <= FLOOR_OVER + LOOP_BANK) k = 1;
+    }
     for (let q = a0; q <= z; q++) f[q] = k;
     a0 = z + 1;
   }
@@ -1820,7 +1852,7 @@ function meanderChannel(a: Axis, phase0: number): { north: number[]; east: numbe
       sum += f[p];
       cnt++;
     }
-    put(rs[q], ry[q] * (sum / cnt));
+    put(rs[q], ry[q] * (sum / cnt), sum < cnt);
   }
   return { north: n, east: e, valleyS: vs, off: os };
 }

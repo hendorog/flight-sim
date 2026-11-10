@@ -9,7 +9,9 @@
 //   - its gullies: pass channels (gullies.ts gullyNet: the slopes' own 250 m D8 routing and catchment) of FC_GULLY
 //     (1.5) km² or more meeting it. A gully meets a river at a node q of the net with that catchment that lies more
 //     than FC_REACH (300) m from every river's channel while its receiver lies within FC_REACH m of this river's (the
-//     nearest): the gully's last node before the river's floor. One such node is one gully.
+//     nearest) - or (Round V A3 fix) while its receiver is a node the pass holds fixed (no routing of its own: a model's
+//     floor, which the river's floor is since A3, 450 m and more either side) within FC_FLOOR (1000) m of this river's
+//     channel (the nearest): the gully's last node before the river's floor. One such node is one gully.
 //     It has a drawn stream when a kind-1 line passes within FC_DRAWN (200) m of q.
 //   Caveats: the net exists only inside the slopes' mask (the mountains), so the gully half covers the mountain rivers
 //   only; the lines-per-10-km half is domain-wide. The net's catchment counts only nodes inside the pass, so a gully
@@ -27,6 +29,7 @@ const END = Number(env.FC_END ?? 300);
 const GULLY = Number(env.FC_GULLY ?? 1.5);
 const REACH = Number(env.FC_REACH ?? 300);
 const DRAWN = Number(env.FC_DRAWN ?? 200);
+const FLOOR = Number(env.FC_FLOOR ?? 1000);
 
 /** Points of lines in square buckets; nearest point (and its line) within a reach. */
 class Pts {
@@ -121,8 +124,8 @@ it('feed count', () => {
         const r = receiverOf(g, q);
         if (r < 0) continue;
         const [rn, re] = at(r);
-        riv.near(rn, re, REACH, h2);
-        if (h2.d > REACH) continue;
+        riv.near(rn, re, g.dir[r] ? REACH : FLOOR, h2);
+        if (h2.d > (g.dir[r] ? REACH : FLOOR)) continue;
         const row = rows[h2.tag];
         const big = g.area[q] >= 10;
         row.gullies++;
@@ -149,7 +152,7 @@ it('feed count', () => {
     console.log(`  most gullies with no drawn stream: ${worst.map((r) => `${r.li} (${r.km.toFixed(1)} km, A ${r.area.toFixed(0)}: ${r.dry}/${r.gullies}, ${r.dryBig} >= 10 km²)`).join('; ')}`);
     const bare = rows.filter((r) => r.km >= 5 && r.streams + r.chains === 0);
     console.log(`  rivers >= 5 km with no line ending on them: ${bare.length}${bare.length ? ` (${bare.slice(0, 12).map((r) => `${r.li}:${r.km.toFixed(0)} km`).join(' ')})` : ''}`);
-    if (OUT) fs.writeFileSync(`${OUT}/feedCount-s${seed}.json`, JSON.stringify({ seed, nR, chains: [cs, ce], params: { END, GULLY, REACH, DRAWN }, rows }));
+    if (OUT) fs.writeFileSync(`${OUT}/feedCount-s${seed}.json`, JSON.stringify({ seed, nR, chains: [cs, ce], params: { END, GULLY, REACH, FLOOR, DRAWN }, rows }));
   }
   setWorldSeed(0);
 });

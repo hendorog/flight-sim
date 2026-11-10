@@ -35,4 +35,11 @@ for seed in seeds:
         i = len(p)
         if start is not None: flush()
     runs.sort(reverse=True)
-    print(f"seed {seed}: {len(runs)} runs > 500 m, {sum(r[0] for r in runs) / 1000:.2f} km" + ''.join(f"\n   stream {r[1]} by river {r[2]}: {r[0]:.0f} m from {r[3][0]:.0f},{r[3][1]:.0f} (A {r[3][2]:.0f})" for r in runs[:10]))
+    # (Round V A3 fix: each run told apart by where the stream ends - on that river's channel, within 300 m: a tributary
+    # running beside its receiver into the junction; further: a true double, two courses down one floor.)
+    def endGap(r):
+        e = L[r[1]]['pts'][-1]
+        return min(math.hypot(q[0] - e[0], q[1] - e[1]) for q in L[r[2]]['pts'])
+    gaps = [endGap(r) for r in runs]
+    true = [(r, g) for r, g in zip(runs, gaps) if g > C]
+    print(f"seed {seed}: {len(runs)} runs > 500 m, {sum(r[0] for r in runs) / 1000:.2f} km; junction approaches (the stream ends on that river) {len(runs) - len(true)}, true doubles {len(true)} ({sum(r[0] for r, g in true) / 1000:.2f} km)" + ''.join(f"\n   stream {r[1]} by river {r[2]}: {r[0]:.0f} m from {r[3][0]:.0f},{r[3][1]:.0f} (A {r[3][2]:.0f}), ends {g:.0f} m from it{' TRUE DOUBLE' if g > C else ''}" for r, g in list(zip(runs, gaps))[:10]))

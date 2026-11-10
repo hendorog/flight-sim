@@ -21,6 +21,10 @@ for s in 1 42 777777; do run wallsGate wallsGate-s$s SEED=$s SKIP_SCAN=1 OUT=$G/
 # against their valleys' floors (beltOut).
 for s in 1 42 777777; do run worstN worstN-s$s WN_SEEDS=$s WN_OUT=$G/worstN-views-s$s; done
 run beltOut beltOut BO_SEEDS=1,42,777777
+# Round V A3 fix: the model's floors' lines world-wide (drawn and traced ground along every line, fixed nodes) and the big
+# rivers' loops world-wide (3 km windows over 1.5).
+run floorLineGate floorLineGate FG_SEEDS=1,42,777777
+run loopCount loopCount LC_SEEDS=1,42,777777
 ( timeout 1800 $C out/fs/verifyT1/code/probes/heldOver.test.ts --silent=false --disable-console-intercept > $G/heldOver.log 2>&1; echo "heldOver exit $?" ) &
 ( timeout 1800 $C out/fs/verifyT1/code/probes/cycles.test.ts --silent=false --disable-console-intercept > $G/cycles.log 2>&1; echo "cycles exit $?" ) &
 wait
