@@ -45,10 +45,13 @@ export const LAKE_HOME_CLEAR = 6000;
  * 2500 km² keeps a gorge 150 m deep and 13 km long. Smaller values give more lakes and fewer gorges.
  */
 const BREACH_DEPTH = 3;
+/** The deepest cut, m, the water of a catchment of `area` km² keeps through a rim (BREACH_DEPTH sqrt(A)): the drainage's
+ * breach rule, and the streams' (streams.ts trace: a hollow deeper than this holds a pond behind it). */
+export const breachAllowance = (area: number): number => BREACH_DEPTH * Math.sqrt(Math.max(0, area));
 const BREACH_LENGTH = 3;
 const BREACH_LENGTH_AREA = 0.2;
 /** A lake's water stands at least this far over the detailed ground at its middle, m. */
-const LAKE_MIDDLE_DEPTH = 4;
+export const LAKE_MIDDLE_DEPTH = 4;
 /** Largest pond a river may stand in, lattice cells (km²). */
 const POND_MAX_CELLS = 120;
 /** A cut no deeper than this, m, does not count toward a breach's length (a river entrenches that much anywhere: a
@@ -57,7 +60,7 @@ const BREACH_SHALLOW = 10;
 /** Breach-and-fill passes (each settles the hollows the last one's cuts and ponds left). */
 const BREACH_PASSES = 6;
 /** A hollow is filled at least this deep, m, before it counts as one. */
-const HOLLOW_TOL = 0.5;
+export const HOLLOW_TOL = 0.5;
 /** Height of the mound over the home field during routing, m, and its radius, m. */
 export const HOME_MOUND = 80;
 export const HOME_RADIUS = 3500;
@@ -874,7 +877,7 @@ const RASTER_PER_CELL = DRAIN_CELL / LAKE_RASTER;
  * margin, m: every raster point beside that domain stands this much over the water, so the domain's edge (along the
  * raster lines) lies over dry ground (the ground the flood sees is smooth at the raster's scale: see LakeMask).
  */
-const LAKE_MARGIN = 3;
+export const LAKE_MARGIN = 3;
 /** The small-scale relief is smoothed out over a lake's domain and this many raster points round it (then fades out
  * over the cubic B-spline's reach, two more). */
 const SMOOTH_RING = 2;
@@ -1436,7 +1439,9 @@ export class LakeMask {
   /**
    * Add a pond flooded after the drainage (streams.ts: a closed hollow a stream ends in, filled to its spill): its
    * raster points (global indices) whose `ground` (the routing ground there) lies under `level`, as one pool of a new
-   * raster of its own (no relief smoothing about it). Returns the pool's id. Its water is drawn as any lake's (at).
+   * raster of its own (no relief smoothing about it: the streams traced before it keep the ground they ran on). Its
+   * points are the lakes' domain (the ground under its level plus LAKE_MARGIN, streams.ts), so its shore lies inside
+   * them, where the ground crosses its level. Returns the pool's id. Its water is drawn as any lake's (at).
    */
   addPond(points: readonly number[], ground: readonly number[], level: number, spill: number): number {
     const { d } = this;
