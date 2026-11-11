@@ -1336,7 +1336,7 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
   // lake under the ground the lake's water needs (as the valleys keep it, LakeMask.holds).
   if (nv > 0 && dryS) {
     const hv = h;
-    h = floorSet(h, valleyNear, nv);
+    h = floorSet(h, valleyNear, nv, hNatural);
     if (hold > 0) h += hold * Math.max(0, Math.min(hv, holdLevel + 0.5) - h);
   }
 

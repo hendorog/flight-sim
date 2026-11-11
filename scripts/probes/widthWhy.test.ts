@@ -40,7 +40,7 @@ it('width why', () => {
           if (!(sm.river > sm.ground || (sm.ground <= lvl + 1 && sm.ground < naturalHeight(n, e) - 0.3))) break;
           width += 0.5;
         }
-        if (width > 0) rows.push([A, width, (r.bedR?.[i] ?? 0) + (r.bedL?.[i] ?? 0), (r.wetR?.[i] ?? 0) + (r.wetL?.[i] ?? 0)]);
+        if (width > 0) rows.push([A, width, (r.bedR?.[i] ?? 0) + (r.bedL?.[i] ?? 0), (r.wetR?.[i] ?? 0) + (r.wetL?.[i] ?? 0), n0, e0, (r.level[Math.max(0, i - 5)] - r.level[Math.min(r.s.length - 1, i + 5)]) / Math.max(1, r.s[Math.min(r.s.length - 1, i + 5)] - r.s[Math.max(0, i - 5)])]);
       }
     });
     const corr = (x: number[], y: number[]): number => { const mx = x.reduce((a, b) => a + b, 0) / x.length, my = y.reduce((a, b) => a + b, 0) / y.length; let c = 0, vx = 0, vy = 0; for (let k = 0; k < x.length; k++) { c += (x[k] - mx) * (y[k] - my); vx += (x[k] - mx) ** 2; vy += (y[k] - my) ** 2; } return c / Math.sqrt(vx * vy || 1); };
@@ -48,6 +48,10 @@ it('width why', () => {
     const q = (a: number[], p: number): number => [...a].sort((x, y) => x - y)[Math.floor(p * (a.length - 1))];
     const ratio = rows.map((r) => r[1] / Math.max(0.1, r[2]));
     console.log(`WW seed ${seed}: ${rows.length} profiles; corr(log drawn, log A) ${corr(rows.map((r) => Math.log(r[1])), la).toFixed(2)}; corr(log bed, log A) ${corr(rows.map((r) => Math.log(Math.max(0.1, r[2]))), la).toFixed(2)}; corr(log water, log A) ${corr(rows.map((r) => Math.log(Math.max(0.1, r[3]))), la).toFixed(2)}; drawn/bed p10 ${q(ratio, 0.1).toFixed(2)} p50 ${q(ratio, 0.5).toFixed(2)} p90 ${q(ratio, 0.9).toFixed(2)} p99 ${q(ratio, 0.99).toFixed(2)}; drawn at the 120 m walk's end ${rows.filter((r) => r[1] >= 240).length}`);
+    const order = rows.map((r, k) => k).sort((a, b) => ratio[b] - ratio[a]);
+    for (const k of order.slice(0, 12)) console.log(`WW   wide: A ${rows[k][0].toFixed(1)} drawn ${rows[k][1].toFixed(1)} bed ${rows[k][2].toFixed(1)} water ${rows[k][3].toFixed(1)} at ${rows[k][4].toFixed(0)},${rows[k][5].toFixed(0)} gradient ${(100 * rows[k][6]).toFixed(1)} %`);
+    const byS = [[0, 0.01], [0.01, 0.04], [0.04, 1]].map(([lo, hi]) => { const ks = rows.map((r, k) => k).filter((k) => rows[k][6] >= lo && rows[k][6] < hi); return `S ${lo}-${hi}: ${ks.length} drawn/bed p50 ${q(ks.map((k) => ratio[k]), 0.5).toFixed(2)}`; });
+    console.log(`WW seed ${seed}: by gradient ${byS.join('; ')}`);
     const trimmed = rows.filter((r, k) => ratio[k] < q(ratio, 0.9));
     console.log(`WW seed ${seed}: without the widest tenth (drawn/bed): corr(log drawn, log A) ${corr(trimmed.map((r) => Math.log(r[1])), trimmed.map((r) => Math.log(r[0]))).toFixed(2)}`);
   }

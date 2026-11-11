@@ -56,13 +56,13 @@ export function struveH0(x: number): number {
 /** Peak-to-axis amplitude of a sine-generated curve of valley wavelength lam and swing om (rad), m. */
 export const sineAmplitude = (lam: number, om: number): number => (lam * struveH0(om)) / (4 * Math.max(0.05, besselJ0(om)));
 
-/** The largest swing <= om whose amplitude fits in `room` (m). */
+/** The largest swing <= om whose amplitude fits in `room` (m), to a 65536th of om. */
 export function fitSwing(lam: number, om: number, room: number): number {
   if (!(room > 0)) return 0;
   if (sineAmplitude(lam, om) <= room) return om;
   let lo = 0;
   let hi = om;
-  for (let k = 0; k < 30; k++) {
+  for (let k = 0; k < 16; k++) {
     const mid = 0.5 * (lo + hi);
     if (sineAmplitude(lam, mid) <= room) lo = mid;
     else hi = mid;

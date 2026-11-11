@@ -211,5 +211,7 @@ describe('determinism', () => {
     setWorldSeed(42);
     expect(fingerprint()).toEqual(a);
     expect(b).not.toEqual(a);
-  }, 60_000);
+    // (Three world builds of about 15-16 s each, quiet: 50 s alone, 62 s inside the whole suite. Raised from 60 s under
+    // the owner's decision of 2026-11-10, Round W R.)
+  }, 90_000);
 });

@@ -117,13 +117,15 @@ const CARVE_CHECK = 40;
 const BED_WIDE = [2, 4];
 /** On a straight reach a single thread's gravel lies on alternate sides about every ALT_BARS bed widths. */
 const ALT_BARS = 6;
+/** A joining line's mouth lies beside its receiver within this, m (RN45's raise of the receiver below the junction). */
+const MOUTH_BESIDE = 60;
 /** A bed's edges are smoothed along its line over this share of its width either side. */
 const BED_SMOOTH = 0.5;
 /** A joining line's bed narrows to its water over its last JOIN_BLEND bed widths (its receiver's, or its own if wider). */
 const JOIN_BLEND = 2;
 /** The bed's width varies as exp(WIDTH_SPREAD h) (DESIGN.md's 0.45 drew widths too loosely tied to their catchment: the
- * owner's 'the catchment size should dictate the width of the stream bed'). */
-const WIDTH_SPREAD = 0.3;
+ * owner's 'the catchment size should dictate the width of the stream bed'; drawnGate's correlation 0.68 needs 0.2). */
+const WIDTH_SPREAD = 0.2;
 /** A reach with no white water draws at most this steepness (water.ts FLOW_FROM: placid below it). */
 const WHITE_FROM = 0.19;
 
@@ -189,12 +191,12 @@ export function floorOver(v: { y?: number; lo?: number; hi?: number; floorL?: nu
 const FLOOR_SEAM = 60;
 /**
  * Every river floor at a point set into ground h (floorOver): the floor of the valley whose belt is nearest, the seam
- * with the next nearest mixed in: ground under it raised to it, fading out toward the floor's edge (where the ground
- * stands at the floor's height), but not ground under the floor's bottom (FLOOR_UNDER over the water: another
- * valley's). So the water lies on its floor's lowest line wherever its belt goes. heightfield.ts carveNetwork and the streams' routing ground
+ * with the next nearest mixed in: ground under it raised to it (no more than FLOOR_FILL over the natural ground `natural`), fading out toward the floor's
+ * edge (where the ground stands at the floor's height), but not ground under the floor's bottom (FLOOR_UNDER over the
+ * water: another valley's). So the water lies on its floor's lowest line wherever its belt goes. heightfield.ts carveNetwork and the streams' routing ground
  * (carvedGround) read it alike.
  */
-export function floorSet(h: number, hits: ReadonlyArray<ValleyNear>, n: number): number {
+export function floorSet(h: number, hits: ReadonlyArray<ValleyNear>, n: number, natural = h): number {
   let b1 = -1;
   let d1 = Infinity;
   let b2 = -1;
@@ -230,9 +232,13 @@ export function floorSet(h: number, hits: ReadonlyArray<ValleyNear>, n: number):
   // (Raised only: where the belt's water runs over ground standing higher, its channel cuts its own bed and banks into
   // it, meeting the ground over channelForm.ts BANK_JOIN m - the floor there stands a little higher where the bed has not
   // reached, as it stood. Cut down wholesale, a coastal plain went down to its river's banks across its belt.)
+  T = Math.min(T, natural + FLOOR_FILL);
   if (!(h < T)) return h;
   return h + (T - h) * (1 - smooth(0.85, 1, x1)) * smooth(lv + FLOOR_UNDER - 2, lv + FLOOR_UNDER, h);
 }
+/** floorSet: a floor stands at most this much over the natural ground it covers, m (as a stream's banks, heightfield.ts
+ * STREAM_FILL: no bank or fill stands as a wall over the plain). */
+const FLOOR_FILL = 5;
 const floorAtTmp = { x: 0, d: 0 };
 /** The carve's own floor is kept this far past the farthest a channel swings (its banks and their carving's reach,
  * heightfield.ts channelProfile within CHANNEL_MARGIN), m. */
@@ -422,7 +428,7 @@ export interface LevelStage {
  */
 export const levelProbe: { on?: (stage: string, li: number, line: LevelStage) => void } = {};
 /** Probes: each river's law along its axis as it is laid (channelForm.ts), and its channel's samples. */
-export const formProbe: { on?: (li: number, axis: { north: Float64Array; east: Float64Array; s: Float64Array; area: Float64Array; level: Float64Array; S: Float64Array; roomL: Float64Array; roomR: Float64Array; rL: Float64Array; rR: Float64Array; Wa: Float64Array; lam2: Float64Array; om2: Float64Array; lam1: Float64Array; belt: Float64Array }) => void } = {};
+export const formProbe: { on?: (li: number, axis: { north: Float64Array; east: Float64Array; s: Float64Array; area: Float64Array; level: Float64Array; S: Float64Array; roomL: Float64Array; roomR: Float64Array; rL: Float64Array; rR: Float64Array; Wa: Float64Array; lam2: Float64Array; om2: Float64Array; lam1: Float64Array; belt: Float64Array; fellL: Float64Array; fellR: Float64Array; edgeL: Float64Array; edgeR: Float64Array }) => void } = {};
 /** How far beyond its floodplain a river's valley is carved into the ground about it (carveNetwork), m, for a catchment
  * of `area` km². */
 export const valleyInfluence = (area: number): number => 500 + 1900 * smooth(30, 2000, area);
@@ -834,6 +840,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   /** Whether the rivers' floors are laid (floorSet): the streams are routed over them, after the rivers. */
   let floorsOn = false;
   const carvedGround = (h: number, pn: number, pe: number): number => {
+    const h0 = h;
     let w = -1;
     let nf = 0;
     // (Each line's nearest stretch, as the levels were read: the terrain's blend about a switch moves the ground by a
@@ -880,7 +887,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       return false;
     });
     // (The rivers' floors as the terrain sets them: not in a lake's domain.)
-    if (nf > 0 && !(mask.at(pn, pe) > -Infinity)) h = floorSet(h, routeFloors, nf);
+    if (nf > 0 && !(mask.at(pn, pe) > -Infinity)) h = floorSet(h, routeFloors, nf, h0);
     return h;
   };
   // --- The channel-form law (channelForm.ts): each river's room on its floor, read across its axis on the ground its
@@ -898,7 +905,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
    * over the water the floor stood at its edge, m. */
   let roomFell = false;
   let roomEdge = 0;
-  const roomAcross = (pn: number, pe: number, nn: number, ne: number, lv: number, top: number): number => {
+  const roomAcross = (pn: number, pe: number, nn: number, ne: number, lv: number, top: number, far = Infinity): number => {
     const gAt = (d: number): number => {
       const qn = pn + nn * d;
       const qe = pe + ne * d;
@@ -909,6 +916,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     let prev = 0;
     let gPrev = lv + FLOOR_UNDER;
     for (const d of ROOM_LADDER) {
+      if (d > far) break;
       const g = gAt(d);
       if (out(d, g, prev, gPrev)) {
         let l0 = prev;
@@ -939,7 +947,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
    * standing water or at the sea (whose ground beside is a lake's bed or the shore) takes the nearest station's floor, so
    * a line keeps its width through a lake and to its mouth.
    */
-  const roomOfLine = (north: ArrayLike<number>, east: ArrayLike<number>, s: ArrayLike<number>, level: ArrayLike<number>, area: ArrayLike<number>, S: ArrayLike<number>): { roomL: Float64Array; roomR: Float64Array; swingL: Float64Array; swingR: Float64Array; fellL: Float64Array; fellR: Float64Array; edgeL: Float64Array; edgeR: Float64Array } => {
+  const roomOfLine = (north: ArrayLike<number>, east: ArrayLike<number>, s: ArrayLike<number>, level: ArrayLike<number>, area: ArrayLike<number>, S: ArrayLike<number>, wanders = true): { roomL: Float64Array; roomR: Float64Array; swingL: Float64Array; swingR: Float64Array; fellL: Float64Array; fellR: Float64Array; edgeL: Float64Array; edgeR: Float64Array } => {
     const m = north.length;
     const st: number[] = [];
     let next = 0;
@@ -962,11 +970,15 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const tl = Math.hypot(north[i1] - north[i0], east[i1] - east[i0]) || 1;
       const nn = -(east[i1] - east[i0]) / tl;
       const ne = (north[i1] - north[i0]) / tl;
-      const top = FLOOR_OVER + formOf(area[i], S[i], 0).bankH + 1;
-      sR[q] = roomAcross(north[i], east[i], nn, ne, level[i], top);
+      const f = formOf(area[i], S[i], 0);
+      const top = FLOOR_OVER + f.bankH + 1;
+      // (Read as far as the line can use its floor: the whole floor for a belt that wanders it; else as far as its
+      // swings at their widest, unfitted, and its bed reach.)
+      const far = wanders ? Infinity : SWING_REACH * (sineAmplitude(f.lam1, f.om1) + sineAmplitude(Math.max(LAMBDA_MIN, f.lam2), f.om2)) + f.Ws;
+      sR[q] = roomAcross(north[i], east[i], nn, ne, level[i], top, far);
       fR[q] = roomFell ? 1 : 0;
       eR[q] = Math.max(top, roomEdge);
-      sL[q] = roomAcross(north[i], east[i], -nn, -ne, level[i], top);
+      sL[q] = roomAcross(north[i], east[i], -nn, -ne, level[i], top, far);
       fL[q] = roomFell ? 1 : 0;
       eL[q] = Math.max(top, roomEdge);
       dry[q] = level[i] >= 1 ? 1 : 0;
@@ -1124,7 +1136,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     lawAx[li] = { Wa: Float64Array.from(law.Wa), lam2: Float64Array.from(law.lam2), om2: Float64Array.from(law.om2) };
     const bankH = Float64Array.from(a.area, (A, i) => formOf(A, R.S[i], Math.max(FLOOR_MIN, R.roomL[i] + R.roomR[i])).bankH);
     floorAx[li] = { belt: Float64Array.from(law.belt), sweep: L.sweep, floorL: L.floorL, floorR: L.floorR, bankH, edgeL: R.edgeL, edgeR: R.edgeR };
-    formProbe.on?.(li, { north: a.north, east: a.east, s: a.s, area: a.area, level: a.level, S: R.S, roomL: R.roomL, roomR: R.roomR, rL: Float64Array.from(law.roomL), rR: Float64Array.from(law.roomR), Wa: Float64Array.from(law.Wa), lam2: Float64Array.from(law.lam2), om2: Float64Array.from(law.om2), lam1: L.lam1, belt: Float64Array.from(law.belt) });
+    formProbe.on?.(li, { north: a.north, east: a.east, s: a.s, area: a.area, level: a.level, S: R.S, roomL: R.roomL, roomR: R.roomR, rL: Float64Array.from(law.roomL), rR: Float64Array.from(law.roomR), Wa: Float64Array.from(law.Wa), lam2: Float64Array.from(law.lam2), om2: Float64Array.from(law.om2), lam1: L.lam1, belt: Float64Array.from(law.belt), fellL: R.fellL, fellR: R.fellR, edgeL: R.edgeL, edgeR: R.edgeR });
     void m;
     const tL0 = performance.now();
     const laid = layThread(a.north, a.east, law, li + 1);
@@ -1373,7 +1385,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       if (m < 4 || st.s[m - 1] < 4 * LAMBDA_MIN) continue;
       // (Its floor and law as a river's: roomOfLine, lawAlong.)
       const S = gradientOf(st.s, st.level, st.area);
-      const R = roomOfLine(st.north, st.east, st.s, st.level, st.area, S);
+      const R = roomOfLine(st.north, st.east, st.s, st.level, st.area, S, false);
       const roomL = R.roomL;
       const roomR = R.roomR;
       const t = layThread(st.north, st.east, lawAlong(st.north, st.east, st.s, st.area, S, R, false, nR + j + 1).law, nR + j + 1);
@@ -1870,7 +1882,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       roomL = Float32Array.from(c.s, (sv) => wr.at(lr.L, sv));
       roomR = Float32Array.from(c.s, (sv) => wr.at(lr.R, sv));
     } else {
-      const R = roomOfLine(c.north, c.east, c.s, c.level, A, S);
+      const R = roomOfLine(c.north, c.east, c.s, c.level, A, S, false);
       roomL = Float32Array.from(R.roomL);
       roomR = Float32Array.from(R.roomR);
     }
@@ -1919,9 +1931,16 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const wIn = lawLine[li].hw[lawLine[li].hw.length - 1];
       const P = allLines[j];
       const hP = lawLine[j].hw;
-      const sj = joinSOf(li);
-      for (let i = 0; i < P.s.length; i++) {
-        if (P.s[i] < sj - 1e-6 || hP[i] >= wIn) continue;
+      // (From the receiver's sample at or before the junction, or its sample nearest the joining line's mouth if that lies
+      // further up: a mouth pulled onto the receiver's thread lies beside it.)
+      const c = allLines[li];
+      const mN = c.north[c.north.length - 1];
+      const mE = c.east[c.east.length - 1];
+      const near = nearestOnChannel(P, mN, mE);
+      const at = P.s.length > 1 ? segmentAt(P.s, joinSOf(li)) : 0;
+      const i0 = Math.hypot(P.north[near] - mN, P.east[near] - mE) <= MOUTH_BESIDE ? Math.min(near, at) : at;
+      for (let i = i0; i < P.s.length; i++) {
+        if (hP[i] >= wIn) continue;
         hP[i] = wIn;
         changed = true;
       }
