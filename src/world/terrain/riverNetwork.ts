@@ -1291,9 +1291,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const u = Math.min(1, Math.max(0, (st.joinS - P.s[k]) / Math.max(1e-9, P.s[k + 1] - P.s[k])));
       const dn = P.north[k] + (P.north[k + 1] - P.north[k]) * u - st.north[m - 1];
       const de = P.east[k] + (P.east[k + 1] - P.east[k]) * u - st.east[m - 1];
-      // (An end standing in the water its receiver runs through - a lake, or a pond the trace filled, which it joins at
-      // the spill - is on that water already: no gap to close.)
-      const gap = mask.at(st.north[m - 1], st.east[m - 1]) > -Infinity ? 0 : Math.hypot(dn, de);
+      // (A stream ending in the standing water its receiver runs through - a lake, or a pond the trace filled, which it
+      // joins at the spill - is on that water already: no gap to close.)
+      const gap = st.end === 'lake' ? 0 : Math.hypot(dn, de);
       if (gap < 0.5) continue;
       const total = st.s[m - 1];
       const span = Math.min(total, Math.max(60, 3 * gap));
