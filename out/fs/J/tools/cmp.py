@@ -4,7 +4,7 @@ OUT_DIR/NAME.png. The before dir is given per view (A4''s and B's c130c47 render
 import sys, os
 from PIL import Image, ImageDraw
 o = sys.argv[1]
-A = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'after')
+A = os.environ.get('AFTER') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'after')
 os.makedirs(o, exist_ok=True)
 for arg in sys.argv[2:]:
     n, b = arg.split(':', 1)

@@ -243,17 +243,36 @@ class Frame {
 }
 
 /** Linear interpolation of arr (on ascending positions s) at sv. */
+/** The segment each of the last few arc arrays was read in (the march reads them in order: most reads fall in the same
+ * segment or the next, found without a search; the segment found is the search's own). */
+const segHint: Array<{ s: ArrayLike<number> | null; lo: number }> = [{ s: null, lo: 0 }, { s: null, lo: 0 }, { s: null, lo: 0 }, { s: null, lo: 0 }];
+let segNext = 0;
 function lerpAt(s: ArrayLike<number>, arr: ArrayLike<number>, sv: number): number {
   const m = s.length;
   if (m === 1 || sv <= s[0]) return arr[0];
   if (sv >= s[m - 1]) return arr[m - 1];
-  let lo = 0;
-  let hi = m - 1;
-  while (hi - lo > 1) {
-    const mid = (lo + hi) >> 1;
-    if (s[mid] <= sv) lo = mid;
-    else hi = mid;
+  let lo = -1;
+  let h = segHint[0].s === s ? segHint[0] : segHint[1].s === s ? segHint[1] : segHint[2].s === s ? segHint[2] : segHint[3].s === s ? segHint[3] : null;
+  if (h) {
+    const k = h.lo;
+    if (k < m - 1 && s[k] <= sv && sv < s[k + 1]) lo = k;
+    else if (k + 1 < m - 1 && s[k + 1] <= sv && sv < s[k + 2]) lo = k + 1;
+  } else {
+    h = segHint[segNext];
+    segNext = (segNext + 1) & 3;
+    h.s = s;
   }
+  if (lo < 0) {
+    lo = 0;
+    let hi = m - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (s[mid] <= sv) lo = mid;
+      else hi = mid;
+    }
+  }
+  h.lo = lo;
+  const hi = lo + 1;
   const t = (sv - s[lo]) / Math.max(1e-9, s[hi] - s[lo]);
   return arr[lo] + (arr[hi] - arr[lo]) * t;
 }
@@ -301,8 +320,19 @@ function marchLevel(total: number, lam: (sv: number) => number, om: (sv: number)
     for (let j = 0; j < 3; j++) q += (hash2i(salt * 7919 + which * 104729 + j, k) & 0xffff) / 65536;
     return Math.max(-1.6, Math.min(1.6, (q - 1.5) * 2));
   };
-  const rateMul = (j: number): number => Math.exp(JITTER * draw(j, 1));
-  const swingMul = (k: number): number => 1 + SWING_JITTER * Math.tanh(draw(k, 2));
+  // (Each bend's draws once: the march reads them step after step.)
+  const rateMemo = new Map<number, number>();
+  const swingMemo = new Map<number, number>();
+  const rateMul = (j: number): number => {
+    let v = rateMemo.get(j);
+    if (v === undefined) rateMemo.set(j, (v = Math.exp(JITTER * draw(j, 1))));
+    return v;
+  };
+  const swingMul = (k: number): number => {
+    let v = swingMemo.get(k);
+    if (v === undefined) swingMemo.set(k, (v = 1 + SWING_JITTER * Math.tanh(draw(k, 2))));
+    return v;
+  };
   let thPrev = 0;
   const guard = Math.ceil(total / 2) + 100;
   for (let g = 0; a < total && g < guard; g++) {
