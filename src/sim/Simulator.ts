@@ -618,7 +618,26 @@ export class Simulator {
     const audio = new AudioSystem({ profile: presentation.audio });
     audio.init(ctx);
     audio.onError = (reason) => ui.showToast(reason, 12000);
-    ui.fpsExtra = () => audio.status();
+    // F8 also shows where the aircraft is and the camera as a ready ?camPos/camLook query (NED m, altitude MSL), so a
+    // screenshot of the readout pins the view; roll is the view's, + rolled left.
+    const camAt = new THREE.Vector3();
+    const camDir = new THREE.Vector3();
+    const camRot = new THREE.Euler();
+    const whereLines = (): string => {
+      const s = ctx.state;
+      const c = ctx.camera;
+      c.getWorldPosition(camAt);
+      c.getWorldDirection(camDir);
+      camRot.setFromQuaternion(c.quaternion, 'YXZ');
+      const r = Math.round;
+      const deg = 180 / Math.PI;
+      const [cn, ce, ca] = [-camAt.z, camAt.x, camAt.y];
+      return (
+        `seed ${worldSeed()}  aircraft N ${r(s.position.x)} E ${r(s.position.y)}  ${r(-s.position.z)} m MSL  hdg ${r(s.heading * deg) % 360}\n` +
+        `camPos=${r(cn)},${r(ce)},${r(ca)}&camLook=${r(cn - 1000 * camDir.z)},${r(ce + 1000 * camDir.x)},${r(ca + 1000 * camDir.y)}&fov=${r(c.fov)}  roll ${r(camRot.z * deg)}`
+      );
+    };
+    ui.fpsExtra = () => `${whereLines()}\n${audio.status()}`;
     if (p.mute) audio.setMuted(true);
     input.autopilotFlying = () => !!physics.autoflight.helicopter && physics.autoflight.engaged;
     // The STAB ASSIST sim aid (a type whose profile has one): Shift+A in the input module switches it; stab= sets it at load.
