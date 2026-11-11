@@ -1171,7 +1171,8 @@ export function createRiverNetworkGeometries(small?: SmallRibbonChunk[]): THREE.
   const rivers = hydrology.rivers;
   if (!rivers) return [];
   const flow = waterFlows();
-  const chunks = new Map<string, RiverBuffers>();
+  /** Each chunk's pieces, in order: built one chunk at a time below (only one chunk's JS arrays live at once). */
+  const chunks = new Map<string, Array<[RibbonLine, number, number]>>();
   const smallPieces = new Map<string, { pieces: Array<[RibbonLine, number, number]>; minN: number; maxN: number; minE: number; maxE: number }>();
   const lakes = hydrology.lakes;
   // Where a river runs through a lake the lake's water covers it: no ribbon there (it would lie in the lake's plane).
@@ -1219,9 +1220,10 @@ export function createRiverNetworkGeometries(small?: SmallRibbonChunk[]): THREE.
             continue;
           }
         }
-        let b = chunks.get(key);
-        if (!b) chunks.set(key, (b = riverBuffers()));
-        if (ribbonRows(r, piece, end, b, flow) < end) coast = true;
+        let list = chunks.get(key);
+        if (!list) chunks.set(key, (list = []));
+        list.push([r as RibbonLine, piece, end]);
+        if (ribbonStops(r as RibbonLine, piece, end, flow)) coast = true;
       }
       if (coast) break;
     }
@@ -1241,7 +1243,20 @@ export function createRiverNetworkGeometries(small?: SmallRibbonChunk[]): THREE.
       });
     }
   }
-  return [...chunks.values()].filter((b) => b.idx.length > 0).map(riverGeometryOf);
+  const out: THREE.BufferGeometry[] = [];
+  for (const list of chunks.values()) {
+    const b = riverBuffers();
+    for (const [r, from, end] of list) ribbonRows(r, from, end, b, flow);
+    if (b.idx.length > 0) out.push(riverGeometryOf(b));
+  }
+  return out;
+}
+
+/** Whether ribbonRows stops at the coast within samples [from, to) of a line (a row it would draw stands at the sea). */
+function ribbonStops(r: RibbonLine, from: number, to: number, flow: boolean): boolean {
+  const flowing = flow && !!r.steepness && !!r.speed && !!r.regime;
+  for (const i of ribbonKeep(r, from, to, flowing)) if (r.level[i] < 0.3) return true;
+  return false;
 }
 
 /** Rows down a fall's curtain (one per CURTAIN_ROW_M of drop, within CURTAIN_ROWS..CURTAIN_ROWS_MAX), its columns, and
