@@ -13,7 +13,7 @@ import { hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
 import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type DrainLine, type LakeMask } from './drainage';
 import { channelCourse, courseSpline } from './erosion';
-import { bedWidth, breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, REGIME, refineSteep, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
+import { bedWidth, breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, REGIME, refineSteep, STREAM_SPACING, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
 import { bendOf, fitSwing, formOf, hSmooth, layThread, sineAmplitude, stepWhite, threadDepth } from './channelForm';
 import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
 import { buildFaults, FaultIndex } from './faults';
@@ -98,6 +98,8 @@ const ROOM_LADDER = [15, 30, 50, 80, 120, 170, 230, 300, 400, 520, 680, 880, 115
 const FLOOR_MIN = 10;
 /** The thread's wavelength is at least this (six of the 8 m samples a level of detail keeps), m. */
 const LAMBDA_MIN = 48;
+/** A stream's thread keeps a point where the thread would otherwise stray more than this from its chord, m (thinThread). */
+const THIN_EPS = 0.25;
 /** A channel's water is checked against the valleys' carve every CARVE_CHECK m of its arc. */
 const CARVE_CHECK = 40;
 /** The bed's width varies as exp(WIDTH_SPREAD h) (DESIGN.md: a width CV about 0.45). */
@@ -1008,7 +1010,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const channelArea: Float64Array[] = [];
   const lipsOf: number[][] = [];
   /** A stream's unit coordinate and where its pitches and pools are drawn (pitchPool.ts), per sample. */
-  const pitchOf: Array<{ sigma: Float64Array; on: Float64Array } | undefined> = [];
+  const pitchOf: Array<{ sigma: Float32Array; on: Float32Array } | undefined> = [];
   const falls: Fall[] = [];
   /** Rivers whose head is not in a lake. */
   const headDry = new Uint8Array(nR);
@@ -1206,6 +1208,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         len = t.north.length;
         untangle(t.north, t.east, t.valleyS);
       }
+      // (It keeps the points its shape needs, and its course's samples: the course's levels.)
+      thinThread(t, st.s, THIN_EPS, STREAM_SPACING);
       const n = t.north.length;
       if (n < 2) continue;
       // Its samples at the thread's places along the course.
@@ -1252,7 +1256,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       };
     }
     // A stream joining another meets its thread where it joins: its arc there mapped (and the nearest point of the
-    // thread within JOIN_LOOK of it), its end pulled onto the thread - receivers first.
+    // thread within JOIN_LOOK of it), its end pulled onto the thread - receivers first. (Not one ending in the standing
+    // water its receiver crosses: pulled across the pond to the spill, km away, its water stood far over the ground.)
     const hops = new Int32Array(ns);
     for (let j = 0; j < ns; j++) {
       let c = traced.streams[j].joins;
@@ -1286,7 +1291,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const u = Math.min(1, Math.max(0, (st.joinS - P.s[k]) / Math.max(1e-9, P.s[k + 1] - P.s[k])));
       const dn = P.north[k] + (P.north[k + 1] - P.north[k]) * u - st.north[m - 1];
       const de = P.east[k] + (P.east[k + 1] - P.east[k]) * u - st.east[m - 1];
-      const gap = Math.hypot(dn, de);
+      // (An end standing in the water its receiver runs through - a lake, or a pond the trace filled, which it joins at
+      // the spill - is on that water already: no gap to close.)
+      const gap = mask.at(st.north[m - 1], st.east[m - 1]) > -Infinity ? 0 : Math.hypot(dn, de);
       if (gap < 0.5) continue;
       const total = st.s[m - 1];
       const span = Math.min(total, Math.max(60, 3 * gap));
@@ -1502,7 +1509,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const { area, sigma, on, ...rest } = r.a;
       Object.assign(c, rest);
       channelArea[li] = area;
-      pitchOf[li] = { sigma, on };
+      pitchOf[li] = { sigma: Float32Array.from(sigma), on: Float32Array.from(on) };
       for (const fi of fallsOn[li]) falls[fi].index = r.map[falls[fi].index];
       lipsOf[li] = lipsOf[li].map((k) => r.map[k]);
     }
@@ -1877,6 +1884,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     formOfLine[li] = out;
   }
   formMs.form = performance.now() - tForm0;
+  // (The streams' rooms were the form pass's alone.)
+  streamRoom.length = 0;
   (traced.report as unknown as { form?: typeof formStats }).form = formStats;
   // The stones on each bed (falls.ts bedGrain).
   const feetOf: Array<Array<{ index: number; height: number }>> = allLines.map(() => []);
@@ -1905,8 +1914,6 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     }
     return any ? r : null;
   });
-  // A stream's bed half-width at each sample (its banks are carved to it, heightfield.ts streamBanks).
-  const bedOf = allLines.map((c, li) => (li < nR ? null : Float64Array.from(channelArea[li], (A) => 0.5 * bedWidth(A))));
   const tI = performance.now();
   const channelIndex = new SegmentIndex(allLines, (li, i) => {
     const br = breachReach[li];
@@ -1942,8 +1949,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         o.halfWidth = r.halfWidth[i] + (r.halfWidth[i + 1] - r.halfWidth[i]) * t;
         o.s = r.s[i] + (r.s[i + 1] - r.s[i]) * t;
         o.beyondSource = i === 0 && u < 0 ? -u * Math.hypot(r.north[1] - r.north[0], r.east[1] - r.east[0]) : 0;
-        const bd = bedOf[li];
-        o.bed = bd ? bd[i] + (bd[i + 1] - bd[i]) * t : o.halfWidth;
+        o.bed = o.halfWidth;
         const fm = formOfLine[li];
         o.wet = undefined;
         if (fm) {
@@ -2114,7 +2120,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       ? { north: mainAxis.north, east: mainAxis.east, level: mainAxis.level, floodplain: mainAxis.floodplain, s: mainAxis.s }
       : { north: new Float64Array(0), east: new Float64Array(0), level: new Float64Array(0), floodplain: new Float64Array(0), s: new Float64Array(0) },
     oxbows,
-    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR] } : {}), breach: (r as { breach: Float64Array }).breach, cut: (r as { cut: Float64Array }).cut, area: channelArea[li], ...flows[li], grain: grains[li], ...(pitchOf[li] ? { sigma: Float32Array.from(pitchOf[li]!.sigma), pitchOn: Float32Array.from(pitchOf[li]!.on) } : {}), bedR: formOfLine[li].bedR, bedL: formOfLine[li].bedL, wetR: formOfLine[li].wetR, wetL: formOfLine[li].wetL, depth: formOfLine[li].depth, threads: formOfLine[li].threads, lam2: formOfLine[li].lam2 })),
+    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR] } : {}), breach: (r as { breach: Float64Array }).breach, cut: (r as { cut: Float64Array }).cut, area: channelArea[li], ...flows[li], grain: grains[li], ...(pitchOf[li] ? { sigma: pitchOf[li]!.sigma, pitchOn: pitchOf[li]!.on } : {}), bedR: formOfLine[li].bedR, bedL: formOfLine[li].bedL, wetR: formOfLine[li].wetR, wetL: formOfLine[li].wetL, depth: formOfLine[li].depth, threads: formOfLine[li].threads, lam2: formOfLine[li].lam2 })),
     falls,
     faults,
     queryFlow,
@@ -2278,6 +2284,46 @@ function smoothAlong(arr: Float64Array, half: number, passes: number): void {
   }
 }
 
+/** A thread keeps the points its shape needs - within eps m of the chord between the points kept, none further apart than
+ * gap m - and the first point at or past each of its course's samples (courseS, the course's arc lengths), so the level
+ * read along the course keeps the course's own. In place. (Every stream drawn at the finest sampling its law allows is
+ * more than a browser tab holds once each terrain worker builds the world.) */
+function thinThread(t: { north: number[]; east: number[]; valleyS: number[] }, courseS: ArrayLike<number>, eps: number, gap: number): void {
+  const n = t.north.length;
+  if (n < 3) return;
+  const keep = new Uint8Array(n);
+  keep[0] = keep[n - 1] = 1;
+  for (let i = 1, k = 1; i < n; i++) {
+    if (k < courseS.length && t.valleyS[i] >= courseS[k]) {
+      keep[i] = 1;
+      while (k < courseS.length && t.valleyS[i] >= courseS[k]) k++;
+    }
+  }
+  const stack: number[] = [];
+  for (let i = 1, a = 0; i < n; i++) if (keep[i]) (stack.push(a, i), (a = i));
+  while (stack.length) {
+    const b = stack.pop()!;
+    const a = stack.pop()!;
+    if (b - a < 2) continue;
+    const dn = t.north[b] - t.north[a];
+    const de = t.east[b] - t.east[a];
+    const len = Math.hypot(dn, de) || 1;
+    let w = -1;
+    let wd = 0;
+    for (let i = a + 1; i < b; i++) {
+      const d = Math.abs((t.north[i] - t.north[a]) * de - (t.east[i] - t.east[a]) * dn) / len;
+      if (d > wd) (wd = d), (w = i);
+    }
+    if (wd > eps || len > gap) {
+      const mid = wd > eps ? w : (a + b) >> 1;
+      keep[mid] = 1;
+      stack.push(a, mid, mid, b);
+    }
+  }
+  let j = 0;
+  for (let i = 0; i < n; i++) if (keep[i]) (t.north[j] = t.north[i], t.east[j] = t.east[i], t.valleyS[j] = t.valleyS[i], j++);
+  t.north.length = t.east.length = t.valleyS.length = j;
+}
 /**
  * Cut every loop where the polyline crosses itself (in place): the points between the two crossing segments go, and
  * the crossing point joins them. Segments are found through a 200 m grid, so a long channel costs little.

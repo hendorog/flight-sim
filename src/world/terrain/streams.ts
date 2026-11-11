@@ -48,7 +48,7 @@ const LEVEL_EVERY = 3;
 /** ... and those between them too where the level falls this much from one to the next, m. */
 const STEEP_RECHECK = 3;
 /** Stream sample spacing, m. */
-const STREAM_SPACING = 50;
+export const STREAM_SPACING = 50;
 /** The most raster points a hollow's flood (trace, fill and spill) visits before the stream ends in it (about 75 km²: a
  * closed basin that big is the drainage's, not a stream's). */
 const POND_MAX = 1200;

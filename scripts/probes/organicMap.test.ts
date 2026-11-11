@@ -4,6 +4,7 @@
 import { it } from 'vitest';
 import { hydrology, makeSample, sampleTerrain, terrainHeight } from '../../src/world/terrain/heightfield';
 import { setWorldSeed } from '../../src/world/worldSeed';
+import { streamDebug } from '../../src/world/terrain/streams';
 const fs = (await import(/* @vite-ignore */ 'node:fs' as string)) as { writeFileSync(p: string, d: string): void; mkdirSync(p: string, o: object): void };
 const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
 
@@ -35,6 +36,7 @@ it('organic map', () => {
       else if (a0 >= 9.95 && a0 < 10.05 && i > cs + 30) break;
     }
     const ce = cs + (rep.chains?.traced ?? 0);
+    const src = streamDebug.src && streamDebug.src.length === L.length - nR ? streamDebug.src : undefined;
     // Each line's ends, for the braid count (a line within 300 m of its own source or mouth is not a braid).
     const lines: unknown[] = [];
     const stations: unknown[] = [];
@@ -43,7 +45,8 @@ it('organic map', () => {
       const r = L[li];
       const N = r.north.length;
       const kind = r.kind ?? 0;
-      const cls = li < nR ? 'river' : li >= cs && li < ce ? 'chain' : 'stream';
+      // (Where the trace says which pass built each stream (streams.ts streamDebug.src), a chain is the chain pass's.)
+      const cls = li < nR ? 'river' : src ? (src[li - nR] === 'chain' ? 'chain' : 'stream') : li >= cs && li < ce ? 'chain' : 'stream';
       lines.push({ li, kind, cls, joins: r.joins ?? -1, end: r.end ?? '', n: Array.from(r.north, Math.round), e: Array.from(r.east, Math.round), lv: Array.from(r.level, r2), hw: Array.from(r.halfWidth, r2), a: Array.from(r.area ?? new Float64Array(N), r1), s: Array.from(r.s, r1), rg: r.regime ? Array.from(r.regime) : [], st: r.steepness ? Array.from(r.steepness, r2) : [], bR: r.bedR ? Array.from(r.bedR, r2) : [], bL: r.bedL ? Array.from(r.bedL, r2) : [] });
       if (N < 2) continue;
       const total = r.s[N - 1];
