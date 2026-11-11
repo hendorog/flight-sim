@@ -134,7 +134,9 @@ export function formOf(A: number, S: number, F: number): Form {
   const sigma = 0.9 * smooth(0.01, 0.15, s);
   const B = 0.6 * 121 * Math.pow(a, 0.345);
   const rho = F / B;
-  const betaLaw = smooth(1, 1.5, pi) * (1 - sigma) * smooth(0.5, 1.5, rho);
+  // (The bed's share: the fitted braid share's, on a big river only - the owner's Rakaia (2576 km²) 'has a very wide bed';
+  // the Orari, 'quite similar in size and appearance to our rivers', a single gravel thread that wanders.)
+  const betaLaw = smooth(1, 1.5, pi) * (1 - sigma) * smooth(0.5, 1.5, rho) * smooth(BED_BIG[0], BED_BIG[1], a);
   const Wa = Math.min(Math.pow(Ws, 1 - betaLaw) * Math.pow(B, betaLaw), Math.max(Ws, F));
   // (One water thread: a single thread's wet share of its own width W_s.)
   const w = (0.8 - 0.4 * smooth(0.7, 1.2, pi)) * Ws;
@@ -154,6 +156,9 @@ export function formOf(A: number, S: number, F: number): Form {
   const stepH = sigma * s * stepL;
   return { Ws, B, Wa, pi, sigma, betaLaw, phi, om2, lam2, om1, lam1, bankH, bankTan, stepL, stepH };
 }
+
+/** formOf: a river's bed widens toward its gravel belt from the first catchment (km²) to the second. */
+const BED_BIG = [100, 1000];
 
 /** The thread's depth at its middle, m: shallow at a crossing, deep in a pool at a bend's apex (kap 0..1). */
 export const threadDepth = (w: number, kap: number): number => (0.15 + w / 20) * (0.7 + 0.6 * kap);
@@ -280,11 +285,12 @@ function lerpAt(s: ArrayLike<number>, arr: ArrayLike<number>, sv: number): numbe
   return arr[lo] + (arr[hi] - arr[lo]) * t;
 }
 
-/** Each bend's length is the law's times exp(JITTER n), n a seeded draw of unit spread (DESIGN.md's phase jitter,
- * tuned: a bend-length CV of about 0.45, NZ 0.24-0.48). */
-const JITTER = 0.45;
+/** Each bend's length is the law's times exp(JITTER n), n a seeded draw of unit spread (DESIGN.md's phase jitter: at
+ * 0.45 the drawn bends came out in trains of near-equal hairpins, their lengths' CV under the NZ reaches' 0.24-0.48 once
+ * the curvature cap had evened out the short ones). */
+const JITTER = 0.6;
 /** Each bend's swing is the law's times 1 + SWING_JITTER tanh(n). */
-const SWING_JITTER = 0.35;
+const SWING_JITTER = 0.45;
 /** ... but never past this (rad): a sine-generated curve's loops close on each other from about 2.2. */
 const SWING_TOP = 1.9;
 /** No bend tighter than this many active widths. */
@@ -623,27 +629,33 @@ export function bendOf(north: ArrayLike<number>, east: ArrayLike<number>, smooth
 }
 
 /**
- * The cross-section about a river's thread (DESIGN.md section 4), height over its water level at distance d on one
+ * The cross-section about a line's thread (DESIGN.md section 4), height over its water level at distance d on one
  * side: its wet bed (a parabola `depth` deep, rising just over the water at the wet edge `wet`), the bar from there to
- * the bed's edge `bed` (rising to 0.6 of the bank's height), then the bank at its slope (tan), which the carve meets the
- * ground with.
+ * the bed's edge `bed` (rising to 0.6 of the bank's height), then the bank at its slope (tan) to the bank's height; past
+ * it the cut rises on at the bank's slope to the ground standing `over` m over the water there (a floor, a valley's
+ * side), more steeply only as it must to meet that ground within BANK_JOIN m (the carve's reach): a cut at a fixed 45
+ * degrees left a trench with walls beside every line a few metres under the ground beside it (the airfields' fieldBanks
+ * and heldOver); at the bank's slope alone it reached past the carve's reach and left a step there.
  */
-export function formSection(d: number, wet: number, bed: number, depth: number, bankH: number, bankTan: number): number {
+export function formSection(d: number, wet: number, bed: number, depth: number, bankH: number, bankTan: number, over: number): number {
   if (d < wet) {
     const t = d / wet;
     return WET_EDGE - (depth + WET_EDGE) * (1 - t * t);
   }
   const top = Math.max(WET_EDGE, 0.6 * bankH);
   if (d < bed) return WET_EDGE + ((top - WET_EDGE) * (d - wet)) / Math.max(0.01, bed - wet);
-  // The bank rises its own height at its angle; past it the cut joins the ground it was made in (a valley's side, a
-  // floor) at no gentler than BANK_JOIN: at the bank's angle (14 degrees on a floor) it reached out past the carve's
-  // reach and left a step there, the ground cut away 100-250 m beside a stream in a V.
   const b = d - bed;
   const run = (bankH * 0.4) / Math.max(1e-3, bankTan);
-  return b <= run ? top + b * bankTan : top + run * bankTan + (b - run) * Math.max(bankTan, BANK_JOIN);
+  if (b <= run) return top + b * bankTan;
+  const tb = top + run * bankTan;
+  // (Rising to BANK_PAST m past the ground by then, so the carve's smooth minimum with the ground leaves the ground as
+  // it is there, not a little under it to the carve's reach.)
+  return tb + (b - run) * Math.max(bankTan, (over - tb + BANK_PAST) / BANK_JOIN);
 }
-/** formSection: the cut face past a bank rises at least this steeply (m/m) to the ground. */
-const BANK_JOIN = 1;
+/** formSection: past its bank a cut meets the ground within this far, m (inside the carve's reach: hydrology.ts
+ * CHANNEL_BANK + 45 beyond the bed), rising to BANK_PAST m over it by then. */
+const BANK_JOIN = 50;
+const BANK_PAST = 4;
 /** The bed stands this far over the water at the wet edge, m (the water's edge lies just inside it). */
 const WET_EDGE = 0.08;
 

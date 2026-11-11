@@ -47,9 +47,8 @@ const POOL_RIFFLE = 0.55;
 const FALL_CLEAR = 30;
 const HEAD_CLEAR = 20;
 const MOUTH_CLEAR = 30;
-/** A lip or a foot takes the line's nearest sample within this, m: half the finest level of detail's sample spacing (8 m;
- * riverNetwork.ts LAMBDA_MIN) - a pitch finer than that has no sample of its own (none is inserted). */
-const SNAP = 4;
+/** A unit's pool holds a sample of the line when one lies more than this past its foot and short of its next lip, m. */
+const POOL_GAP = 0.3;
 
 const smooth = (a: number, b: number, x: number): number => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -120,13 +119,15 @@ vec4 pitchPhase(float sigma) {
 }
 
 export interface PitchReport {
-  /** Units cut, their spacing (lip to lip) in channel widths and m, and drops (lip to foot), m. */
+  /** Units found on the steep reaches, and those shaped (a sample of the line in its pool); their spacing (lip to lip)
+   * in channel widths and m, and drops (lip to foot), m. */
+  found: number;
   units: number;
   spacingW: number[];
   spacingM: number[];
   drop: number[];
   gradient: number[];
-  /** How far the pools' heads lie under the old level, m. */
+  /** How far the pools' heads lie under the old level, m; samples put in at the feet of units with none in their pool. */
   deepen: number[];
   inserted: number;
   /** Time taken over all streams, ms. */
@@ -137,7 +138,7 @@ export interface PitchReport {
  * Cut a stream's steep reaches into pitches and pools. `a` its arrays (level final but for this), `line` its index
  * (its sigma's offset), `falls` the arc lengths of its falls' lips and feet (no units near them), `wet` whether a point
  * lies in a lake's water (no units there). Returns the arrays (the level reshaped, on the line's own samples) plus `sigma`
- * and `on`, and `map`: each old sample's new index (its own: none is inserted).
+ * and `on`, and `map`: each old sample's new index (a sample put in at the foot of each unit with none in its pool).
  */
 export function pitchPool(a: LineArrays, line: number, falls: ReadonlyArray<number>, wet: (north: number, east: number) => boolean, report?: PitchReport): { a: LineArrays; map: Int32Array } {
   const n = a.s.length;
@@ -225,57 +226,90 @@ export function pitchPool(a: LineArrays, line: number, falls: ReadonlyArray<numb
     for (let i = 0; i < n; i++) map[i] = i;
     return { a: out, map };
   }
-  // --- The lips and feet on the line's own samples: each takes the nearest within SNAP; none is inserted. A unit with
-  // no sample that near for its lip, foot or next lip is drawn, not shaped: the ribbon breaks its pitch white from
-  // sigma and the stones crowd it (`on`), its water left as it was.
-  const m = n;
-  const ns = s;
+  // --- A unit with no sample of the line in its pool (shorter than the samples' spacing there) takes one at its foot,
+  // every per-sample array read there; the others are shaped on the line's own samples, wherever they fall.
+  const want: number[] = [];
+  {
+    let q = 0;
+    for (const u of units) {
+      while (q < n && s[q] <= u.foot + POOL_GAP) q++;
+      if (!(q < n && s[q] < u.next - POOL_GAP)) want.push(u.foot);
+    }
+  }
+  const m = n + want.length;
+  const ns = new Float64Array(m);
+  const src = new Int32Array(m);
+  const frac = new Float64Array(m);
   const map = new Int32Array(n);
-  for (let i = 0; i < n; i++) map[i] = i;
+  for (let i = 0, w = 0, j = 0; i < n; i++) {
+    while (w < want.length && want[w] < s[i]) {
+      ns[j] = want[w];
+      src[j] = Math.max(0, i - 1);
+      frac[j++] = i > 0 ? (want[w] - s[i - 1]) / Math.max(1e-9, s[i] - s[i - 1]) : 0;
+      w++;
+    }
+    map[i] = j;
+    ns[j] = s[i];
+    src[j] = i;
+    frac[j++] = 0;
+  }
   const out: Record<string, Float64Array> = {};
-  for (const k of Object.keys(a)) out[k] = a[k];
-  const sigma = Float64Array.from(sig);
+  const along = (v: Float64Array): Float64Array => {
+    if (m === n) return v;
+    const o = new Float64Array(m);
+    for (let j = 0; j < m; j++) {
+      const i = src[j];
+      const t = frac[j];
+      o[j] = t === 0 ? v[i] : v[i] + (v[i + 1] - v[i]) * t;
+    }
+    return o;
+  };
+  for (const k of Object.keys(a)) out[k] = a[k].length === n ? along(a[k]) : a[k];
+  out.s = ns;
+  const sigma = along(sig);
   const on = new Float64Array(m);
-  // --- The level: each unit's pitch from its lip (on the old level) to its foot, its pool from the foot nearly level to
-  // the next lip; never above the old level (oldL: `out.level` as interpolated).
+  if (report) report.inserted += want.length;
+  // --- Each unit's profile on the samples: its pitch from the lip (on the old level, read between the samples) down to
+  // its foot, its pool from the foot nearly level to the next lip; every sample from the lip to the next lip takes the
+  // profile there, never above the old level.
   const oldL = out.level;
   const nl = Float64Array.from(oldL);
-  const idxOf = (sv: number, from: number): number => {
-    let j = from;
-    while (j < m - 1 && ns[j] < sv - 1e-6) j++;
-    return Math.abs(ns[j] - sv) <= SNAP + 1e-6 ? j : -1;
+  /** The old level at arc length sv (read in order along the line). */
+  let seg0 = 0;
+  const oldAt = (sv: number): number => {
+    while (seg0 < m - 2 && ns[seg0 + 1] < sv) seg0++;
+    while (seg0 > 0 && ns[seg0] > sv) seg0--;
+    const t = Math.min(1, Math.max(0, (sv - ns[seg0]) / Math.max(1e-9, ns[seg0 + 1] - ns[seg0])));
+    return oldL[seg0] + (oldL[seg0 + 1] - oldL[seg0]) * t;
   };
-  let from = 0;
   let q = 0;
   for (const u of units) {
-    const jl = idxOf(u.lip, from);
-    const jf = jl < 0 ? -1 : idxOf(u.foot, jl);
-    const jn = jf < 0 ? -1 : idxOf(u.next, jf);
-    if (jl < 0 || jf <= jl || jn <= jf) {
-      while (q < m && ns[q] < u.lip) q++;
-      for (let j = q; j < m && ns[j] <= u.next; j++) on[j] = 1;
-      continue;
-    }
-    from = jl;
-    const lipL = oldL[jl];
-    const nextL = oldL[jn];
-    const gr = (lipL - nextL) / Math.max(1, ns[jn] - ns[jl]);
-    const poolLen = ns[jn] - ns[jf];
+    const lipL = oldAt(u.lip);
+    const nextL = oldAt(u.next);
+    const footOld = oldAt(u.foot);
+    const gr = (lipL - nextL) / Math.max(1, u.next - u.lip);
+    const poolLen = u.next - u.foot;
     // (A small unit's pool runs on down at a good share of the gradient: a riffle more than a step.)
     let footL = nextL + ((POOL_SHARE + POOL_RIFFLE * (1 - u.size)) * gr + POOL_MIN) * poolLen;
-    footL = Math.min(oldL[jf], Math.max(footL, oldL[jf] - POOL_DEEP));
-    for (let j = jl; j <= jn; j++) {
-      const target = j <= jf ? lipL + ((footL - lipL) * (ns[j] - ns[jl])) / Math.max(1e-6, ns[jf] - ns[jl]) : footL + ((nextL - footL) * (ns[j] - ns[jf])) / Math.max(1e-6, poolLen);
+    footL = Math.min(footOld, Math.max(footL, footOld - POOL_DEEP));
+    while (q < m && ns[q] < u.lip) q++;
+    let pool = false;
+    for (let j = q; j < m && ns[j] <= u.next; j++) {
+      const target = ns[j] <= u.foot ? lipL + ((footL - lipL) * (ns[j] - u.lip)) / Math.max(1e-6, u.foot - u.lip) : footL + ((nextL - footL) * (ns[j] - u.foot)) / Math.max(1e-6, poolLen);
       nl[j] = Math.min(nl[j], target);
       on[j] = 1;
+      if (ns[j] >= u.foot - 1e-6 && ns[j] < u.next - 1e-6) pool = true;
     }
     if (report) {
-      report.units++;
-      report.spacingM.push(ns[jn] - ns[jl]);
-      report.spacingW.push((ns[jn] - ns[jl]) / Math.max(0.1, 2 * out.halfWidth[jl]));
-      report.drop.push(lipL - footL);
-      report.gradient.push(gr);
-      report.deepen.push(oldL[jf] - footL);
+      const rr = report as PitchReport;
+      rr.found++;
+      if (!pool) continue;
+      rr.units++;
+      rr.spacingM.push(u.next - u.lip);
+      rr.spacingW.push((u.next - u.lip) / Math.max(0.1, 2 * out.halfWidth[Math.min(m - 1, q)]));
+      rr.drop.push(lipL - footL);
+      rr.gradient.push(gr);
+      rr.deepen.push(footOld - footL);
     }
   }
   for (let j = 1; j < m; j++) nl[j] = Math.min(nl[j], nl[j - 1]);

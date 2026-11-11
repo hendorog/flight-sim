@@ -259,6 +259,9 @@ export interface ValleyNear {
   floorL?: number;
   floorR?: number;
   bankH?: number;
+  /** ... and how high over the water the floor stands at its edge left and right, m. */
+  edgeL?: number;
+  edgeR?: number;
 }
 
 /** A line's channel near a point (NetworkQuery.channels). */

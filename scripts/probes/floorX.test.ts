@@ -16,7 +16,7 @@ it('floor across', () => {
   const seed = Number(env.FX_SEED ?? 42);
   const [an, ae] = (env.FX_AT ?? '-2889,-10734').split(',').map(Number);
   const span = Number(env.FX_SPAN ?? 4000), every = Number(env.FX_EVERY ?? 250), half = Number(env.FX_HALF ?? 900), step = Number(env.FX_STEP ?? 30);
-  const axes = new Map<number, { north: Float64Array; east: Float64Array; s: Float64Array; roomL: Float64Array; roomR: Float64Array; rL: Float64Array; rR: Float64Array }>();
+  const axes = new Map<number, { north: Float64Array; east: Float64Array; s: Float64Array; roomL: Float64Array; roomR: Float64Array; rL: Float64Array; rR: Float64Array; belt?: Float64Array }>();
   formProbe.on = (li, a) => axes.set(li, { north: Float64Array.from(a.north), east: Float64Array.from(a.east), s: Float64Array.from(a.s), roomL: Float64Array.from(a.roomL), roomR: Float64Array.from(a.roomR), rL: Float64Array.from(a.rL), rR: Float64Array.from(a.rR) });
   setWorldSeed(seed);
   terrainHeight(0, 0);
@@ -107,7 +107,7 @@ it('floor across', () => {
     dn /= dl;
     de /= dl;
     // Right of the flow: (-de, dn).
-    let axOff = NaN, rl = NaN, rr = NaN, rL = NaN, rR = NaN;
+    let axOff = NaN, rl = NaN, rr = NaN, rL = NaN, rR = NaN, bl = NaN;
     if (ax) {
       let bdd = Infinity, bk = 0, bt = 0;
       for (let k = 0; k + 1 < ax.north.length; k++) {
@@ -120,7 +120,7 @@ it('floor across', () => {
       const xn = ax.north[bk] + (ax.north[bk + 1] - ax.north[bk]) * bt, xe = ax.east[bk] + (ax.east[bk + 1] - ax.east[bk]) * bt;
       axOff = (xn - n) * -de + (xe - e) * dn; // the axis right of the water: +
       const ix = (a: Float64Array): number => a[bk] + (a[bk + 1] - a[bk]) * bt;
-      rl = ix(ax.roomL); rr = ix(ax.roomR); rL = ix(ax.rL); rR = ix(ax.rR);
+      rl = ix(ax.roomL); rr = ix(ax.roomR); rL = ix(ax.rL); rR = ix(ax.rR); if (ax.belt) bl = ix(ax.belt);
     }
     const row: string[] = [];
     let lowO = 0, low = Infinity;
@@ -133,6 +133,6 @@ it('floor across', () => {
       if (!wet && Math.abs(o) > 20 && g < low && g < 30) (low = g), (lowO = o);
     }
     const i = Math.max(0, Math.min(r.s.length - 1, (() => { let lo = 0, hi = r.s.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (r.s[m] <= sv) lo = m; else hi = m; } return lo; })()));
-    console.log(`FX s ${(sv / 1000).toFixed(2)} at ${n.toFixed(0)},${e.toFixed(0)} lv ${lv.toFixed(1)} A ${r.area ? r.area[i].toFixed(0) : '?'} hw ${r.halfWidth[i].toFixed(1)} bedL/R ${r.bedL ? r.bedL[i].toFixed(0) : '-'}/${r.bedR ? r.bedR[i].toFixed(0) : '-'} wetL/R ${r.wetL ? r.wetL[i].toFixed(0) : '-'}/${r.wetR ? r.wetR[i].toFixed(0) : '-'} axis ${axOff.toFixed(0)} room L/R ${rl.toFixed(0)}/${rr.toFixed(0)} thread room ${rL.toFixed(0)}/${rR.toFixed(0)} lowest dry ${low.toFixed(1)} at ${lowO} | ${row.join(' ')}`);
+    console.log(`FX s ${(sv / 1000).toFixed(2)} at ${n.toFixed(0)},${e.toFixed(0)} lv ${lv.toFixed(1)} A ${r.area ? r.area[i].toFixed(0) : '?'} hw ${r.halfWidth[i].toFixed(1)} bedL/R ${r.bedL ? r.bedL[i].toFixed(0) : '-'}/${r.bedR ? r.bedR[i].toFixed(0) : '-'} wetL/R ${r.wetL ? r.wetL[i].toFixed(0) : '-'}/${r.wetR ? r.wetR[i].toFixed(0) : '-'} axis ${axOff.toFixed(0)} room L/R ${rl.toFixed(0)}/${rr.toFixed(0)} thread room ${rL.toFixed(0)}/${rR.toFixed(0)} belt ${bl.toFixed(0)} lowest dry ${low.toFixed(1)} at ${lowO} | ${row.join(' ')}`);
   }
 });

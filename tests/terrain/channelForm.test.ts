@@ -80,7 +80,7 @@ describe('channel-form law', () => {
       const c = (v: number): number[] => Array.from({ length: m }, () => v);
       // The belt wanders the floor, keeping the thread's swing and the bed on it (riverNetwork.ts lawAlong).
       const om1 = fitSwing(f.lam1, f.om1, Math.max(0, 0.8 * R - a2f));
-      const hi = Math.min(R - 1.35 * (a2f + sineAmplitude(f.lam1, om1)), F / 2 - f.Wa / 2);
+      const hi = Math.min(R - 1.45 * (a2f + sineAmplitude(f.lam1, om1)), F / 2 - f.Wa / 2);
       const belt = beltOffsets(N, c(-hi), c(hi), c(Math.max(f.lam1, 3 * F)), 7);
       const t = layThread(N, E, { belt, lam1: c(f.lam1), om1: c(om1), lam2: c(lam2), om2: c(om2), Wa: c(f.Wa), roomL: c(R), roomR: c(R) }, 7);
       const maxOff = Math.max(...t.off.map(Math.abs));

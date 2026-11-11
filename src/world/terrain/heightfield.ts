@@ -1407,7 +1407,7 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     const wet = (c.wet ?? c.halfWidth) * fade;
     if (wet <= 0.2) continue;
     const bed = Math.max(wet, c.bed * fade);
-    const banks = smin(h, c.level + formSection(d, wet, bed, c.depth ?? 1, c.bankH ?? 1, c.bankTan ?? 0.5), Math.min(3, 0.5 + 0.3 * wet));
+    const banks = smin(h, c.level + formSection(d, wet, bed, c.depth ?? 1, c.bankH ?? 1, c.bankTan ?? 0.5, h - c.level), Math.min(3, 0.5 + 0.3 * wet));
     h += ((d > wet ? Math.max(Math.min(h, keep), banks) : banks) - h) * open;
     // Its banks hold its water: where the ground beside it lies under the water (a hillside it crosses, a dip between
     // the points it was traced on) a low bank is built up, at most STREAM_FILL (not in another channel's water, nor at
