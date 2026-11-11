@@ -56,11 +56,10 @@ const POND_MAX = 1200;
  * Owner decision 3 (default: the recommendation). A pond a stream's hollow would hold (trace, fill and spill) over
  * POND_KEEP km² is not kept where its spill stands POND_SILL_CUT m or less over its bottom: the stream cuts through the
  * spill instead, and no lake is made. A spill higher than that keeps the lake; so does a pond that is the backwater of the
- * water it spills into. BIG_POND_KEEP true keeps every lake, whatever its size.
+ * water it spills into.
  */
 const POND_KEEP = 3;
 const POND_SILL_CUT = 15;
-const BIG_POND_KEEP = false;
 /**
  * Round T, square corners. A stream reaching a line's channel (its raster point within RIVER_TOUCH of it) joined it at
  * the most upstream of the receiver's samples that marked that point: coming in from beside the receiver, it hooked
@@ -242,9 +241,6 @@ export interface StreamLine extends ChannelArrays {
   /** A chain stream (gullies.ts): how far down it its catchment is the chain's own (every tributary's water already in
    * it), m; -1 for the others. */
   chainS: number;
-  /** Its last raster point (-1 none); and whether it ran on as a continuation (unused since fill and spill: false). */
-  endK: number;
-  continued: boolean;
 }
 
 export interface StreamReport {
@@ -320,8 +316,6 @@ export interface StreamReport {
   /** Each pond outlet's inflow: the lines filling it, each with its area at its end and what it lost to the pond's water. */
   pondInflowDetail?: string[];
   pondWhy?: Record<string, number>;
-  /** Streams that ended in a hollow run on as a continuation. */
-  continued?: number;
   /** Traces led out of a hollow down the threshold hillslopes' routing (trace). */
   passWalks?: number;
   /** Streams that ended in a hollow joined to water near it instead (trace connect). */
@@ -663,7 +657,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         }
         // (Owner decision 3: a hollow it fills over POND_KEEP km² on a sill POND_SILL_CUT m or less over its bottom is
         // cut through instead - where its water is the hollow's own, not a backwater of the water it spills into.)
-        const cutThrough = !BIG_POND_KEEP && into < W - allow && wet * (LAKE_RASTER / 1000) ** 2 > POND_KEEP && W - bottom <= POND_SILL_CUT;
+        const cutThrough = into < W - allow && wet * (LAKE_RASTER / 1000) ** 2 > POND_KEEP && W - bottom <= POND_SILL_CUT;
         if (wet >= 2 && pondLevel - bottom >= LAKE_MIDDLE_DEPTH && !cutThrough) {
           let sill = pit;
           for (const q of way) if (G(q) >= G(sill)) sill = q;
@@ -765,7 +759,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     const e0 = ORIGIN + (k % R) * LAKE_RASTER;
     const lv = mask.pools[id].level;
     const f2 = (a: number, b: number): Float64Array => Float64Array.from([a, b]);
-    streams.push({ north: f2(n0, n0 + 1), east: f2(e0, e0 + 1), level: f2(lv, lv), halfWidth: f2(0, 0), s: f2(0, Math.SQRT2), area: f2(1, 1), breach: f2(0, 0), cut: f2(0, 0), joins: -1, joinS: 0, end: 'lake', pool: id, held: 2, chainS: -1, endK: -1, continued: false });
+    streams.push({ north: f2(n0, n0 + 1), east: f2(e0, e0 + 1), level: f2(lv, lv), halfWidth: f2(0, 0), s: f2(0, Math.SQRT2), area: f2(1, 1), breach: f2(0, 0), cut: f2(0, 0), joins: -1, joinS: 0, end: 'lake', pool: id, held: 2, chainS: -1 });
     streamDebug.src?.push('standin');
     report.traced++;
   };
@@ -879,7 +873,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     }
     return tryAt(j0);
   };
-  const build = (path: number[], endAt: End, first: { north: number; east: number; level: number } | null, area0: number, pool: number, pathArea: number[] | null = null, startAt: { north: number; east: number } | null = null, pathVee: number[] | null = null): void => {
+  const build = (path: number[], endAt: End, first: { north: number; east: number; level: number } | null, area0: number, pool: number, pathArea: number[] | null = null, pathVee: number[] | null = null): void => {
     const bt0 = performance.now();
     const m = path.length;
     let end = endAt;
@@ -902,8 +896,8 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     for (let i = 0; i < m; i++) {
       const k = path[i];
       // (A continuation starts at its stream's last point exactly.)
-      pn.push(i === 0 && startAt ? startAt.north : ORIGIN + Math.floor(k / R) * LAKE_RASTER);
-      pe.push(i === 0 && startAt ? startAt.east : ORIGIN + (k % R) * LAKE_RASTER);
+      pn.push(ORIGIN + Math.floor(k / R) * LAKE_RASTER);
+      pe.push(ORIGIN + (k % R) * LAKE_RASTER);
       // (Through a pond its trace filled, at the pond's level.)
       run = Math.max(Math.min(run, G(k) - STREAM_DEPTH), pendingFloor.get(k) ?? -Infinity);
       lv.push(run);
@@ -1296,7 +1290,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     // the stream begins as a trickle (its channel above the head is finer than the lattice) and widens as it gathers.
     if (!pathArea) for (let i = 0; i < count; i++) area[i] = (pool < 0 ? HEAD_START_AREA + (area0 - HEAD_START_AREA) * smooth(0, HEAD_RAMP, s[i]) : area0) + (LATERAL_GAIN * s[i]) / 1000;
     const id = nR + streams.length;
-    streams.push({ north, east, level, halfWidth: new Float64Array(count), s, area, breach, cut, joins, joinS, end: end.kind, pool, held, chainS, endK: path.length ? path[path.length - 1] : -1, continued: false });
+    streams.push({ north, east, level, halfWidth: new Float64Array(count), s, area, breach, cut, joins, joinS, end: end.kind, pool, held, chainS });
     streamDebug.src?.push(srcTag);
     for (const pid of pendingPonds) pondThrough.set(pid, { line: id, spill: mask.pools[pid].spill });
     pendingPonds = [];
@@ -1703,7 +1697,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       if (cross) chainStats.crossed++;
       const tb = performance.now();
       srcTag = 'chain';
-      build(t.path, t.end, null, gn.area[q], -1, pathA, null, pathV);
+      build(t.path, t.end, null, gn.area[q], -1, pathA, pathV);
       chainStats.msTrace += tb - tt;
       chainStats.msBuild += performance.now() - tb;
       if (streams.length > before) {
