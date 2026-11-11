@@ -25,7 +25,7 @@ it('form along axes', () => {
       console.log(`line ${li} near (${pn},${pe}) at ${bd.toFixed(0)} m, axis i ${best}/${a.north.length}`);
       for (let i = Math.max(0, best - 6 * every); i <= Math.min(a.north.length - 1, best + 6 * every); i += every) {
         const f = formOf(a.area[i], a.S[i], a.roomL[i] + a.roomR[i]);
-        console.log(`  i ${i} s ${a.s[i].toFixed(0)} n ${a.north[i].toFixed(0)} e ${a.east[i].toFixed(0)} A ${a.area[i].toFixed(0)} lv ${a.level[i].toFixed(1)} S ${a.S[i].toFixed(4)} pi ${f.pi.toFixed(2)} room L/R ${a.roomL[i].toFixed(0)}/${a.roomR[i].toFixed(0)} thread ${a.rL[i].toFixed(0)}/${a.rR[i].toFixed(0)} Wa ${a.Wa[i].toFixed(1)} phi ${f.phi.toFixed(2)} lam2 ${a.lam2[i].toFixed(0)} om2 ${f.om2.toFixed(2)}->${a.om2[i].toFixed(2)} lam1 ${a.lam1[i].toFixed(0)} om1 ${a.om1[i].toFixed(2)}`);
+        console.log(`  i ${i} s ${a.s[i].toFixed(0)} n ${a.north[i].toFixed(0)} e ${a.east[i].toFixed(0)} A ${a.area[i].toFixed(0)} lv ${a.level[i].toFixed(1)} S ${a.S[i].toFixed(4)} pi ${f.pi.toFixed(2)} room L/R ${a.roomL[i].toFixed(0)}/${a.roomR[i].toFixed(0)} thread ${a.rL[i].toFixed(0)}/${a.rR[i].toFixed(0)} Wa ${a.Wa[i].toFixed(1)} phi ${f.phi.toFixed(2)} lam2 ${a.lam2[i].toFixed(0)} om2 ${f.om2.toFixed(2)}->${a.om2[i].toFixed(2)} lam1 ${a.lam1[i].toFixed(0)} belt ${a.belt[i].toFixed(0)}`);
       }
     }
   };

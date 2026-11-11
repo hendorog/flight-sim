@@ -1,7 +1,7 @@
 // The channel-form law (channelForm.ts, organic-map DESIGN.md sections 2-3): its numbers on the NZ reaches it was
 // fitted to, the heterogeneity field's spread, and the laid thread's planform on a straight synthetic floor.
 import { describe, expect, it } from 'vitest';
-import { besselJ0, fitSwing, formOf, hField, layThread, sineAmplitude, struveH0 } from '../../src/world/terrain/channelForm';
+import { beltOffsets, besselJ0, fitSwing, formOf, hField, layThread, sineAmplitude, struveH0 } from '../../src/world/terrain/channelForm';
 import { setWorldSeed } from '../../src/world/worldSeed';
 
 describe('channel-form law', () => {
@@ -35,7 +35,7 @@ describe('channel-form law', () => {
     expect(sd).toBeLessThan(1.1);
   });
 
-  it('single-thread NZ reaches (lawcheck.out, the braid fallback)', () => {
+  it('single-thread NZ reaches (lawcheck.out: confined, one thread, the bed W_s)', () => {
     // [A km², S, F m, law W_a, law phi]: gorges, the Selwyn, the creek, hill V's and torrents.
     const rows: Array<[number, number, number, number, number]> = [
       [2575.7, 0.0031, 219, 95.6, 0.4],
@@ -46,10 +46,13 @@ describe('channel-form law', () => {
       [8.1, 0.1245, 51, 10.1, 0.4],
     ];
     for (const [A, S, F, Wa, phi] of rows) {
+      // (The bed's pattern share is nil or a few hundredths on these confined reaches: the bed within 5 % of W_s, the
+      // water - one thread, its catchment's - within 3 % of the fit's.)
       const f = formOf(A, S, F);
       expect(f.Wa).toBeGreaterThan(Wa * 0.97);
-      expect(f.Wa).toBeLessThan(Wa * 1.03);
-      expect(f.phi).toBeCloseTo(phi, 2);
+      expect(f.Wa).toBeLessThan(Wa * 1.05);
+      expect(f.phi * f.Wa).toBeGreaterThan(phi * Wa * 0.97);
+      expect(f.phi * f.Wa).toBeLessThan(phi * Wa * 1.03);
     }
   });
 
@@ -71,14 +74,20 @@ describe('channel-form law', () => {
       const lam2 = Math.max(48, f.lam2);
       const a2f = Math.min(sineAmplitude(lam2, f.om2), 0.8 * R);
       const om2 = fitSwing(lam2, f.om2, a2f);
-      const om1 = fitSwing(f.lam1, f.om1, Math.max(0, 0.8 * R - a2f));
       const m = 201;
       const N = Array.from({ length: m }, (_, i) => i * 100);
       const E = Array.from({ length: m }, () => 0);
       const c = (v: number): number[] => Array.from({ length: m }, () => v);
-      const t = layThread(N, E, { lam1: c(f.lam1), om1: c(om1), lam2: c(lam2), om2: c(om2), Wa: c(f.Wa), roomL: c(R), roomR: c(R) }, 7);
+      // The belt wanders the floor, keeping the thread's swing and the bed on it (riverNetwork.ts lawAlong).
+      const om1 = fitSwing(f.lam1, f.om1, Math.max(0, 0.8 * R - a2f));
+      const hi = Math.min(R - 1.35 * (a2f + sineAmplitude(f.lam1, om1)), F / 2 - f.Wa / 2);
+      const belt = beltOffsets(N, c(-hi), c(hi), c(Math.max(f.lam1, 3 * F)), 7);
+      const t = layThread(N, E, { belt, lam1: c(f.lam1), om1: c(om1), lam2: c(lam2), om2: c(om2), Wa: c(f.Wa), roomL: c(R), roomR: c(R) }, 7);
       const maxOff = Math.max(...t.off.map(Math.abs));
       expect(maxOff, name).toBeLessThanOrEqual(R + 0.5);
+      // (It wanders: the belt reaches past half its range both ways, where it has room to.)
+      const beltMax = Math.max(...Array.from(belt)), beltMin = Math.min(...Array.from(belt));
+      if (hi > 20) expect(beltMax - beltMin, name).toBeGreaterThan(hi);
       // Radius through three points one W apart (resampled every W/6), kinks (R < W) per 10 km.
       const step = Math.max(1, f.Wa / 6);
       const s = [0];
@@ -105,7 +114,7 @@ describe('channel-form law', () => {
         prevTight = tight;
       }
       const sinu = s[s.length - 1] / Math.hypot(t.north[t.north.length - 1] - t.north[0], t.east[t.east.length - 1] - t.east[0]);
-      console.log(`${name}: Wa ${f.Wa.toFixed(1)} w ${w.toFixed(1)} om1 ${om1.toFixed(2)} om2 ${om2.toFixed(2)} max|off| ${maxOff.toFixed(1)} room ${R.toFixed(1)} kinks/10km ${((kinks * 10000) / s[s.length - 1]).toFixed(2)} sinuosity ${sinu.toFixed(3)}`);
+      console.log(`${name}: Wa ${f.Wa.toFixed(1)} w ${w.toFixed(1)} belt ${beltMin.toFixed(0)}..${beltMax.toFixed(0)} om2 ${om2.toFixed(2)} max|off| ${maxOff.toFixed(1)} room ${R.toFixed(1)} kinks/10km ${((kinks * 10000) / s[s.length - 1]).toFixed(2)} sinuosity ${sinu.toFixed(3)}`);
       expect((kinks * 10000) / s[s.length - 1], name).toBeLessThanOrEqual(0.5);
     }
     setWorldSeed(0);

@@ -1,5 +1,5 @@
 // Organic channels (channelForm.ts): per seed, the build's time and the rivers' law in numbers - samples, km, the
-// bed and water widths, the room, the share of km the fitted braid law would braid, white samples.
+// bed and water widths, the room, the samples whose bed the pattern share widens past a fifth of the way to the belt, white samples.
 //   FS2_SEEDS=1,42,777777 npx vitest run --config scripts/probes/vitest.config.ts formStats
 import { it } from 'vitest';
 import { hydrology, terrainHeight } from '../../src/world/terrain/heightfield';
@@ -16,7 +16,7 @@ it('form stats', () => {
     terrainHeight(0, 0);
     const ms = performance.now() - t0;
     const L = hydrology.rivers ?? [];
-    const rep = hydrology.streamReport as unknown as { form?: { samples: number; braidLaw: number; white: number }; phases?: number[] };
+    const rep = hydrology.streamReport as unknown as { form?: { samples: number; wideBed: number; white: number }; phases?: number[] };
     let nR = 0;
     let km = 0;
     let n = 0;

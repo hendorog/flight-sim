@@ -21,7 +21,7 @@ import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, b
 import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth, type Drainage } from './drainage';
 import { gullyNetOf, setGullyNet } from './gullies';
 import { attachSlopes, buildErosion, floorHalfFor, FLOOR_SMIN, sminUp, CUT_CELL as CUT_CELL_M, CUT_N, erosionGullies, upsample, markCourse, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, slopeSmoothDelta, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
-import { buildNetworkHydrology, wallLift, wallStart } from './riverNetwork';
+import { buildNetworkHydrology, floorSet, wallLift, wallStart } from './riverNetwork';
 import { formSection } from './channelForm';
 import { slopeKey, slopeParams, slopeStats, thresholdSlopes, type FloorLines, type SlopeField } from './hillslopes';
 import { structParams, structureFor } from './structure';
@@ -1331,6 +1331,13 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     let carved = smin(h, wallLift(v.level + valleyProfile(d, f) + excess * t * t, h, (d - f) / I, I, v.gap, wallHere, wallStart(f, I, v.swing)), 4);
     if (hold > 0) carved += hold * Math.max(0, Math.min(h, holdLevel + 0.5) - carved);
     h += (carved - h) * (1 - smooth(f + I * 0.75, f + I, d));
+  }
+  // The rivers' floors, as their water shaped them (riverNetwork.ts floorSet): not in a lake's domain, nor beside a
+  // lake under the ground the lake's water needs (as the valleys keep it, LakeMask.holds).
+  if (nv > 0 && dryS) {
+    const hv = h;
+    h = floorSet(h, valleyNear, nv);
+    if (hold > 0) h += hold * Math.max(0, Math.min(hv, holdLevel + 0.5) - h);
   }
 
   // Oxbow lakes, as carveRiver cuts them (not under a lake's water).

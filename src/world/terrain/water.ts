@@ -417,8 +417,6 @@ attribute vec4 aFlow;
 varying vec4 vFlow;
 attribute vec2 aPitch;
 varying vec2 vPitch;
-attribute vec4 aBraid;
-varying vec4 vBraid;
 `;
 // Spray is a billboard about its centre (the vertex position), upright, turned to face the camera; aFall.yz is the
 // corner (-1..1) and aRiverInfo.z its size.
@@ -793,34 +791,7 @@ const FLOW_LIFT = `{
  * a saw-tooth outline; the ribbon's rows follow the line sample by sample. Lit as the terrain is (the irradiance the
  * water's own body colour received), its edge soft over the outer tenth of the bar. */
 const FLOW_BARS = `{
-  // A braided bed's secondary threads (channelForm.ts formOf: K threads; DESIGN.md section 3): thread k swings across
-  // the bed about the water's middle, y = A sin(r_k Phi + phi_k), A its side's bed edge less its own half-width, and is
-  // there on the half-period between two crossings of the main thread with the share K - (k - 1): it leaves the main
-  // thread at one crossing and rejoins it at the next, never ending on a bar. Water where it runs on a bar.
-  float bW = 0.0;
-  if (vBraid.x > 1.01) {
-    float bPhi = 6.2832 * vRiverInfo.y / max(vBraid.y, 1.0);
-    float bHalf = max(vRiverInfo.z, 0.5);
-    for (int k = 2; k <= 4; k++) {
-      float fk = float(k);
-      float pres = clamp(vBraid.x - (fk - 1.0), 0.0, 1.0);
-      if (pres <= 0.0) break;
-      float rk = k == 2 ? 0.77 : (k == 3 ? 1.31 : 0.61);
-      float arg = rk * bPhi + fract(fk * 0.618) * 6.2832;
-      float half_ = floor(arg / 3.14159);
-      if (fract(sin(half_ * 12.9898 + fk * 78.233) * 43758.5453) >= pres) continue;
-      float sn = sin(arg);
-      float yk = max(0.0, (sn > 0.0 ? vBraid.w : vBraid.z) - bHalf) * sn;
-      bW = max(bW, 1.0 - smoothstep(0.8 * bHalf, 1.05 * bHalf, abs(vRiverInfo.x - yk)));
-    }
-    bW *= 1.0 - smoothstep(-0.02, 0.0, vDepth);
-    if (bW > 0.0) {
-      float bTr = exp(-0.8 * dot(atten, vec3(0.25, 0.5, 0.25)));
-      gl_FragColor = gl_FragColor * (1.0 - bW) + vec4(totalDiffuse * (1.0 - bTr) * (1.0 - fresnel) + wSpec, 1.0 - (1.0 - fresnel) * bTr) * bW;
-    }
-  }
   float bK = (1.0 - smoothstep(-0.12, -0.02, vDepth)) * (1.0 - smoothstep(0.85, 1.0, -vDepth)) * smoothstep(${BAR_NEAR.toFixed(1)}, ${BAR_FAR.toFixed(1)}, wDist);
-  bK *= 1.0 - bW;
   if (bK > 0.0) {
     vec4 bN = texture(tNoise, vWaterPos.xz * (1.0 / 37.0) + 0.23);
     vec3 bAlb = vec3(0.2, 0.196, 0.18) * (0.82 + 0.36 * bN.g) * (1.0 - 0.25 * smoothstep(-0.2, -0.05, vDepth));
@@ -835,12 +806,12 @@ const FLOW_TURBID = 2.5;
 function withFlow(shader: { vertexShader: string; fragmentShader: string }, falls: boolean, ice: boolean): void {
   shader.vertexShader = shader.vertexShader
     .replace('attribute float aDepth;\n', `attribute float aDepth;\n${FLOW_VERTEX_HEAD(falls)}`)
-    .replace('vec3 transformed = position;\n', `vec3 transformed = position;\n${falls ? `vFall = aFall;\n${FALLS_BILLBOARD}` : `vFlow = aFlow * vec4(1.0, ${FLOW_SPEED_MAX.toFixed(1)}, 1.0, 1.0);\nvPitch = aPitch;\nvBraid = aBraid;\n${FLOW_LIFT}`}`);
+    .replace('vec3 transformed = position;\n', `vec3 transformed = position;\n${falls ? `vFall = aFall;\n${FALLS_BILLBOARD}` : `vFlow = aFlow * vec4(1.0, ${FLOW_SPEED_MAX.toFixed(1)}, 1.0, 1.0);\nvPitch = aPitch;\n${FLOW_LIFT}`}`);
   // (A seeded world's water is as turbid as its glacial and silt-laden rivers: opaque within a few decimetres, its
   // thread reading as water over the gravel it runs among, not as more of the bed.)
   if (!falls) shader.fragmentShader = shader.fragmentShader.replace(/vec3 atten = (vec3\([^)]*\));\n/, `vec3 atten = ${FLOW_TURBID.toFixed(1)} * $1;\n`).replace('gl_FragColor = vec4(wColor * wEdge, (1.0 - wSeen) * wEdge);\n', `gl_FragColor = vec4(wColor * wEdge, (1.0 - wSeen) * wEdge);\n${FLOW_BARS}`);
   shader.fragmentShader = shader.fragmentShader
-    .replace('varying float vDepth;\n', `varying float vDepth;\n${falls ? 'varying vec4 vFall;\n' : 'varying vec4 vFlow;\nvarying vec2 vPitch;\nvarying vec4 vBraid;\n'}`)
+    .replace('varying float vDepth;\n', `varying float vDepth;\n${falls ? 'varying vec4 vFall;\n' : 'varying vec4 vFlow;\nvarying vec2 vPitch;\n'}`)
     // (After the hashes: the stone lattice uses hash2u.)
     .replace('// Wave height field, m:', `${falls ? '' : `${channelStonesGlsl()}${FLOW_STONE_FOAM}${BEDROCK_GLSL}`}// Wave height field, m:`)
     // Before the shore foam's last line (the ice goes after it).
@@ -957,12 +928,11 @@ interface RiverBuffers {
   flow: number[];
   /** A stream's pitches and pools (aPitch: its unit coordinate and pitchOn, two per vertex), with the flow. */
   pitch: number[];
-  braid: number[];
 }
-const riverBuffers = (): RiverBuffers => ({ pos: [], depth: [], info: [], tan: [], idx: [], flow: [], pitch: [], braid: [] });
+const riverBuffers = (): RiverBuffers => ({ pos: [], depth: [], info: [], tan: [], idx: [], flow: [], pitch: [] });
 
 /** A line as the ribbon reads it (a seeded network's lines also carry their kind and flow). */
-type RibbonLine = { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; depth?: Float32Array; wetR?: Float32Array; wetL?: Float32Array; bedR?: Float32Array; bedL?: Float32Array; threads?: Float32Array; lam2?: Float32Array; kind?: number; regime?: Uint8Array; steepness?: Float32Array; speed?: Float32Array; sigma?: Float32Array; pitchOn?: Float32Array };
+type RibbonLine = { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; depth?: Float32Array; wetR?: Float32Array; wetL?: Float32Array; bedR?: Float32Array; bedL?: Float32Array; kind?: number; regime?: Uint8Array; steepness?: Float32Array; speed?: Float32Array; sigma?: Float32Array; pitchOn?: Float32Array };
 
 /** Whether sample i of a line is a fall's lip whose face (to sample i + 1) is steep enough to draw as a curtain. */
 function curtainAt(r: RibbonLine, i: number): boolean {
@@ -1100,9 +1070,6 @@ function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, fl
       if (flowing) {
         b.flow.push(r.steepness![i], r.speed![i], fall, grainToUnit((r as { grain?: Float32Array }).grain?.[i] ?? 0));
         b.pitch.push(r.sigma?.[i] ?? 0, r.pitchOn?.[i] ?? 0);
-        // (The threads and their wavelength, and the bed's edges from the water's middle: FLOW_BARS' braids.)
-        if (bed) b.braid.push(r.threads?.[i] ?? 1, r.lam2?.[i] ?? 100, r.bedL![i] + mid, r.bedR![i] - mid);
-        else b.braid.push(1, 100, 0, 0);
       }
     }
     rows++;
@@ -1133,8 +1100,6 @@ function riverGeometryOf(b: RiverBuffers): THREE.BufferGeometry {
     g.setAttribute('aFlow', new THREE.BufferAttribute(f, 4, true));
     // A stream's unit coordinate (floats: it runs to thousands) and where its pitches are drawn (pitchPool.ts).
     g.setAttribute('aPitch', new THREE.Float32BufferAttribute(b.pitch, 2));
-    // A seeded world's threads and their wavelength, and its bed's edges either side of the water's middle (FLOW_BARS).
-    g.setAttribute('aBraid', new THREE.Float32BufferAttribute(b.braid, 4));
   }
   g.setIndex(b.idx);
   g.computeBoundingSphere();

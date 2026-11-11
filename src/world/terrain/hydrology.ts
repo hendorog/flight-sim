@@ -200,9 +200,6 @@ export interface RiverLine {
   wetR?: Float32Array;
   wetL?: Float32Array;
   depth?: Float32Array;
-  /** ... its threads (1: one; more on a braided bed) and their wavelength along the valley, m (channelForm.ts). */
-  threads?: Float32Array;
-  lam2?: Float32Array;
   /**
    * A stream's pitches and pools (pitchPool.ts): its unit coordinate `sigma` at each sample (unit k's lip at
    * pitchPool.ts lipOf(k), its foot pitchLen(k) on, the next unit's lip at lipOf(k + 1)), and `pitchOn` 1 where its water
@@ -252,6 +249,16 @@ export interface ValleyNear {
   /** The line, and the arc length along its axis of the nearest point (diagnostics). */
   line?: number;
   s?: number;
+  /** A seeded world's river floor (riverNetwork.ts floorSet), once its belt is laid: the point's offset from the axis
+   * (right of the flow: +), where the belt's water goes (lo..hi, offsets from the axis), how far the floor reaches left
+   * and right of the axis, and the bank's height over the water, m. `floor` false: none. */
+  floor?: boolean;
+  y?: number;
+  lo?: number;
+  hi?: number;
+  floorL?: number;
+  floorR?: number;
+  bankH?: number;
 }
 
 /** A line's channel near a point (NetworkQuery.channels). */

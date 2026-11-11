@@ -4,12 +4,15 @@
 // gives it - in its own width, with constants fitted to twelve Canterbury reaches (LINZ lidar and aerials), and one
 // seeded stationary field `h` for the heterogeneity real reaches have. No zone, kind or site constant.
 //   - formOf: the widths, the wet share, the swings and wavelengths, the bank, the steps.
-//   - layThread: the channel in its room, a bounded sine-generated curve (Langbein & Leopold, with Kinoshita skew) at
-//     two scales - the belt about the floor's axis, the thread about the belt - each high-passed (bounded with no
-//     steer), softly clamped to the room, its swing lowered to fit the room from the smallest scale up and its
+//   - beltOffsets: where the belt runs across its floor - it wanders the whole floor, now in the middle, now against
+//     one wall for a stretch (the owner's Rakaia and Orari): the floor is shaped by where the water has been
+//     (riverNetwork.ts floorAt), so the water lies on its floor's lowest line wherever the belt goes.
+//   - layThread: the channel about its belt, a bounded sine-generated curve (Langbein & Leopold, with Kinoshita skew),
+//     high-passed (bounded with no steer), scaled into the room bend by bend, its swing lowered to fit the room and its
 //     curvature capped (no bend tighter than 1.2 active widths).
 //   - formSection: the cross-section about the thread: its wet bed, the bars to the bed's edge, the bank.
-// Braids (secondary threads) are not built in this prototype: the braid share is the design's one-row fallback, 0.
+// One water thread on every line: the bed's width follows the law's pattern share (a big gravel river's bed fills most
+// of its floor, the water wandering within it), but no secondary threads are drawn (braids are the owner's open choice).
 // Pure and three.js-free; read only on a seeded world's path (riverNetwork.ts, heightfield.ts carveNetwork).
 
 import { gnoise, hash2i } from './noise';
@@ -91,19 +94,19 @@ export function hField(x: number, y: number, salt: number): number {
 
 /** The law's numbers for one reach state. */
 export interface Form {
-  /** Single-thread bank-full width W_s, the braid belt B, the active (bed) width W_a without h, m. */
+  /** Single-thread bank-full width W_s, the gravel belt B, the active (bed) width W_a without h, m. */
   Ws: number;
   B: number;
   Wa: number;
-  /** Pattern ratio, step share, braid share (as fitted) and the braid share used (the fallback: 0). */
+  /** Pattern ratio, step share, and the bed's pattern share (as fitted: 0 a single-thread bed W_s wide, 1 a gravel bed
+   * as wide as the belt B). */
   pi: number;
   sigma: number;
   betaLaw: number;
-  beta: number;
-  /** Wet share of the bed and the number of threads. */
+  /** Wet share of the bed (one water thread, a single thread's water: W_s's wet share of W_s, over W_a). */
   phi: number;
-  K: number;
-  /** Swings (rad) and valley wavelengths (m) of the thread and the belt. */
+  /** Swings (rad) and valley wavelengths (m) of the thread and of the belt's bends (about its line across the floor,
+   * beltOffsets). */
   om2: number;
   lam2: number;
   om1: number;
@@ -119,7 +122,9 @@ export interface Form {
 /**
  * The law (DESIGN.md section 2) at catchment A (km²), water gradient S (m/m) and floor width F (m: the room on both
  * sides of the course). W_a here leaves out the heterogeneity term exp(0.45 h), which the caller applies where the
- * channel is.
+ * channel is. The bed widens from W_s toward the belt B by the fitted pattern share (a steep big gravel river with room:
+ * the owner's Rakaia), never past the floor (but a single thread's own bed, which cuts its walls in a V); its water is a
+ * single thread's at its catchment, whatever the bed's width.
  */
 export function formOf(A: number, S: number, F: number): Form {
   const a = Math.max(0.05, A);
@@ -130,30 +135,28 @@ export function formOf(A: number, S: number, F: number): Form {
   const B = 0.6 * 121 * Math.pow(a, 0.345);
   const rho = F / B;
   const betaLaw = smooth(1, 1.5, pi) * (1 - sigma) * smooth(0.5, 1.5, rho);
-  // The design's braid fallback (one row): one thread everywhere; the fitted share is reported only.
-  const beta = 0;
-  const K = 1 + beta * 0.9 * Math.pow(a, 0.25);
-  const Wa = Math.min(Math.pow(Ws, 1 - beta) * Math.pow(B, beta), 0.6 * Math.max(F, 0));
-  const phi = 0.8 - 0.4 * smooth(0.7, 1.2, pi) - 0.3 * beta;
+  const Wa = Math.min(Math.pow(Ws, 1 - betaLaw) * Math.pow(B, betaLaw), Math.max(Ws, F));
+  // (One water thread: a single thread's wet share of its own width W_s.)
+  const w = (0.8 - 0.4 * smooth(0.7, 1.2, pi)) * Ws;
+  const phi = Math.min(1, w / Wa);
   // (Below the braid threshold's onset a single thread keeps at least the swing that meets DESIGN.md section 7's
   // sinuosity, 1.25 at 1 km, up to pi 0.7, easing to a gravel thread's by pi 1.2: the fit alone stepped it down by
   // 0.7, the Selwyn's pi, and straightened every big lowland river of 0.6-0.8 - p7-8's, om-plains' - against section 7
   // and the owner's kept meanders.)
   const lowland = 0.95 * (1 - smooth(0.7, 1.2, pi));
-  const om2 = Math.max(0.35 + 1.4 * (1 - smooth(0.05, 0.7, pi)), lowland) + 0.25 * beta;
-  const lam2 = 13 * ((phi * Wa) / K);
-  const om1 = 0.4 - 0.15 * beta;
+  const om2 = Math.max(0.35 + 1.4 * (1 - smooth(0.05, 0.7, pi)), lowland);
+  const lam2 = 13 * w;
+  const om1 = 0.4;
   const lam1 = 378 * Math.pow(a, 0.204);
-  const bankH = 0.35 * Math.pow(a, 0.17) * (1 - 0.4 * beta);
+  const bankH = 0.35 * Math.pow(a, 0.17) * (1 - 0.4 * betaLaw);
   const bankTan = Math.tan(((14 + 36 * smooth(0.005, 0.08, s)) * Math.PI) / 180);
-  const Wu = 4.47 * Math.pow(a / K, 0.39);
-  const stepL = Wu * (1.75 + 7.75 * (1 - smooth(0.05, 0.12, s)));
+  const stepL = Ws * (1.75 + 7.75 * (1 - smooth(0.05, 0.12, s)));
   const stepH = sigma * s * stepL;
-  return { Ws, B, Wa, pi, sigma, betaLaw, beta, phi, K, om2, lam2, om1, lam1, bankH, bankTan, stepL, stepH };
+  return { Ws, B, Wa, pi, sigma, betaLaw, phi, om2, lam2, om1, lam1, bankH, bankTan, stepL, stepH };
 }
 
 /** The thread's depth at its middle, m: shallow at a crossing, deep in a pool at a bend's apex (kap 0..1). */
-export const threadDepth = (w: number, beta: number, kap: number): number => (0.15 + w / (20 + 30 * beta)) * (0.7 + 0.6 * kap);
+export const threadDepth = (w: number, kap: number): number => (0.15 + w / 20) * (0.7 + 0.6 * kap);
 
 /** White water on a step: none while the step is lower than the water is deep. */
 export const stepWhite = (stepH: number, depth: number): number => (stepH < 0.3 ? 0 : smooth(1, 2, stepH / Math.max(0.05, depth)));
@@ -286,6 +289,8 @@ const SWING_JITTER = 0.35;
 const SWING_TOP = 1.9;
 /** No bend tighter than this many active widths. */
 const BEND_MIN = 1.2;
+/** A half-bend that would reach past its room is scaled down whole to reach this share of it (marchLevel). */
+const ROOM_FILL = 0.95;
 
 /** One level's march along its parent: valley distance, offset (right of the parent: +), heading rate. */
 interface Level {
@@ -300,7 +305,7 @@ interface Level {
 /**
  * March one level of the sine-generated curve along a parent of length total (distance along the parent), its
  * wavelength, swing, curvature cap and room each side read at that distance. High-passed over three wavelengths and
- * clamped softly into the room.
+ * scaled into the room half-bend by half-bend.
  */
 function marchLevel(total: number, lam: (sv: number) => number, om: (sv: number) => number, cap: (sv: number) => number, roomL: (sv: number) => number, roomR: (sv: number) => number, dsOf: (sv: number) => number, salt: number): Level {
   const along: number[] = [0];
@@ -380,19 +385,35 @@ function marchLevel(total: number, lam: (sv: number) => number, om: (sv: number)
     if (hi > m - 1) sum += (hi - (m - 1)) * off[m - 1];
     hp[i] = off[i] - sum / (2 * half + 1);
   }
+  // Into the room: each half-bend (between two crossings of the line) is scaled down whole as far as its tightest
+  // sample needs (ROOM_FILL of the room there) - a clip of its peak alone (a soft clamp) flattened it against the wall
+  // and bent it sharply where the flat met the curve.
+  const room = new Float64Array(m);
   for (let i = 0; i < m; i++) {
     const sv = Math.min(total, Math.max(0, along[i]));
-    const v = hp[i];
-    const r = v >= 0 ? Math.max(0, roomR(sv)) : Math.max(0, roomL(sv));
-    off[i] = r > 1e-6 ? r * Math.tanh(v / r) : 0;
+    room[i] = hp[i] >= 0 ? Math.max(0, roomR(sv)) : Math.max(0, roomL(sv));
     along[i] = sv;
+  }
+  for (let a = 0; a < m; ) {
+    let b = a + 1;
+    while (b < m && (hp[b] >= 0) === (hp[a] >= 0)) b++;
+    let f = 1;
+    for (let i = a; i < b; i++) {
+      const v = Math.abs(hp[i]);
+      if (v > 1e-9) f = Math.min(f, (ROOM_FILL * room[i]) / v);
+    }
+    for (let i = a; i < b; i++) off[i] = Math.max(-room[i], Math.min(room[i], hp[i] * f));
+    a = b;
   }
   return { along, off, curv, kap };
 }
 
 /** The channel's law along its valley axis, per axis sample. */
 export interface ThreadLaw {
-  /** Valley wavelengths (m) and swings (rad) of the belt and the thread, already fitted to the room. */
+  /** The belt's line across its floor: its offset from the axis (right of the flow: +), m (beltOffsets). */
+  belt: ArrayLike<number>;
+  /** Valley wavelengths (m) and swings (rad) of the belt's bends about that line and of the thread about the belt,
+   * already fitted to the room. */
   lam1: ArrayLike<number>;
   om1: ArrayLike<number>;
   lam2: ArrayLike<number>;
@@ -404,21 +425,57 @@ export interface ThreadLaw {
 }
 
 /**
- * Lay the channel (its main thread) about a valley axis: the belt about the axis, the thread about the belt.
- * Returns the thread's points, their distance along the valley axis and their offset from it (right: +).
+ * Where a belt runs across its floor, per axis sample (arc lengths s): its offset from the axis (right: +), between `lo`
+ * and `hi` (the offsets that keep the thread's swing and the bed on the floor), at tanh(BELT_WANDER n) of the way from
+ * the middle to either end, n a seeded smooth field of unit spread read at the distance along the axis in units of
+ * `wave` (m, how far the belt runs between crossings of its floor): it wanders the whole floor, within a third of the
+ * middle about a third of the way and past nine tenths of the way to a wall about a tenth. Smoothed along over a
+ * quarter wave.
+ */
+export function beltOffsets(s: ArrayLike<number>, lo: ArrayLike<number>, hi: ArrayLike<number>, wave: ArrayLike<number>, salt: number): Float64Array {
+  const m = s.length;
+  const out = new Float64Array(m);
+  let ph = 0;
+  for (let i = 0; i < m; i++) {
+    if (i > 0) ph += (s[i] - s[i - 1]) / Math.max(1, 0.5 * (wave[i] + wave[i - 1]));
+    const c = 0.5 * (lo[i] + hi[i]);
+    const half = Math.max(0, 0.5 * (hi[i] - lo[i]));
+    out[i] = c + half * Math.tanh(BELT_WANDER * hSmooth(ph, 0.5, salt));
+  }
+  // (Smoothed along: a floor that narrows or widens from one station to the next moves the belt gently.)
+  const sm = new Float64Array(m);
+  let lo0 = 0;
+  let hi0 = 0;
+  let sum = 0;
+  for (let i = 0; i < m; i++) {
+    const r = 0.125 * wave[i];
+    while (hi0 < m && s[hi0] <= s[i] + r) sum += out[hi0++];
+    while (lo0 < hi0 && s[lo0] < s[i] - r) sum -= out[lo0++];
+    sm[i] = sum / Math.max(1, hi0 - lo0);
+  }
+  for (let i = 0; i < m; i++) sm[i] = Math.max(Math.min(lo[i], hi[i]), Math.min(Math.max(lo[i], hi[i]), sm[i]));
+  return sm;
+}
+/** beltOffsets: the belt's share of the way from its floor's middle to a wall is tanh(BELT_WANDER n), n of unit spread:
+ * past 0.9 of the way about a tenth of its length, within a third of the middle about a third. */
+const BELT_WANDER = 0.9;
+
+/**
+ * Lay the channel (its main thread) about a valley axis: the belt's line across the floor (law.belt), the belt's bends
+ * about it, the thread about the belt. Returns the thread's points, their distance along the valley axis and their
+ * offset from it (right: +).
  */
 export function layThread(axisN: ArrayLike<number>, axisE: ArrayLike<number>, law: ThreadLaw, salt: number): { north: number[]; east: number[]; valleyS: number[]; off: number[] } {
   const ax = new Frame(axisN, axisE);
   const total = ax.total;
   const S = ax.s;
   const at = (arr: ArrayLike<number>) => (sv: number): number => lerpAt(S, arr, sv);
-  const lam1 = at(law.lam1);
-  const om1 = at(law.om1);
   const lam2 = at(law.lam2);
   const om2 = at(law.om2);
   const Wa = at(law.Wa);
   const rL = at(law.roomL);
   const rR = at(law.roomR);
+  const yB = at(law.belt);
   // The axis's own curvature (the valley's bends), smoothed: the levels' curvature budget is what it leaves.
   const m = S.length;
   const kAx = new Float64Array(m);
@@ -442,23 +499,47 @@ export function layThread(axisN: ArrayLike<number>, axisE: ArrayLike<number>, la
   }
   const kAxis = at(kAxS);
   const capAll = (sv: number): number => 1 / (BEND_MIN * Math.max(1, Wa(sv)));
-  // The belt: a quarter of the budget at most (its bends are long; the thread's swing takes the rest).
-  const belt = marchLevel(total, lam1, om1, (sv) => Math.max(1e-5, 0.25 * capAll(sv) - kAxis(sv)), rL, rR, (sv) => Math.min(60, Math.max(10, lam1(sv) / 40)), salt * 3 + 11);
+  // The belt's bends about its line across the floor (yB): a quarter of the curvature budget at most (its bends are
+  // long; the thread's swing takes the rest), in the room the line leaves either side.
+  const lam1 = at(law.lam1);
+  const om1 = at(law.om1);
+  const bend = marchLevel(total, lam1, om1, (sv) => Math.max(1e-5, 0.25 * capAll(sv) - kAxis(sv)), (sv) => rL(sv) + yB(sv), (sv) => rR(sv) - yB(sv), (sv) => Math.min(60, Math.max(10, lam1(sv) / 40)), salt * 3 + 11);
   // The belt's points in the plane.
   const o = [0, 0, 0, 0];
   const bn: number[] = [];
   const be: number[] = [];
-  for (let i = 0; i < belt.along.length; i++) {
-    ax.at(belt.along[i], o);
+  const bAlong: number[] = [];
+  const bOff: number[] = [];
+  for (let k = 0; k < bend.along.length; k++) {
+    const sv = bend.along[k];
+    ax.at(sv, o);
+    const y = yB(sv) + bend.off[k];
     // Right of the flow: (-te, tn) in (north, east).
-    bn.push(o[0] - o[3] * belt.off[i]);
-    be.push(o[1] + o[2] * belt.off[i]);
+    bn.push(o[0] - o[3] * y);
+    be.push(o[1] + o[2] * y);
+    bAlong.push(sv);
+    bOff.push(y);
   }
   const B = new Frame(bn, be);
   const bS = B.s;
-  const bAlong = belt.along;
-  const bOff = belt.off;
-  const bCurv = belt.curv;
+  // (The belt's own curvature, smoothed as the axis's: the thread's budget is what the belt's and the axis's leave.)
+  const nB = bS.length;
+  const bK = new Float64Array(nB);
+  for (let i = 1; i < nB - 1; i++) {
+    const a0 = Math.atan2(be[i] - be[i - 1], bn[i] - bn[i - 1]);
+    const a1 = Math.atan2(be[i + 1] - be[i], bn[i + 1] - bn[i]);
+    let d = a1 - a0;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    bK[i] = Math.abs(d) / Math.max(1, 0.5 * (bS[i + 1] - bS[i - 1]));
+  }
+  const bCurv = Float64Array.from(bK);
+  for (let i = 0; i < nB; i++) {
+    let sum = 0;
+    let c = 0;
+    for (let j = Math.max(0, i - 2); j <= Math.min(nB - 1, i + 2); j++) (sum += bK[j]), c++;
+    bCurv[i] = sum / c;
+  }
   // The thread along the belt: its parameters where the belt is in the valley; its room each side what the belt's
   // offset leaves; its curvature what the belt's and the axis's leave of the budget.
   const vAt = (bs: number): number => lerpAt(bS, bAlong, bs);
