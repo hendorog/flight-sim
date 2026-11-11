@@ -13,7 +13,9 @@
 //     continuously at ON (any other position); a dry motoring run (to blow out the fuel a failed start left in the
 //     combustor) is the starter with the condition lever at CUT-OFF;
 //   - power-turbine torque falls linearly with its speed for a given gas power, from stallTorqueRatio times the
-//     design-speed torque with the power turbine held still: a free turbine gives the most torque stalled;
+//     design-speed torque with the power turbine held still: a free turbine gives the most torque stalled; with
+//     powerTurbine.runaway the speed where it falls to zero comes down at low Ng, and beyond it the torque is negative
+//     (the propeller, driven by the airflow, turns the turbine against its weak gas);
 //   - the fuel topping governor takes Ng off when the power turbine overspeeds (a failed propeller governor).
 // Beta and reverse (PitchControlDef.beta with TurbineDef.reversingCam; the blades are the governor's, governor.ts):
 //   - aft of the gate (EngineInput.reverse > 0) the fuel topping governor's set point is reset down to
@@ -56,7 +58,7 @@ export class TurbineEngine implements EngineCore {
   fuelDemand = 0;
   readonly phi = 0;
   firing = false;
-  /** Power-turbine torque, N m at the power-turbine shaft, >= 0; its friction; the same. */
+  /** Power-turbine torque, N m at the power-turbine shaft (>= 0 unless powerTurbine.runaway); its friction; the same. */
   indicatedTorque = 0;
   lossTorque = 0;
   frictionTorque = 0;
@@ -91,7 +93,20 @@ export class TurbineEngine implements EngineCore {
 
   /** Power-turbine output relative to rated (the thermal model's load). */
   get load(): number {
-    return (this.indicatedTorque * this.omegaPt) / this.ratedPower;
+    return Math.max(0, this.indicatedTorque * this.omegaPt) / this.ratedPower;
+  }
+
+  /**
+   * Power-turbine torque per unit gas power, times the design speed, at speed `w` (fraction of the design speed) and
+   * corrected Ng `nc`: a - (a - 1) w, or with powerTurbine.runaway (4 k / r)(1 - w / r) for the runaway speed r at nc,
+   * k = a^2 / (4 (a - 1)) keeping the best power where the fixed law has it; the two agree at r = a / (a - 1).
+   */
+  private torqueFactor(w: number, nc: number): number {
+    const pt = this.turbine.powerTurbine;
+    const a = pt.stallTorqueRatio;
+    if (!pt.runaway) return Math.max(0, a - (a - 1) * w);
+    const r = Math.min(interp1(pt.runaway.ng, pt.runaway.speed, nc), a / (a - 1));
+    return ((a * a) / ((a - 1) * r)) * (1 - w / r);
   }
 
   /** Ng, fraction; ITT, C; gas-generator rpm. */
@@ -166,16 +181,15 @@ export class TurbineEngine implements EngineCore {
     const scale = (this.gg.inletPressure / 101_325) * sqrtTheta;
     const lapse = lim.lapse;
     const atAltitude = interp1(lapse.altFt, lapse.psi, pressureAltitudeFt(input.ambientPressure)) * (lim.psi / lapse.psi[0]);
-    const a = this.turbine.powerTurbine.stallTorqueRatio;
     const w = input.omega / this.omegaDesign;
     const [constant, perKrpm] = this.turbine.powerTurbine.friction;
     const friction = input.omega > 0 ? constant + (perKrpm * input.omega * RPM_PER_RAD_S) / 1000 : 0;
-    const shaft = (this.def.gearRatio * lim.psiPerNm * Math.max(0, a - (a - 1) * w)) / this.omegaDesign;
+    const shaft = (this.def.gearRatio * lim.psiPerNm) / this.omegaDesign;
     const frictionPsi = friction * this.def.gearRatio * lim.psiPerNm;
     const [t0, t1] = lim.ngTaper;
     // Torque above the limit at Ng = ng, psi (rises with Ng: the gas power rises and the limit tapers down).
     const excess = (ng: number): number =>
-      gg.steadyGasPower(ng / sqrtTheta) * scale * shaft - frictionPsi - (atAltitude - lim.taperPsi * clamp((ng - t0) / (t1 - t0), 0, 1));
+      gg.steadyGasPower(ng / sqrtTheta) * scale * shaft * this.torqueFactor(w, ng / sqrtTheta) - frictionPsi - (atAltitude - lim.taperPsi * clamp((ng - t0) / (t1 - t0), 0, 1));
     this.torqueLimited = false;
     if (!(excess(demand) > 0)) return demand;
     let lo = gg.firstMapNg * sqrtTheta;
@@ -199,9 +213,8 @@ export class TurbineEngine implements EngineCore {
     this.gasGenerator.burn(gg, fuelDelivered);
     this.firing = this.gasGenerator.lit;
     // The power turbine: the gas power's torque at the design speed, more when slower, less when faster.
-    const a = this.turbine.powerTurbine.stallTorqueRatio;
-    const designTorque = this.gasGenerator.gasPower / this.omegaDesign;
-    this.indicatedTorque = Math.max(0, designTorque * (a - (a - 1) * (input.omega / this.omegaDesign)));
+    const nc = this.gasGenerator.ng / Math.sqrt(gg.inletTemperature / 288.15);
+    this.indicatedTorque = (this.gasGenerator.gasPower / this.omegaDesign) * this.torqueFactor(input.omega / this.omegaDesign, nc);
   }
 
   /** Stopped, cold-soaked at `ambientTemp` (K). */

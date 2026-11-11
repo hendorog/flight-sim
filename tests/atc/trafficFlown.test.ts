@@ -99,6 +99,42 @@ describe('the physics LOD', () => {
     expect(Math.hypot(near.state.north - before.north, near.state.east - before.east)).toBeLessThan(1);
   }, 120_000);
 
+  it('is drawn without a jump as it changes over between its flight model and the kinematic circuit', async () => {
+    const f = generatedAirfields()[0];
+    const env = createEnvironment({ weather: calmWeather(), terrain: { height: () => f.elevation, normal: () => ({ x: 0, y: 0, z: -1 }), surface: () => 'runway' } });
+    const defs: Record<string, AircraftDefinition> = { c172s: C172, c152: C152, pa38: PA38, da20: DA20 };
+    const traffic = new TrafficSystem({ authority: () => 'easa', env: () => env, exteriors: false, loadDefinition: async (id) => defs[id] });
+    const state = { position: { x: f.north, y: f.east }, onGround: false };
+    const ctx = { state, scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(), weather: { windDirectionDeg: 250, windSpeedKt: 0, qnhHpa: 1013 }, timeScale: 1 };
+    traffic.init(ctx as never);
+    traffic.update(0.1);
+    await Promise.resolve();
+    await Promise.resolve();
+    for (let t = 0; t < 60; t += 0.1) traffic.update(0.1);
+    const near = traffic.states.find((a) => a.field.code === f.code)! as unknown as { pilot: unknown; state: { onGround: boolean; speed: number }; drawn: { pos: THREE.Vector3 } };
+    expect(near.pilot).not.toBeNull();
+    expect(near.state.onGround).toBe(false);
+    // Frames of 1/60 s, either side of each changeover: each step on screen within a few percent of the speed's.
+    const steps: number[] = [];
+    let last = near.drawn.pos.clone();
+    const frames = (n: number) => {
+      for (let i = 0; i < n; i++) {
+        traffic.update(1 / 60);
+        steps.push(near.drawn.pos.distanceTo(last) / (near.state.speed / 60));
+        last = near.drawn.pos.clone();
+      }
+    };
+    frames(30);
+    state.position.x += 100000; // the player leaves: kinematic
+    frames(90);
+    expect(near.pilot).toBeNull();
+    state.position.x -= 100000; // and returns: on the flight model again, restarted where the circuit has it
+    frames(90);
+    expect(near.pilot).not.toBeNull();
+    expect(Math.max(...steps)).toBeLessThan(1.1);
+    expect(Math.min(...steps)).toBeGreaterThan(0.9);
+  }, 120_000);
+
   it('goes around on its flight model when the player is on its runway, and does not land', async () => {
     const f = generatedAirfields()[0];
     const env = createEnvironment({ weather: calmWeather(), terrain: { height: () => f.elevation, normal: () => ({ x: 0, y: 0, z: -1 }), surface: () => 'runway' } });

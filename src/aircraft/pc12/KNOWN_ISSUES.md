@@ -133,22 +133,22 @@ at 15-20 kt (8-12) and left 3.0 kN at FLIGHT IDLE on the gate. In flight the bla
 Evidence: [powerplant.ts](powerplant.ts) `PC12_FLIGHT_IDLE_STOP`; docs/pc12-flight-model.md "Flight idle".
 Close with: the AFM's blade-angle rigging and an idle-thrust figure.
 
-## Idle descents shallow — **owner to judge**
+## Idle descents shallow — **resolved 2026-11-09 (owner: "hardly any drag with the throttle at idle"); owner to fly**
 
-FLIGHT IDLE power is ESTIMATE: 130 shp at 65 % Ng (was 165; pilot review 2026-10-17). Idle descents at MTOW: 120 KIAS
--648 ft/min (was -600), 150 KIAS -978 (-927), 85 KIAS flaps 40 gear down -1282 (-7.4 deg; was -1234).
-Polish 2026-10-17, clean, gear up, MTOW, energy-corrected, FLIGHT IDLE against feathered at the same height (2000 ft
-and 10 800 ft): 100 KIAS 21.4 / 20.5 : 1 against 14.8; 119 KIAS 23.3 / 22.4 : 1 (-539 / -629 ft/min) against 16.2 /
-16.3 (-771 / -860; the feathered best glide 15.8 +- 1.5 at 119 KIAS, 47E-PROXY 3.2 / Fig 5-2-46); 150 KIAS 19.9 / 18.4
-against 15.0 / 14.7. At FLIGHT IDLE the propeller governs 1700 rpm on a 13.6-23 deg blade, 3.7-4.0 psi, and gives
-+0.6 to +1.07 kN of net thrust (+0.8-0.9 kN at 119 KIAS, about a quarter of the airframe's drag there): positive, as
-a PT6 at flight idle is, but more than "small". Not changed (not clearly wrong; the gate Np band blocks less idle
-power, see below). Type experience
-(ESTIMATE): -1000 to -1300 at 120-150 KIAS. Lower power breaks the ESTIMATE band for FLIGHT IDLE on the gate (95 shp:
-Np 1364 against 1500-1730) and gains little: at 120 KIAS zero propeller thrust gives about the feathered glide
-(-889 ft/min); steeper needs the propeller to drag with Np below 1700. The same shallow descent is open on the C208.
-Evidence: docs/pc12-flight-model.md "Flight idle"; [targets](../../../tests/conformance/targets/pc12.ts) `idleRpm`.
-Close with: whether Np holds 1700 in a real PC-12 idle descent, and an idle torque or descent figure from a PC-12 pilot.
+Was: FLIGHT IDLE in flight gave +0.6 to +1.1 kN of net propeller thrust (the power turbine always drove the propeller
+at 1700 rpm with about 130 shp), so the idle glide (22:1 at 120 KIAS) was flatter than the feathered one (16:1).
+Now the power turbine has a low runaway speed at idle (powerplant.ts `runaway`, turbineEngine.ts `torqueFactor`): the
+weak idle gas cannot drive it at the governed speed, so in flight the airflow turns the propeller at 1700 rpm and the
+propeller drives the turbine. MTOW, clean, the autopilot holding the speed, energy-corrected sink (before -> now):
+100 KIAS -594 -> -1035 ft/min; 120 KIAS -648 -> -1064 (glide 13.5:1; feathered 16.4:1); 150 KIAS -928 -> -1339; 180
+KIAS -1415 -> -1833; 85 KIAS flaps 40 gear down -1283 -> -1783 (glide 5.6:1); 100 KIAS flaps 15 gear down -924 ->
+-1367. Net propeller thrust -0.7 to -1.6 kN. Level at FLIGHT IDLE, 150 -> 110 KIAS: 50 s -> 32 s. The torque reads
+about -1 psi; the hydraulic torquemeter cannot read below 0, so the TQ readout stops there (panel.ts).
+On the ground: FLIGHT IDLE on the gate 3656 N / Np 1526 -> 2415 N / 1249 (band re-based to 1150-1730, ESTIMATE);
+GROUND IDLE 1693 N / Np 1051 -> 1646 N / 1036 (47E 1060 +- 60); gate taxi at ground idle 16 kt (band 15-30); half
+beta now stands still (1.0 kN static against 1.3 kN): conformance item held open as `PC12-idle-runaway` for the
+owner. Evidence: `scripts/probes/pc12Idle.test.ts`; docs/pc12-flight-model.md "Flight idle".
+Close with: the owner's flight; a PC-12 idle descent rate or idle torque from a pilot.
 
 ## Take-off swing without rudder trim — **within the plan row; owner to judge**
 

@@ -310,6 +310,9 @@ function trimDetailTexture(kind: 'leather' | 'carpet' | 'plastic', tile: number)
   return t;
 }
 
+/** The generated textures shared by the material sets made with `shared` (AI traffic), never disposed. */
+const SHARED_TEXTURES = new Map<string, THREE.Texture>();
+
 export class AircraftMaterials {
   readonly fuselagePaint: THREE.MeshPhysicalMaterial;
   readonly wingPaint: THREE.MeshPhysicalMaterial;
@@ -341,17 +344,30 @@ export class AircraftMaterials {
   readonly cabin: THREE.MeshStandardMaterial[];
   private readonly textures: THREE.Texture[] = [];
 
-  /** @param def the airframe whose paint scheme and fin these are (default: the Cessna 172S) */
-  constructor(fus: FuselageTextures, def: Pick<AirframeVisualDef, 'livery' | 'tail'> = C172S_VISUAL) {
+  /**
+   * @param def the airframe whose paint scheme and fin these are (default: the Cessna 172S)
+   * @param shared take the generated detail textures (rivets, tread, glass dirt, cabin trim, the type's fin) from a
+   *   cache shared by every set made with `shared` (the AI traffic's: most of a set's build time is drawing them);
+   *   dispose() leaves those alone. Only the fuselage textures handed in are the set's own.
+   */
+  constructor(fus: FuselageTextures, def: Pick<AirframeVisualDef, 'livery' | 'tail'> & { id?: string } = C172S_VISUAL, shared = false) {
     const finHeight = def.tail.v.base.z - def.tail.v.tip.z;
     const finUvRange = finHeight + 0.45;
+    const tex = <T extends THREE.Texture>(key: string, make: () => T): T => {
+      if (!shared) {
+        const t = make();
+        this.textures.push(t);
+        return t;
+      }
+      let t = SHARED_TEXTURES.get(key) as T | undefined;
+      if (!t) SHARED_TEXTURES.set(key, (t = make()));
+      return t;
+    };
     // Rivet rows and skin laps are a metal airframe's; composite wings and fins are smooth.
-    const detail = def.livery.construction === 'composite' ? null : surfaceDetailTexture();
-    const finColour = finColourTexture(def, finHeight, finUvRange);
-    const tread = treadTexture();
+    const detail = def.livery.construction === 'composite' ? null : tex('detail', surfaceDetailTexture);
+    const finColour = tex(`fin:${def.id ?? ''}:${def.livery.palette.base.join()}:${def.livery.palette.band.join()}`, () => finColourTexture(def, finHeight, finUvRange));
+    const tread = tex('tread', treadTexture);
     this.textures.push(fus.colour, fus.detail, fus.glass, fus.lining);
-    if (detail) this.textures.push(detail);
-    this.textures.push(finColour, tread);
 
     const paint = (name: string, p: THREE.MeshPhysicalMaterialParameters): THREE.MeshPhysicalMaterial => {
       const m = new THREE.MeshPhysicalMaterial({
@@ -389,9 +405,8 @@ export class AircraftMaterials {
     // Glazing: additive reflection over attenuated background (src + dst * (1 - a)) so the Fresnel
     // reflection keeps its full strength while the glass only dims what is behind it by `opacity`.
     // The glass UVs span the cabin (u ~3.1 m along, v ~3.6 m around): repeat the dirt every ~0.5 m.
-    const dirt = glassDirtTexture();
+    const dirt = tex('dirt', glassDirtTexture);
     dirt.repeat.set(6, 7);
-    this.textures.push(dirt);
     this.glass = new THREE.MeshPhysicalMaterial({
       name: 'glass',
       // Diffuse = dirt only (clean glass has none): the film's back-scatter albedo is tiny (~0.01); its
@@ -474,10 +489,9 @@ export class AircraftMaterials {
     const cabin = (name: string, c: readonly number[], roughness: number, extra: THREE.MeshStandardMaterialParameters = {}): THREE.MeshStandardMaterial =>
       new THREE.MeshStandardMaterial({ name, color: srgb(c), roughness, ...extra });
     // Surface detail, in metres of the box-projected cabin texture coordinates (Cockpit.projectTrimUv).
-    const leather = trimDetailTexture('leather', 0.09);
-    const carpetTex = trimDetailTexture('carpet', 0.16);
-    const plastic = trimDetailTexture('plastic', 0.05);
-    this.textures.push(leather, carpetTex, plastic);
+    const leather = tex('leather', () => trimDetailTexture('leather', 0.09));
+    const carpetTex = tex('carpet', () => trimDetailTexture('carpet', 0.16));
+    const plastic = tex('plastic', () => trimDetailTexture('plastic', 0.05));
     this.panelPlastic = cabin('panelPlastic', [46, 47, 50], 0.75, { bumpMap: plastic, bumpScale: 0.6 });
     // Anti-glare covering: matte and with a low specular reflectance, so it neither reflects in the
     // windscreen nor shows the sky's colour at the grazing angles the pilot sees it at.

@@ -266,6 +266,68 @@ After a resume the published N1 and TOT of a multi-engine type stay at the reset
 `engines[i].ng` / `itt`.
 Close with: republish them from the snapshot in the restore path.
 
+### Parked aircraft carry no registration — **missing feature (cosmetic)**
+
+The home apron's parked aircraft (`world/airport/props.ts` ParkedAircraft) share one livery per type, baked without a
+registration: a per-aircraft bake would hold its own textures (~86 MB at the C172S's size). The AI traffic's own
+exteriors carry theirs.
+Close with: a registration-only decal per parked aircraft (a small texture over the shared livery), or per-aircraft
+bakes at the downsampled 1024 px size (~5 MB each).
+
+### First AI exterior can stall on its shader compile — **defect (performance), pre-existing**
+
+The first traffic exterior drawn compiles its materials' programs on that frame (a few hundred ms on a slow GPU) unless
+a parked aircraft's full-detail model, which uses the same programs, was drawn first (the player started within 50 m
+of one).
+Close with: `renderer.compileAsync` on a new exterior before it is shown (the far model meanwhile).
+
+### AI traffic taxis round corners in a series of jinks — **resolved 2026-11-05, owner to check in the sim**
+
+Owner report: an AI aircraft took a taxiway corner as a polygon, short straights joined by abrupt heading changes.
+`stepTaxi` slewed the heading at 25 deg/s toward each point of the rounded route, so it stepped at every point:
+1500-3000 deg/s/s of yaw acceleration, 33-112 steps per route. It now steers on the arc to a point 6 m (or 1.5 s)
+along the route from abeam it, and the yaw rate follows that arc's rate through a 0.35 s nosewheel lag: 16-28
+deg/s/s, no steps, within 1.7 m of the route. An arrival used to be turned from nose-in to nose-out at once on its
+spot; it now swings round there in about 10 s (`turnOnSpot`). `tests/atc/taxiSteer.test.ts`.
+Check: from a cockpit following an AI aircraft round the apron corners and onto its spot.
+
+### AI aircraft sat on their wheel hubs — **resolved 2026-11-05, owner to check in the sim**
+
+Owner report: an AI PA-38 on the ground had its hubs at the ground. Every type did, when posed rather than flown
+(all of them on the ground). Two causes:
+- The kinematic pose stood it at the field elevation, but the drawn pavement is raised (taxiways 5 cm, runway 9 cm),
+  and the flight models stand on it.
+- After being posed in the air, its gear stayed hanging free on the ground (about 5 cm more).
+It now stands on the ground the flight models feel, with each type's strut compressions and pitch taken from the
+flight model settled at rest. `tests/atc/trafficPose.test.ts`; `scripts/probes/traffic-wheels.mjs` pictures each AI
+aircraft on the ground at wheel height, with how high it stands (a parked DA20: 1.020 m before, 1.072 m after,
+rest 1.07 m).
+
+### External camera slowly drifts down to the ground — **defect (owner report 2026-11-05), cause not yet found**
+
+In an external view the camera creeps down by itself until it sits at the ground. Candidates:
+- The mouse/trackpad drag adds to `elevation` (chaseRig) or `targetElevation` (orbitRig) without a dead-band or
+  decay, so a captured pointer's small residual dy accumulates. This is the likeliest on a laptop.
+- The chase frame's pitch lag (PITCH_FOLLOW, PITCH_TAU) settles nose-down.
+- The ground-clearance clamp (1.0 m) pushes the camera along the ground instead of up.
+Close with: log `elevation` / `targetElevation` and the pointer dy over a minute with hands off, in both rigs, then
+fix the source (a dead-band on the drag, or ignore motion while the pointer is not dragging).
+
+### Yellow taxiway lines broaden and blur with distance — **resolved 2026-11-09, owner to check in the sim**
+
+Owner report (2026-11-05): the further away a yellow line was, the wider and fuzzier it looked. In
+`world/airport/pavementGlsl.ts` the taxiway centrelines, lead-on lines, the pavement edge and its edge lines, the
+tie-down anchor rings and the runway designation digits were box-filtered over `0.5 * (w.x + w.y)`, the average of the
+pixel footprint along u and v. Looked along at a grazing angle a pixel spans metres along the view and centimetres
+across it, so the 15 cm line was spread over metres (a wedge of yellow smear toward the horizon down taxiway A; the
+"07" read as a sideways streak from short final).
+Fix: each such marking is filtered over the footprint across itself. The distance functions return the unit
+direction they grow in (`segDN`, `arcDN`, `centrelineDN`, `leadOnDN`, `digitDN`), and `across(n)` projects the
+pixel's screen derivatives of (u, v), set by the material as `gDpdx` / `gDpdy`, onto it. The pavement edge uses the
+screen gradient of its signed distance. Lines now narrow to a point in perspective and fade instead of spreading.
+Check: `node scripts/probes/taxiway-lines.mjs <outDir>` (eye-height views down taxiway A, wide and zoomed toward 100,
+300 and 600 m, the B1 junction, the apron taxilane, the A2 lead-on and the runway numbers), run before and after.
+
 ## Career
 
 Open items of the air-operator career ([career.md](career.md), on `feat/career` as of 2026-11-01).

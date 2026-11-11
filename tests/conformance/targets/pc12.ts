@@ -124,10 +124,11 @@ export const PC12_TARGETS: ConformanceTargets = {
   },
   ground: {
     restHeightM: band(1.54, 0.03, 'geometry.restHeight; contract 5 intro (3 cm)'),
-    // Power-turbine rpm on the gate at the definition's default condition lever (FLIGHT IDLE, 66 % Ng): the propeller
-    // on its 6 deg stop runs up to about its governed speed (ESTIMATE; the 47E: 1700 rpm "except at low power settings
-    // at low speeds").
-    idleRpm: range(1500 * (29_894 / 1700), 1730 * (29_894 / 1700), 'ESTIMATE: FLIGHT IDLE on the gate, Np 1500-1730'),
+    // Power-turbine rpm on the gate at the definition's default condition lever (FLIGHT IDLE, 66 % Ng), the propeller
+    // on its 6 deg stop. The 47E: 1700 rpm "except at low power settings at low speeds". Was 1500-1730 (ESTIMATE);
+    // with the power turbine's low runaway speed at idle (powerplant.ts `runaway`, owner 2026-11-09: too little drag
+    // at idle in flight) it stands at about 1250 rpm. ESTIMATE.
+    idleRpm: range(1150 * (29_894 / 1700), 1730 * (29_894 / 1700), 'ESTIMATE: FLIGHT IDLE on the gate, Np 1150-1730 (was 1500-1730 before the idle runaway, 2026-11-09)'),
     parkedDriftMm: below(5, 'contract 3.10 generic block'),
     parkedRateDegS: below(0.05, 'contract 3.10 generic block'),
     taxi: {
@@ -219,7 +220,10 @@ export const PC12_TAXI = [
   { label: 'on the gate, ground idle', reverse: 0, speedKt: range(15, 30, 'ESTIMATE (plan 5.7 (a)): the reason the POH taxis in beta') },
   // 3-8 kt, was 8-12 (fix/rolling-drag): the pressure-based tyre springs and the tyre rolling resistance (about 0.022 once
   // rolling, more at rest; tyre.ts) slow the half-beta taxi to 5 kt after the pilot breaks the aircraft away.
-  { label: 'half beta', reverse: GROUND_FINE / 2, speedKt: range(3, 8, '47E-PROXY 4.7 ("use the beta range to control taxi speed") / AGENT (plan 5.7 (c)); re-based for the tyre rolling resistance (owner decision)') },
+  // PC12-idle-runaway (open, owner to decide): with the power turbine's low runaway speed at ground idle the half-beta
+  // blade (about 0.5 deg) leaves 1.0 kN static against 1.3 kN before, under the tyres' rolling resistance: it stands
+  // still. The gate taxi is 16 kt, ground fine 0.
+  { label: 'half beta', reverse: GROUND_FINE / 2, speedKt: range(3, 8, '47E-PROXY 4.7 ("use the beta range to control taxi speed") / AGENT (plan 5.7 (c)); re-based for the tyre rolling resistance (owner decision)', 'PC12-idle-runaway') },
 ] as const;
 /** Take-off roll with the rudder trim at zero (plan 5.7, AGENT). */
 export const PC12_TAKEOFF_HEADING = {

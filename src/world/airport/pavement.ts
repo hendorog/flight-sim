@@ -55,7 +55,9 @@ function pavementMaterial(kind: 'runway' | 'taxiway', tex: PavementTextures, sha
         '#include <color_fragment>',
         `#include <color_fragment>
         // Pixel footprint in metres along u and v, for filtering the analytic markings.
-        vec2 pw = max(vec2(length(vec2(dFdx(vLocal.x), dFdy(vLocal.x))), length(vec2(dFdx(vLocal.y), dFdy(vLocal.y)))), vec2(1e-4));
+        gDpdx = dFdx(vLocal);
+        gDpdy = dFdy(vLocal);
+        vec2 pw = max(vec2(length(vec2(gDpdx.x, gDpdy.x)), length(vec2(gDpdx.y, gDpdy.y))), vec2(1e-4));
         Pave pv = ${surfaceFn}(vLocal, pw);
         ${kind === 'taxiway' ? 'if (pv.alpha < 0.3) discard;' : ''}
         diffuseColor = vec4(pv.albedo, pv.alpha);`,

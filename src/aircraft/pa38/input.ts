@@ -36,7 +36,7 @@ export const PA38_INPUT: InputProfile = {
   assists: {
     axes: {
       aileron: { baseRate: 0.3, maxRate: 1.3, accelTime: 0.9, accelExponent: 2, reverseGain: 1.3, fullAuthoritySpeed: 33 * STALL_RATIO, authorityExponent: 1, minAuthority: 0.4, negativeScale: 1 },
-      elevator: { baseRate: 0.22, maxRate: 0.8, accelTime: 1.1, accelExponent: 2, reverseGain: 1.2, fullAuthoritySpeed: 28 * STALL_RATIO, authorityExponent: 2, minAuthority: 0.22, negativeScale: 0.55 },
+      elevator: { baseRate: 0.22, maxRate: 0.8, accelTime: 1.1, accelExponent: 2, reverseGain: 1.2, fullAuthoritySpeed: 28 * STALL_RATIO, authorityExponent: 2, minAuthority: 0.22, negativeScale: 0.55, fullTravel: true },
       rudder: { baseRate: 0.25, maxRate: 1.2, accelTime: 1.0, accelExponent: 2, reverseGain: 1.3, fullAuthoritySpeed: 30 * STALL_RATIO, authorityExponent: 1, minAuthority: 0.5, negativeScale: 1 },
     },
     groundElevatorRate: 0.6,

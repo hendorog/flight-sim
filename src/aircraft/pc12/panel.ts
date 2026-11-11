@@ -201,7 +201,9 @@ const readout = (label: string, unit: string, decimals: number, read: EisReadout
 /** The nine windows of the EIS (the order of research 15), left to right, top to bottom. */
 const EIS_WINDOWS: GaugeDef[] = [
   { kind: 'eisWindow', id: 'eisTq', bounds: eisRect(0, 0), title: 'TQ', dial: TQ_DIAL,
-    readouts: [readout('', 'PSI', 1, (r) => TQ_DIAL.read(r), (v) => (v > PC12_TORQUE_PSI.transient ? 'red' : v > PC12_TORQUE_PSI.takeoff + 0.3 ? 'amber' : undefined))] },
+    // The PT6 torquemeter is hydraulic (oil pressure against the reduction gear's helical ring): it cannot read the
+    // negative torque of a propeller driving the power turbine at flight idle in flight, so the readout stops at 0.
+    readouts: [readout('', 'PSI', 1, (r) => Math.max(0, TQ_DIAL.read(r)), (v) => (v > PC12_TORQUE_PSI.transient ? 'red' : v > PC12_TORQUE_PSI.takeoff + 0.3 ? 'amber' : undefined))] },
   { kind: 'eisWindow', id: 'eisItt', bounds: eisRect(1, 0), title: 'ITT', dial: ITT_DIAL,
     readouts: [readout('', '°C', 0, (r) => ITT_DIAL.read(r), (v) => (v > PC12_ITT_C.transient ? 'red' : v > PC12_ITT_C.takeoff ? 'amber' : undefined))] },
   { kind: 'eisWindow', id: 'eisNg', bounds: eisRect(2, 0), title: 'NG', dial: NG_DIAL,

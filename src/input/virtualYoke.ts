@@ -42,6 +42,13 @@ export interface KeyAxisTuning {
   minAuthority: number;
   /** Limit for negative deflection relative to positive (yoke forward: pushing to negative g is rarely wanted). */
   negativeScale: number;
+  /**
+   * The limit above scales only the key's RATE (travel per second of key, so a tap stays the same load factor at
+   * any speed), not how far a held key goes: the control runs on to its stop, as a hand on the yoke can. Owner,
+   * 2026-11-11: with the travel capped (PC-12, 200 KIAS: 14 % forward) the nose could not be pushed down against
+   * the take-off trim. Set on the fixed-wing elevators.
+   */
+  fullTravel?: boolean;
 }
 
 /** The Cessna 172S key axis tuning. */
@@ -92,7 +99,7 @@ export function keyRate(t: KeyAxisTuning, heldTime: number): number {
 export function stepKeyAxis(value: number, direction: number, ias: number, dt: number, t: KeyAxisTuning, heldTime = Infinity): number {
   if (dt <= 0 || direction === 0) return value;
   const limit = keyAuthority(ias, t) * (direction < 0 ? t.negativeScale : 1);
-  const target = direction * limit;
+  const target = t.fullTravel ? direction : direction * limit;
   // Already at or beyond the limit in this direction (set at a lower airspeed): hold it there.
   if ((target - value) * direction <= 0) return value;
   const towardCentre = value * direction < 0;

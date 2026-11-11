@@ -449,13 +449,13 @@ function plantShelterbelts(e0: number, n0: number, size: number, m: number, farm
       const r = edgeRandom(k, dseed, 0);
       const species = r < 0.4 ? SPECIES.poplar : r < 0.75 ? SPECIES.macrocarpa : SPECIES.pine;
       const along = species === SPECIES.poplar ? 4.5 : species === SPECIES.macrocarpa ? 3.2 : 4;
-      // Maturity (macrocarpa and pine): 15 % young, 25 % grown out untrimmed, 60 % clipped. In a seeded world a poplar
-      // belt is never cut (a row of trees, never a wall), and a belt is clipped on the plains only: in a hill or
+      // Maturity (macrocarpa and pine): 15 % young, 25 % grown out untrimmed, 60 % clipped. A poplar belt is never cut (a
+      // row of trees, never a wall), and in a seeded world a belt is clipped on the plains only: in a hill or
       // mountain valley it grows out (onPlains, per point along it).
       const seeded = !!seededDrainage;
       const age = species === SPECIES.poplar ? 1 : edgeRandom(k, dseed, 2);
       const young = age < 0.15;
-      const clippable = (!seeded || species !== SPECIES.poplar) && age >= 0.4;
+      const clippable = species !== SPECIES.poplar && age >= 0.4;
       const h1 = edgeRandom(k, dseed, 1);
       const heightOf = (clipped: boolean): number =>
         species === SPECIES.poplar ? 17 + 9 * h1

@@ -37,7 +37,7 @@ export const PA34_INPUT: InputProfile = {
   assists: {
     axes: {
       aileron: { baseRate: 0.3, maxRate: 1.3, accelTime: 0.9, accelExponent: 2, reverseGain: 1.3, fullAuthoritySpeed: 33 * STALL_RATIO, authorityExponent: 1, minAuthority: 0.4, negativeScale: 1 },
-      elevator: { baseRate: 0.22, maxRate: 0.8, accelTime: 1.1, accelExponent: 2, reverseGain: 1.2, fullAuthoritySpeed: 28 * STALL_RATIO, authorityExponent: 2, minAuthority: 0.22, negativeScale: 0.55 },
+      elevator: { baseRate: 0.22, maxRate: 0.8, accelTime: 1.1, accelExponent: 2, reverseGain: 1.2, fullAuthoritySpeed: 28 * STALL_RATIO, authorityExponent: 2, minAuthority: 0.22, negativeScale: 0.55, fullTravel: true },
       // Full travel up to Vmca, then no faster than 1 / V (contract 3.6): the keys reach what an engine-out needs. A
       // held key reaches full travel sooner than on the 172S (an engine failure asks for most of the rudder at once):
       // the keyboard engine-out's largest heading change 15.1 deg with the 172S's rates (band 15), 14.9 with these; 1.6 / 0.7

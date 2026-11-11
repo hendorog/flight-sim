@@ -93,12 +93,42 @@ const TAXI_SIDEWAYS = 1.2;
 const TAXI_BRAKING = 1.5;
 /** The slowest a curve is taken (a tight turn into a spot), m/s. */
 const TAXI_CREEP = 2;
+/** The point steered for is this far along the route, m, or this many seconds' travel when faster. */
+const TAXI_LOOK = 6;
+const TAXI_LOOK_TIME = 1.5;
+/** The nosewheel's lag: the yaw rate follows the steering's with this time constant, s. */
+const TAXI_STEER_TAU = 0.35;
+
+/**
+ * Swing round where it stands to `heading` (nose out of its parking spot, on a braked wheel), the yaw rate building
+ * and dying away through the nosewheel's lag, easing onto `at` (the spot) meanwhile. True once round and still.
+ */
+export function turnOnSpot(s: TrafficState, heading: number, at: { north: number; east: number }, dt: number): boolean {
+  s.speed = 0;
+  const err = wrap(heading - s.heading);
+  // Critically damped with the lag: the steered rate is the error over four lag times.
+  const steer = Math.max(-TAXI_TURN_RATE, Math.min(TAXI_TURN_RATE, err / (4 * TAXI_STEER_TAU)));
+  const rate = s.yawRate ?? 0;
+  s.yawRate = rate + (steer - rate) * (1 - Math.exp(-dt / TAXI_STEER_TAU));
+  s.heading = wrap(s.heading + s.yawRate * dt);
+  const dn = at.north - s.north, de = at.east - s.east;
+  const d = Math.hypot(dn, de);
+  const move = Math.min(d, 0.5 * dt);
+  if (d > 1e-9) {
+    s.north += (dn / d) * move;
+    s.east += (de / d) * move;
+  }
+  const done = Math.abs(err) < 0.5 * DEG && Math.abs(s.yawRate) < 0.5 * DEG && d < 0.01;
+  if (done) s.yawRate = 0;
+  return done;
+}
 
 /**
  * Taxi along a route of NED points from waypoint `wp` (the one being steered to), as a pilot does: steering for a
- * point a little way ahead along the route (so corners are rounded off, taxi.ts gives them curves), slowing before
- * each curve to a speed it can be taken at and braking from far enough out, at most `limit` m/s (0: stopped, as
- * behind another aircraft). Returns the waypoint steered to next; route.length when the end is reached (stopped).
+ * point a little way ahead along the route on the arc that runs through it (so corners are taken as smooth curves,
+ * taxi.ts gives them arcs), the yaw rate building as the nosewheel turns rather than stepping, slowing before each
+ * curve to a speed it can be taken at and braking from far enough out, at most `limit` m/s (0: stopped, as behind
+ * another aircraft). Returns the waypoint steered to next; route.length when the end is reached (stopped).
  */
 export function stepTaxi(s: TrafficState, route: readonly { north: number; east: number }[], wp: number, dt: number, limit = TAXI_SPEED): number {
   s.onGround = true;
@@ -116,21 +146,43 @@ export function stepTaxi(s: TrafficState, route: readonly { north: number; east:
   }
   if (wp >= route.length) {
     s.speed = 0;
+    s.yawRate = 0;
     return wp;
   }
   const p = route[wp];
   const d = Math.hypot(p.north - s.north, p.east - s.east);
-  // Steer for a point a look-ahead distance along the route.
-  const look = Math.max(5, 1.5 * s.speed);
+  // The point a look-ahead distance along the route from abeam the aircraft on the stretch it is on (so it comes
+  // back onto the line when off it), or from the aircraft itself toward the first waypoint.
+  const look = Math.max(TAXI_LOOK, TAXI_LOOK_TIME * s.speed);
+  let from = { north: s.north, east: s.east };
+  if (wp > 0) {
+    const a = route[wp - 1];
+    const dn = p.north - a.north, de = p.east - a.east;
+    const t = Math.max(0, Math.min(1, ((s.north - a.north) * dn + (s.east - a.east) * de) / Math.max(dn * dn + de * de, 1e-9)));
+    from = { north: a.north + dn * t, east: a.east + de * t };
+  }
   let aim = p;
-  const q = route[wp + 1];
-  if (q && d < look) {
-    const seg = Math.hypot(q.north - p.north, q.east - p.east);
-    const f = Math.min(1, (look - d) / Math.max(seg, 1e-6));
-    aim = { north: p.north + (q.north - p.north) * f, east: p.east + (q.east - p.east) * f };
+  let left = look - Math.hypot(p.north - from.north, p.east - from.east);
+  if (left < 0) {
+    const f = look / (look - left);
+    aim = { north: from.north + (p.north - from.north) * f, east: from.east + (p.east - from.east) * f };
+  }
+  for (let i = wp; left > 0 && i + 1 < route.length; i++) {
+    const a = route[i], b = route[i + 1];
+    const seg = Math.hypot(b.north - a.north, b.east - a.east);
+    const f = Math.min(1, left / Math.max(seg, 1e-6));
+    aim = { north: a.north + (b.north - a.north) * f, east: a.east + (b.east - a.east) * f };
+    left -= seg;
   }
   const err = wrap(Math.atan2(aim.east - s.east, aim.north - s.north) - s.heading);
-  s.heading = wrap(s.heading + Math.max(-TAXI_TURN_RATE * dt, Math.min(TAXI_TURN_RATE * dt, err)));
+  // The arc from here, tangent to the heading, through that point (pure pursuit): its curvature times the speed is
+  // the yaw rate steered for (at most a full turn's, with the point abeam or behind); the nosewheel follows it.
+  const reach = Math.max(2, Math.hypot(aim.north - s.north, aim.east - s.east));
+  const curvature = (2 * Math.sin(Math.max(-Math.PI / 2, Math.min(Math.PI / 2, err)))) / reach;
+  const steer = Math.max(-TAXI_TURN_RATE, Math.min(TAXI_TURN_RATE, curvature * s.speed));
+  const rate = s.yawRate ?? 0;
+  s.yawRate = rate + (steer - rate) * (1 - Math.exp(-dt / TAXI_STEER_TAU));
+  s.heading = wrap(s.heading + s.yawRate * dt);
   // The speed it may have now: for each curve ahead (a waypoint where the route turns, its radius from the turn
   // and the spacing of the points), the speed for it plus what braking from here allows; stopping at the end.
   let allowed = limit;
@@ -200,6 +252,8 @@ export interface TrafficState {
   rollTime: number;
   /** This landing is a full stop: the roll brakes down to a taxi instead of a touch and go. */
   fullStop?: boolean;
+  /** Taxiing: the yaw rate, rad/s (it builds and dies away as the nosewheel is steered). */
+  yawRate?: number;
 }
 
 /** Leg bearing in the active frame turned to a true heading. */
