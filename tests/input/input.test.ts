@@ -261,12 +261,14 @@ describe('virtual yoke (hold position)', () => {
     // Without fullTravel a held key stops at the limit (pushing, at negativeScale of it).
     const capped = { ...e, fullTravel: false };
     expect(hold(600, -1, 2 * e.fullAuthoritySpeed, capped)).toBeCloseTo(-0.25 * e.negativeScale, 6);
-    // With it (the fixed-wing elevators) the limit sets the rate only: inside the old limit the key moves the control
-    // exactly as before, and holding it reaches the stop either way.
+    // With it (the fixed-wing elevators) the limit sets the rate only inside it: there the key moves the control
+    // exactly as before; beyond it a held key speeds up to the low-speed rate and reaches the stop in a few seconds.
     expect(e.fullTravel).toBe(true);
     expect(hold(30, -1, 2 * e.fullAuthoritySpeed, e)).toBe(hold(30, -1, 2 * e.fullAuthoritySpeed, capped));
-    expect(hold(3600, -1, 2 * e.fullAuthoritySpeed, e)).toBe(-1);
-    expect(hold(3600, 1, 2 * e.fullAuthoritySpeed, e)).toBe(1);
+    expect(hold(240, -1, 2 * e.fullAuthoritySpeed, e)).toBe(-1);
+    expect(hold(240, 1, 2 * e.fullAuthoritySpeed, e)).toBe(1);
+    // And back from the stop as fast.
+    expect(hold(60, 1, 2 * e.fullAuthoritySpeed, e, -1)).toBeGreaterThan(-0.6);
     expect(stepKeyAxis(0.9, 1, 2 * e.fullAuthoritySpeed, 1 / 60, e, 1)).toBeGreaterThan(0.9);
     // A 0.1 s tap at 70 KIAS moves the elevator less than 2% of travel (fine corrections on final).
     const tap = hold(6, 1, 36, e);

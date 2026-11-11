@@ -20,7 +20,7 @@ import { defaultWeather, type AircraftState, type ControlInputs, type WeatherSet
 import { AIRPORT, runwayCoords } from '../../src/core/world';
 import { InputSystem, REVERSE_RATE } from '../../src/input/InputSystem';
 import type { InputProfile } from '../../src/input/profile';
-import { keyAuthority, keyRate, type KeyAxisTuning } from '../../src/input/virtualYoke';
+import { keyAuthority, keyStepRate, type KeyAxisTuning } from '../../src/input/virtualYoke';
 import { SimPhysics, type SimPhysicsOptions } from '../../src/sim/SimPhysics';
 
 export const FRAME = 1 / 60;
@@ -282,13 +282,12 @@ class Key {
  * How long to hold a key to move a hold-position control by `gap` (the pilot's feel for the key rates, read
  * off the control-position widget), counting from a press already `held` s old; capped at `cap` s.
  */
-export function pressTime(gap: number, ias: number, tuning: KeyAxisTuning, held: number, cap: number): number {
-  const L = keyAuthority(ias, tuning) * (gap < 0 ? tuning.negativeScale : 1);
+export function pressTime(gap: number, ias: number, tuning: KeyAxisTuning, held: number, cap: number, from = 0): number {
   let d = 0;
   let T = 0;
   const dt = 1 / 120;
   while (d < Math.abs(gap) && T < cap) {
-    d += L * keyRate(tuning, held + T) * dt;
+    d += keyStepRate(tuning, ias, gap, held + T, from + Math.sign(gap) * d) * dt;
     T += dt;
   }
   return T;

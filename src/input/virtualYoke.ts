@@ -43,10 +43,11 @@ export interface KeyAxisTuning {
   /** Limit for negative deflection relative to positive (yoke forward: pushing to negative g is rarely wanted). */
   negativeScale: number;
   /**
-   * The limit above scales only the key's RATE (travel per second of key, so a tap stays the same load factor at
-   * any speed), not how far a held key goes: the control runs on to its stop, as a hand on the yoke can. Owner,
+   * The limit above scales the key's rate only while the control is inside it, and does not stop a held key: beyond
+   * it the control runs on to its stop at the low-speed rate, as a hand on the yoke can (keyStepRate). Owner,
    * 2026-11-11: with the travel capped (PC-12, 200 KIAS: 14 % forward) the nose could not be pushed down against
-   * the take-off trim. Set on the fixed-wing elevators.
+   * the take-off trim, and with the rate scaled all the way to the stop the elevator was "too slow" at speed. Set on
+   * the fixed-wing elevators.
    */
   fullTravel?: boolean;
 }
@@ -90,6 +91,20 @@ export function keyRate(t: KeyAxisTuning, heldTime: number): number {
 }
 
 /**
+ * Rate of a key axis, travel per second (before the reverse gain), `heldTime` s into a press in `direction` at `ias`
+ * with the control at `value`. The rate scales with the speed limit. On a fullTravel axis that holds only while the
+ * control is inside the limit (taps and the first of a hold are the same load factor at any speed, and what was
+ * tuned inside it stands: the rotation, the 2 g hold); beyond it the scaling fades out over one more limit of travel,
+ * so a held key runs on to the stop, and back from it, at the low-speed rate.
+ */
+export function keyStepRate(t: KeyAxisTuning, ias: number, direction: number, heldTime: number, value = 0): number {
+  const limit = keyAuthority(ias, t) * (direction < 0 ? t.negativeScale : 1);
+  if (!t.fullTravel) return keyRate(t, heldTime) * limit;
+  const beyond = clamp((Math.abs(value) - limit) / limit, 0, 1);
+  return keyRate(t, heldTime) * (limit + beyond * (1 - limit));
+}
+
+/**
  * Advance one keyboard axis (hold-position).
  * @param value     current deflection [-1, 1] relative to neutral
  * @param direction -1, 0 or +1 from the keys currently held (0: the control stays where it is)
@@ -105,8 +120,8 @@ export function stepKeyAxis(value: number, direction: number, ias: number, dt: n
   const towardCentre = value * direction < 0;
   // Integrate the rate over the frame (heldTime is the time at the end of the frame) so a tap is frame-rate independent.
   const t0 = Math.max(0, heldTime - dt);
-  const rate = 0.5 * (keyRate(t, t0) + keyRate(t, heldTime));
-  const step = rate * limit * dt * (towardCentre ? t.reverseGain : 1);
+  const rate = 0.5 * (keyStepRate(t, ias, direction, t0, value) + keyStepRate(t, ias, direction, heldTime, value));
+  const step = rate * dt * (towardCentre ? t.reverseGain : 1);
   if (Math.abs(target - value) <= step) return target;
   return value + direction * step;
 }
