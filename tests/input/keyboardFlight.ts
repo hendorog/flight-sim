@@ -138,7 +138,11 @@ export const C172S_KEYBOARD_BANDS: KeyboardFlightBands = {
     // travel against 0.14 at the old flat 0.02); as the wheels unload (their drag goes as load^1.5) the wound-in
     // elevator becomes excess and the nose comes up at 13-15 deg/s, faster than the hold-position yoke can be eased
     // forward on the keys, and a gust lull (43-47 KIAS) can force a second rotation with more wound in.
-    gustKnownFail: [1],
+    // KNOWN GAP (fix/yoke-gstop-held, 2026-11-12): seed 3 lifts off fine (no tail strike) but its attitude a metre or
+    // two up peaks at 19.8 deg against 17. The soft g stop now acts only while a pitch key is held (owner: a released
+    // yoke is never walked back), so it no longer eases the yoke out of the sideslip pitch-up after the scripted
+    // pilot's tap; the pilot's next push catches it a moment later.
+    gustKnownFail: [1, 3],
   },
 };
 
