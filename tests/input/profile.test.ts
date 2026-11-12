@@ -157,18 +157,29 @@ describe('input profile: key axis tuning and assists', () => {
     expect(moved(withAssists({ groundElevatorRate: C172S_INPUT.assists.groundElevatorRate / 2 })) / standard).toBeCloseTo(0.5, 9);
   });
 
-  it('the soft g stops are those of the profile', () => {
-    const eased = (profile: InputProfile | undefined): number => {
+  it('the soft g stops are those of the profile, and act only while the pitch key is held', () => {
+    // How far the keyboard elevator moves in 30 frames at 1.8 g after a 2 s nose-up hold, the key still held or let go.
+    const moved = (profile: InputProfile | undefined, keyHeld: boolean): number => {
       const r = rigFor(profile, 'downwind');
-      hold(r, 'ArrowDown', 2);
+      r.input.keyDown('ArrowDown');
+      run(r, 2);
+      if (!keyHeld) {
+        r.input.keyUp('ArrowDown');
+        run(r, FRAME);
+      }
       const before = r.ctx.controls.elevator;
       r.physics.renderState.gLoad = 1.8;
       frames(r, 30);
-      return before - r.ctx.controls.elevator;
+      return r.ctx.controls.elevator - before;
     };
-    // 1.8 g is inside the Cessna 172S stop (2.2) and 0.3 g beyond a stop at 1.5: 0.6 of travel per second per g.
-    expect(eased(undefined)).toBe(0);
-    expect(eased(withAssists({ gStops: { pull: 1.5, push: 0.35 } }))).toBeCloseTo(0.3 * 0.6 * 30 * FRAME, 9);
+    const stop = withAssists({ gStops: { pull: 1.5, push: 0.35 } });
+    // Held: 1.8 g is inside the Cessna 172S stop (2.2) and 0.3 g beyond a stop at 1.5, which eases the yoke back at 0.6 of
+    // travel per second per g (0.09 over the 30 frames) against the key; the key's own rate beyond its speed limit grows
+    // with the travel (keyStepRate), so the gap is at least that.
+    expect(moved(undefined, true) - moved(stop, true)).toBeGreaterThanOrEqual(0.3 * 0.6 * 30 * FRAME - 1e-9);
+    // Let go: the yoke stays where the pilot left it, whatever the load factor (owner: no control walks back).
+    expect(moved(undefined, false)).toBe(0);
+    expect(moved(stop, false)).toBe(0);
   });
 
   it('Numpad 5 on the roll hands the rudder over above the hand-over speed and within the steering limit of the profile', () => {

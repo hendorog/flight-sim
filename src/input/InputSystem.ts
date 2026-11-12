@@ -219,9 +219,9 @@ const OFF_CENTRE = 0.005;
 export const HANDOVER_SPEED = C172S_INPUT.assists.handoverSpeed;
 /**
  * Soft load-factor stops for the keyboard elevator only: a held yoke must not overstress the aircraft or
- * throw it into negative g. Beyond these the held keyboard deflection is eased back (a pilot feels the stick
- * force and the seat of the pants), and it stays where it was eased to; hardware and the mouse yoke are
- * never limited.
+ * throw it into negative g. Beyond these, while the pitch key is still held, the keyboard deflection is eased
+ * back (a pilot feels the stick force and the seat of the pants), and it stays where it was eased to; a released
+ * yoke is never moved. Hardware and the mouse yoke are never limited.
  */
 export const KEY_G_PULL = C172S_INPUT.assists.gStops.pull;
 export const KEY_G_PUSH = C172S_INPUT.assists.gStops.push;
@@ -1054,10 +1054,12 @@ export class InputSystem implements Subsystem {
     }
     if (!this.profile.rotorcraft) this.kbElevator = this.rotation.step(this.kbElevator, kbElevatorBefore, s.angularVelocity.y, s.pitch, onMains, dt, this.held.has('pitchUp'));
     if (dt > 0 && !this.profile.rotorcraft) {
-      // Soft load-factor stops: ease the held keyboard elevator back while beyond them.
+      // Soft load-factor stops: while a pitch key is held beyond them, ease the keyboard elevator back. A yoke the pilot
+      // has let go of stays where it is: nothing walks it back toward centre (owner: keys leave the controls where they
+      // put them; with the full-travel elevator the stop otherwise pulled a released yoke back "like a rubber band").
       const g = tuning.gStops;
-      if (this.kbElevator > 0.02 && s.gLoad > g.pull) this.kbElevator = Math.max(0.02, this.kbElevator - (s.gLoad - g.pull) * G_STOP_RATE * dt);
-      else if (this.kbElevator < -0.02 && s.gLoad < g.push) this.kbElevator = Math.min(-0.02, this.kbElevator + (g.push - s.gLoad) * G_STOP_RATE * dt);
+      if (pitch > 0 && this.kbElevator > 0.02 && s.gLoad > g.pull) this.kbElevator = Math.max(0.02, this.kbElevator - (s.gLoad - g.pull) * G_STOP_RATE * dt);
+      else if (pitch < 0 && this.kbElevator < -0.02 && s.gLoad < g.push) this.kbElevator = Math.min(-0.02, this.kbElevator + (g.push - s.gLoad) * G_STOP_RATE * dt);
     }
 
     const yaw = this.dir('rudderLeft', 'rudderRight');
