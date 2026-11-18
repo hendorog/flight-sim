@@ -8,7 +8,8 @@
 import * as THREE from 'three';
 import { describe, expect, test } from 'vitest';
 import { DEG, KT, type Vec3 } from '../../src/core/math';
-import { windVeer } from '../../src/physics/weather/boundaryLayer';
+import { gradientWindFactor } from '../../src/physics/weather/boundaryLayer';
+import { windAloftAt, windFromDeg, windKt } from '../../src/physics/weather/windsAloft';
 import { defaultWeather, type WeatherSettings } from '../../src/core/types';
 import { NO_STORMS, stormCentreAt } from '../../src/core/weatherFields';
 import { createEnvironment, type TerrainProvider } from '../../src/physics/environment';
@@ -295,11 +296,16 @@ describe('lattice', () => {
     const before = snapshot(f.select(w, 0, 0, 0), 0);
     advanceTimeOfDay(w, 60);
     const after = snapshot(f.select(w, 0, 0, 0), 0);
-    // The steering wind: the surface speed x 1.8, the direction veered as at 2000 m AGL (25 deg).
+    // The steering wind: the free-atmosphere wind at 3000 m MSL (windsAloft.ts).
     const steer = stormSteering(w, { fromDeg: 0, kt: 0 });
-    report('steering wind', { fromDeg: steer.fromDeg, kt: steer.kt, surfaceFromDeg: w.windDirectionDeg });
-    expect(steer.fromDeg).toBeCloseTo(w.windDirectionDeg + windVeer(2000) / DEG, 9);
-    expect(steer.fromDeg - w.windDirectionDeg).toBeCloseTo(25, 0);
+    const free = windAloftAt(w, 3000, { north: 0, east: 0 });
+    report('steering wind', { fromDeg: steer.fromDeg, kt: steer.kt, surfaceFromDeg: w.windDirectionDeg, surfaceKt: w.windSpeedKt });
+    expect(steer.fromDeg).toBeCloseTo(windFromDeg(free), 9);
+    expect(steer.kt).toBeCloseTo(windKt(free), 9);
+    // With no shear (windsAloft: []) it is the gradient wind: the surface wind veered 25 deg, x 1.638.
+    const flat = stormSteering({ ...w, windsAloft: [] }, { fromDeg: 0, kt: 0 });
+    expect(flat.fromDeg).toBeCloseTo((w.windDirectionDeg + 25) % 360, 9);
+    expect(flat.kt).toBeCloseTo(w.windSpeedKt * gradientWindFactor, 9);
     const v = steer.kt * KT;
     const from = (steer.fromDeg * Math.PI) / 180;
     let checked = 0;

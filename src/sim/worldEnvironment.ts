@@ -7,10 +7,15 @@ import type { Vec3 } from '../core/math';
 import type { SurfaceType, WeatherSettings } from '../core/types';
 import { createEnvironment, type SimEnvironment, type TerrainProvider } from '../physics';
 import { airportSurface } from '../world/airport/layout';
-import { airfieldSurface } from '../world/airfields';
+import { airfieldSurface, airfields, generatedAirfields, type Airfield } from '../world/airfields';
+import type { ReferenceSite } from '../physics/weather/orography/sites';
+import { setTerrainTag } from '../physics/weather/orography/orographyField';
 import { RUNWAY_HEIGHT, TAXIWAY_HEIGHT } from '../world/airport/pavement';
 import { isPresent, era } from '../world/era/eraState';
-import { makeSample, sampleTerrain, terrainHeight, terrainNormal, terrainSurface } from '../world/terrain/heightfield';
+import { makeSample, sampleTerrain, terrainGenerationTag, terrainHeight, terrainNormal, terrainSurface } from '../world/terrain/heightfield';
+
+// The mountain-wave caches key the world terrain on its era and world seed (terrainHeight depends on both).
+setTerrainTag(terrainHeight, terrainGenerationTag);
 
 // Deep Time: an era with no airport ('flats') has neither the pavement surface nor its lift: the ground is the
 // terrain (terrainSurface gives the era's flat surface inside the airport zone). Read per call (era is boot data,
@@ -46,7 +51,27 @@ export const worldTerrain: TerrainProvider = {
   },
 };
 
-/** The Environment for the simulator. `weather` must be the live object the UI edits (it is read on every call). */
+let sitesFrom: readonly Airfield[] | null = null;
+let sitesPresent = false;
+let sites: readonly ReferenceSite[] = [];
+/** The airfields as reference sites of the wind's terrain terms (cached on the generated list; no allocation per call). */
+function referenceSites(): readonly ReferenceSite[] {
+  const present = isPresent();
+  // generatedAirfields() is a fresh empty array outside the present day: key on the presence first.
+  const gen = present ? generatedAirfields() : null;
+  if (gen !== sitesFrom || present !== sitesPresent || sites.length === 0) {
+    sitesFrom = gen;
+    sitesPresent = present;
+    sites = airfields().map((f) => ({ north: f.north, east: f.east }));
+  }
+  return sites;
+}
+
+/**
+ * The Environment for the simulator. `weather` must be the live object the UI edits (it is read on every call). The
+ * mountain-wave tiles sample the bare terrain height (terrainHeight, as the orography worker does), and the
+ * horizontal terrain terms of the wind vanish at the airfields.
+ */
 export function createWorldEnvironment(weather: WeatherSettings, seed = 1): SimEnvironment {
-  return createEnvironment({ weather, terrain: worldTerrain, seed });
+  return createEnvironment({ weather, terrain: worldTerrain, seed, orographyTerrain: terrainHeight, referenceSites });
 }

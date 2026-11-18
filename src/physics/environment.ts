@@ -23,7 +23,8 @@ import { emptyLocalPrecip, localPrecipAt } from './weather/stormPrecip';
 import { smoothstep } from '../core/math';
 import type { StormCell } from '../core/types';
 import { NO_STORMS } from '../core/weatherFields';
-import { WindField } from './weather/windField';
+import { WindField, type WindFieldOptions } from './weather/windField';
+import { temperatureProfileOf } from './weather/windsAloft';
 
 /** Terrain queries supplied by the world modules. */
 export interface TerrainProvider {
@@ -40,6 +41,13 @@ export interface EnvironmentOptions {
   terrain: TerrainProvider;
   /** Seed of the gust, turbulence and thermal fields. */
   seed?: number;
+  /**
+   * Terrain the mountain-wave tiles sample (default terrain.height). The world passes the bare terrain height so
+   * the orography worker samples the same values.
+   */
+  orographyTerrain?: (north: number, east: number) => number;
+  /** Airfields where the horizontal terrain terms of the wind vanish (physics/weather/orography/sites.ts). */
+  referenceSites?: WindFieldOptions['referenceSites'];
 }
 
 /** Height a cumulus base rises per kelvin of surface dew-point spread, m. */
@@ -68,8 +76,9 @@ export interface SimEnvironment extends Environment {
   moisture(altitudeMSL: number, north?: number, east?: number, time?: number): MoistureSample;
 }
 
-export function createEnvironment({ weather, terrain, seed = 1 }: EnvironmentOptions): SimEnvironment {
-  const windField = new WindField(weather, (n, e) => terrain.height(n, e), seed);
+export function createEnvironment({ weather, terrain, seed = 1, orographyTerrain, referenceSites }: EnvironmentOptions): SimEnvironment {
+  const height = (n: number, e: number): number => terrain.height(n, e);
+  const windField = new WindField(weather, height, seed, { orographyTerrain: orographyTerrain ?? height, referenceSites });
   const conditions: AtmosphereConditions = { isaDeviation: 0, seaLevelPressure: 101325 };
   const moisture: MoistureSample = { dewPointSpread: 0, inCloud: false };
   const fog: FogLayer = { topM: 0, visibilityM: 0 };
@@ -112,6 +121,8 @@ export function createEnvironment({ weather, terrain, seed = 1 }: EnvironmentOpt
     atmosphere(altitudeMSL) {
       conditions.isaDeviation = weather.isaDeviation;
       conditions.seaLevelPressure = weather.qnhHpa * 100;
+      // The temperatures of the manual wind-aloft levels, when any (windsAloft.ts); absent, the uniform deviation.
+      conditions.profile = temperatureProfileOf(weather);
       return atmosphereAt(altitudeMSL, conditions);
     },
     wind: (position, time) => windField.sample(position, time),

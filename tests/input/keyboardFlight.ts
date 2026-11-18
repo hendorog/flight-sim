@@ -142,7 +142,9 @@ export const C172S_KEYBOARD_BANDS: KeyboardFlightBands = {
     // two up peaks at 19.8 deg against 17. The soft g stop now acts only while a pitch key is held (owner: a released
     // yoke is never walked back), so it no longer eases the yoke out of the sideslip pitch-up after the scripted
     // pilot's tap; the pilot's next push catches it a moment later.
-    gustKnownFail: [1, 3],
+    // With the winds aloft and the terrain effects on the wind (wind-aloft branch) seed 3 peaks at 14.9 deg (11.6,
+    // 12.6, 12.1 for seeds 0-2; on the mains 11.2, 12.05, 11.2, 9.5), so it is no longer an expected failure.
+    gustKnownFail: [1],
   },
 };
 

@@ -58,8 +58,11 @@ import type { StabilityAssistSnapshot } from './rotorcraft/stabilityAssist';
  * conditions and the empty list means none. Schema 3 snapshots written before the derived cells carry `storms: []`,
  * the neutral value of that time; an empty list read from schema 3 or older is dropped, so the flight resumes with
  * derived cells. Schema 5: `damage`, the hail damage; a snapshot of schema 4 or older is read with no damage.
+ * Schema 6: `weather.windsAloft` (absent: derived winds aloft, [] none) and `weather.mountainWaves`. A snapshot of
+ * schema 5 or older has neither and is read with the derived winds aloft and the full mountain-wave field (owner
+ * decision D3: an aircraft resumed in flight may see a step in airspeed); a malformed table is dropped.
  */
-export const SNAPSHOT_SCHEMA = 5;
+export const SNAPSHOT_SCHEMA = 6;
 /** Last schema whose empty `weather.storms` list was the neutral value (dropped on read). */
 const LEGACY_EMPTY_STORMS_SCHEMA = 3;
 /**

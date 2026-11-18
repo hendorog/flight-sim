@@ -1,6 +1,7 @@
 // International Standard Atmosphere (ICAO Doc 7488 / ISO 2533) with a uniform ISA temperature deviation
 // and a non-standard sea-level pressure (QNH), plus the pitot-static relations used by the airspeed
-// indicator.
+// indicator. An optional temperature profile (TemperatureProfile: the deviation linear in geopotential altitude
+// between nodes, from the temperatures of the manual wind-aloft levels) replaces the uniform deviation.
 //
 // The deviated atmosphere is the hydrostatic solution for T(h) = T_ISA(h) + dT with sea-level pressure
 // QNH, so a warm day has higher pressure aloft (and a higher density altitude) exactly as the real air
@@ -35,6 +36,121 @@ export interface AtmosphereConditions {
   isaDeviation: number;
   /** Sea-level (QNH) pressure, Pa. */
   seaLevelPressure: number;
+  /**
+   * Optional non-uniform temperature deviation (temperatureProfile). When present it replaces isaDeviation; absent,
+   * the uniform-deviation code path is used unchanged.
+   */
+  profile?: TemperatureProfile;
+}
+
+/**
+ * A temperature deviation from ISA that varies with height: linear in geopotential altitude between nodes and
+ * constant below the first and above the last node. Stored as segments split at the nodes and the ISA layer bounds,
+ * each with its base altitude, base temperature, lapse rate and base pressure as a ratio to the sea-level pressure,
+ * so the pressure at any altitude is the closed-form hydrostatic solution of its segment.
+ */
+export interface TemperatureProfile {
+  readonly count: number;
+  /** Segment base, geopotential m (the first is 0). */
+  readonly baseH: Float64Array;
+  /** Temperature at the segment base, K. */
+  readonly baseT: Float64Array;
+  /** dT/dH in the segment, K per geopotential m. */
+  readonly lapse: Float64Array;
+  /** Pressure at the segment base divided by the sea-level pressure. */
+  readonly pRatio: Float64Array;
+}
+
+/** Lapse rates smaller than this are treated as isothermal, K/m. */
+const ISOTHERMAL_LAPSE = 1e-9;
+
+/** ISA temperature at a geopotential altitude, K. */
+export function isaTemperature(H: number): number {
+  let T: number = LAYERS[0].T;
+  for (let i = 0; i < LAYERS.length; i++) {
+    const top = i + 1 < LAYERS.length ? LAYERS[i + 1].h : Infinity;
+    T = LAYERS[i].T + LAYERS[i].L * (Math.min(H, top) - LAYERS[i].h);
+    if (H <= top) break;
+  }
+  return T;
+}
+
+function isaLapse(H: number): number {
+  for (let i = LAYERS.length - 1; i >= 0; i--) if (H >= LAYERS[i].h) return LAYERS[i].L;
+  return LAYERS[0].L;
+}
+
+/**
+ * Build a TemperatureProfile from nodes: geopotential altitudes `nodeH` (m, strictly ascending, >= 0) and the ISA
+ * deviation at each, `nodeDT` (K). Allocates (call on a settings change, not per sample).
+ */
+export function temperatureProfile(nodeH: readonly number[], nodeDT: readonly number[]): TemperatureProfile {
+  const n = nodeH.length;
+  const dTAt = (H: number): number => {
+    if (n === 0) return 0;
+    if (H <= nodeH[0]) return nodeDT[0];
+    for (let i = 1; i < n; i++) {
+      if (H <= nodeH[i]) return nodeDT[i - 1] + ((nodeDT[i] - nodeDT[i - 1]) * (H - nodeH[i - 1])) / (nodeH[i] - nodeH[i - 1]);
+    }
+    return nodeDT[n - 1];
+  };
+  const bounds = [0];
+  for (const L of LAYERS) if (L.h > 0) bounds.push(L.h);
+  for (const h of nodeH) if (h > 0) bounds.push(h);
+  bounds.sort((a, b) => a - b);
+  const uniq = bounds.filter((b, i) => i === 0 || b > bounds[i - 1]);
+  const count = uniq.length;
+  const baseH = new Float64Array(count);
+  const baseT = new Float64Array(count);
+  const lapse = new Float64Array(count);
+  const pRatio = new Float64Array(count);
+  let ratio = 1;
+  for (let i = 0; i < count; i++) {
+    const h0 = uniq[i];
+    const T0 = isaTemperature(h0) + dTAt(h0);
+    baseH[i] = h0;
+    baseT[i] = T0;
+    pRatio[i] = ratio;
+    if (i + 1 < count) {
+      const h1 = uniq[i + 1];
+      let L = (isaTemperature(h1) + dTAt(h1) - T0) / (h1 - h0);
+      // An isothermal segment computed with rounding error is isothermal (the power law degenerates as L -> 0).
+      if (Math.abs(L) < ISOTHERMAL_LAPSE) L = 0;
+      lapse[i] = L;
+      ratio *= L === 0 ? Math.exp((-G0 * (h1 - h0)) / (R_AIR * T0)) : Math.pow((T0 + L * (h1 - h0)) / T0, -G0 / (R_AIR * L));
+    } else {
+      lapse[i] = isaLapse(h0);
+    }
+  }
+  return { count, baseH, baseT, lapse, pRatio };
+}
+
+/** Temperature and pressure ratio at geopotential altitude H in a profile, written into out[0], out[1]. */
+function profileState(p: TemperatureProfile, H: number, out: Float64Array): void {
+  let i = p.count - 1;
+  while (i > 0 && H < p.baseH[i]) i--;
+  const dh = H - p.baseH[i];
+  const T0 = p.baseT[i];
+  const L = p.lapse[i];
+  const T = T0 + L * dh;
+  out[0] = T;
+  out[1] = p.pRatio[i] * (L === 0 ? Math.exp((-G0 * dh) / (R_AIR * T0)) : Math.pow(T / T0, -G0 / (R_AIR * L)));
+}
+
+const _state = new Float64Array(2);
+
+/**
+ * Temperature lapse dT/dz at a geometric altitude, K per geometric m (negative when the temperature falls with
+ * height): the segment's lapse in geopotential altitude times dH/dz.
+ */
+export function lapseRateAt(altitudeMSL: number, cond: AtmosphereConditions): number {
+  const H = geopotentialAltitude(altitudeMSL);
+  const r = EARTH_RADIUS / (EARTH_RADIUS + altitudeMSL);
+  const p = cond.profile;
+  if (!p) return isaLapse(H) * r * r;
+  let i = p.count - 1;
+  while (i > 0 && H < p.baseH[i]) i--;
+  return p.lapse[i] * r * r;
 }
 
 export const STANDARD_CONDITIONS: AtmosphereConditions = { isaDeviation: 0, seaLevelPressure: 101325 };
@@ -58,6 +174,17 @@ export function atmosphereAt(altitudeMSL: number, cond: AtmosphereConditions = S
 /** Allocation-free variant of atmosphereAt. */
 export function atmosphereInto(altitudeMSL: number, cond: AtmosphereConditions, out: AtmosphereSample): AtmosphereSample {
   const H = geopotentialAltitude(altitudeMSL);
+  if (cond.profile) {
+    profileState(cond.profile, H, _state);
+    const T = _state[0];
+    const p = cond.seaLevelPressure * _state[1];
+    out.temperature = T;
+    out.pressure = p;
+    out.density = p / (R_AIR * T);
+    out.speedOfSound = Math.sqrt(GAMMA_AIR * R_AIR * T);
+    out.viscosity = sutherlandViscosity(T);
+    return out;
+  }
   const dT = cond.isaDeviation;
   // Integrate dp/dH = -g p / (R T) layer by layer with the deviated temperature profile.
   let p = cond.seaLevelPressure;

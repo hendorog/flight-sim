@@ -587,6 +587,22 @@ export interface StormCell {
   lightning?: boolean;
 }
 
+/**
+ * A manual wind-aloft level (WeatherSettings.windsAloft). The levels replace the derived free-atmosphere wind at
+ * their altitudes; between them the difference from the derived wind is interpolated linearly in (north, east)
+ * components (physics/weather/windsAloft.ts).
+ */
+export interface WindAloftLevel {
+  /** Altitude, ft MSL (1000..60000; the levels of a table strictly ascending). */
+  altFt: number;
+  /** Direction the wind blows FROM, degrees true. */
+  dirDeg: number;
+  /** Speed, kt (0..250). */
+  kt: number;
+  /** Air temperature at the level, deg C (-90..50; optional; absent = ISA + isaDeviation). */
+  tempC?: number;
+}
+
 /** User-adjustable weather and time. Shared by physics (wind, density) and rendering (sky, clouds, haze). */
 export interface WeatherSettings {
   /** Direction the wind blows FROM, degrees true. */
@@ -633,6 +649,14 @@ export interface WeatherSettings {
   fogVisibilityM?: number;
   /** Cumulonimbus cells, at most 4 (optional; absent = none). Replace the array to change it. */
   storms?: readonly StormCell[];
+  /**
+   * Winds aloft (optional; absent = derived from the surface wind, the date and the climatological shear; [] = no
+   * shear above the boundary layer, the gradient wind at every height). At most 12 levels. Replace the array to
+   * change it. Read through windsAloftOf().
+   */
+  windsAloft?: readonly WindAloftLevel[];
+  /** Gain on the mountain-wave field, 0..1 (optional; absent = 1). Read through mountainWavesOf(). */
+  mountainWaves?: number;
 }
 
 // ---------------------------------------------------------------------------------------------- initial conditions

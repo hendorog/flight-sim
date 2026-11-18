@@ -5,8 +5,8 @@
 // The centre moves with the cell (stormCentreAt); the core, anvil and rain shares of a derived cell (its selection
 // weight and life cycle) scale the three densities; the base is the weather's cloudBaseM, the top the cell's topM;
 // the anvil's radius is ANVIL_PER_RADIUS x the core radius (at most ANVIL_MAX_M) and its centre lies half that
-// radius downwind of the steering wind (stormSteering: the surface wind veered to 2000 m, the motion of every derived
-// cell; scaled down below ANVIL_FULL_DRIFT_KT); the rain shaft's radius is SHAFT_PER_RADIUS x the core radius.
+// radius downwind of the steering wind (stormSteering: the free-atmosphere wind at 3000 m MSL, the motion of every
+// derived cell; scaled down below ANVIL_FULL_DRIFT_KT); the rain shaft's radius is SHAFT_PER_RADIUS x the core radius.
 
 import type { StormCell, WeatherSettings } from '../../core/types';
 import { DEG } from '../../core/math';
@@ -25,8 +25,8 @@ export const drawnCoreRadiusM = (cell: StormCell): number => Math.min(DRAWN_RADI
 export const ANVIL_PER_RADIUS = 3;
 export const ANVIL_MAX_M = 18_000;
 /**
- * Steering-wind speed (stormSteering) at which the anvil reaches its full downwind offset (half its radius), kt:
- * 36 kt is a 20 kt surface wind times STEERING_FACTOR 1.8. Unconfirmed: a look value.
+ * Steering-wind speed (stormSteering) at which the anvil reaches its full downwind offset (half its radius), kt.
+ * Unconfirmed: a look value (set when the steering wind was the surface wind times 1.8: a 20 kt surface wind).
  */
 export const ANVIL_FULL_DRIFT_KT = 36;
 /** Rain-shaft radius per core radius (section 3.3 of the weather plan). */
@@ -83,7 +83,7 @@ const _steer = { fromDeg: 0, kt: 0 };
  * CAPE of the weather (stormField.ts StormField.convective), for the hail size; 0 leaves the updraft at the field's
  * wMax.
  */
-export function cellGeometry(cell: StormCell, w: Pick<WeatherSettings, 'cloudBaseM' | 'windDirectionDeg' | 'windSpeedKt'>, t: number, out: CellGeometry, capeJkg = 0): CellGeometry {
+export function cellGeometry(cell: StormCell, w: WeatherSettings, t: number, out: CellGeometry, capeJkg = 0): CellGeometry {
   stormCentreAt(cell, t, _ne);
   out.x = _ne.east;
   out.z = -_ne.north;

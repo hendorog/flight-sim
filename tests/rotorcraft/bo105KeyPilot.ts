@@ -22,11 +22,14 @@ const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
  * keyboard pedal, -0.42 against the 45 KIAS trim's +0.18).
  */
 export function keyRig(o: { start: 'hover15' | 'ige3' | 'runway' | 'level'; kias?: number; heightM?: number; dd?: AircraftDefinition; assist?: boolean;
-  /** The weather's wind (FROM deg true, kt, gusts kt, turbulence 0..1); absent: calm. */
+  /** The weather's wind (FROM deg true, kt, gusts kt, turbulence 0..1); absent: still air (no winds aloft, no terrain effects). */
   wind?: { fromDeg: number; kt: number; gustKt?: number; turbulence?: number } }) {
   const dd = o.dd ?? BO105_DEFINITION;
   const w: WeatherSettings = { ...defaultWeather(), windSpeedKt: o.wind?.kt ?? 0, windDirectionDeg: o.wind?.fromDeg ?? 100, gustKt: o.wind?.gustKt ?? 0,
     turbulence: o.wind?.turbulence ?? 0, isaDeviation: 0, cloudCover: 0 };
+  // Still air (owner decision D1 for the calm-air rigs): over a calm surface the derived winds aloft launch mountain
+  // waves from the lowest layer with wind, which reach the circuit's height.
+  if (!o.wind) Object.assign(w, { windsAloft: [], mountainWaves: 0 });
   const events = createEventBus(), physics = new SimPhysics({ aircraft: dd, weather: w, events });
   if (o.start === 'runway') physics.reset('runway', w);
   else {

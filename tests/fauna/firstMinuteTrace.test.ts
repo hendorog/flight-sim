@@ -22,10 +22,14 @@ import { MAX_HERDS, MAX_HERD_SIZE } from '../../src/world/fauna/presets';
 
 const CAPTURE = !!(globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env.CAPTURE_FIRST_MINUTE;
 
-/** Recorded on 4f85c4f (see the header). */
+/**
+ * Recorded on 4f85c4f (see the header) as 4ecd9c5d for both; re-pinned on the wind-aloft branch (owner decision): with
+ * the winds aloft and the terrain effects on the wind, SAFARI.across re-solved to 3258 for the 250 m herd lateral and
+ * SAFARI_FLIGHT re-fitted there (59.9 m/s, drift 1.05 m/s, start ground 163.9 m; 60.5, 1.82, 164.5 before).
+ */
 const EXPECTED: Record<'high' | 'ultra', string> = {
-  high: '4ecd9c5d',
-  ultra: '4ecd9c5d',
+  high: '7792a1c4',
+  ultra: '7792a1c4',
 };
 
 beforeAll(() => {

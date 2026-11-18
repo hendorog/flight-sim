@@ -320,6 +320,9 @@ export class SimPhysics {
     // A new flight: no hail damage (before the reset, whose trim uses the aerodynamics).
     this.hailDamage.reset();
     this.fm.setAirframeDamage(0);
+    // The wind field restarts before hoverIntoWind samples it (fm.reset restarts it again): the start meets the
+    // current weather's air, not a fade from the weather flown before.
+    (this.env as Partial<SimEnvironment>).windField?.reset();
     this.fm.reset(this.withRotorcraftOptions(this.hoverIntoWind(sc.ic)), this.env);
     if (sc.attitude) this.rotateTo(sc.attitude.pitch, sc.attitude.roll);
     const c = this.controls;

@@ -1,5 +1,5 @@
-// Cirrus is independent weather (not tied to the cumulus cover), and its deck drifts along the upper wind
-// with a wrap period that every cirrus texture tiles with, so the wrap never shows.
+// Cirrus is independent weather (not tied to the cumulus cover), and its deck drifts along the upper wind (the wind
+// aloft at 9000 m) with a wrap period that every cirrus texture tiles with, so the wrap never shows.
 import { describe, expect, it } from 'vitest';
 import { defaultWeather, type WeatherSettings } from '../../src/core/types';
 import { cirrusCover, DEFAULT_CIRRUS_COVER } from '../../src/render/clouds/CloudsEffect';
@@ -26,8 +26,9 @@ describe('cirrusCover', () => {
 });
 
 describe('CloudModel cirrus drift', () => {
+  // The deck drifts with the wind aloft at 9000 m (physics/weather/windsAloft.ts): one manual level there.
   const ctxFor = (windDirectionDeg: number, windSpeedKt: number): SimContext =>
-    ({ weather: { ...defaultWeather(), windDirectionDeg, windSpeedKt }, simTime: 0 }) as unknown as SimContext;
+    ({ weather: { ...defaultWeather(), windsAloft: [{ altFt: 9000 / 0.3048, dirDeg: windDirectionDeg, kt: windSpeedKt }] }, simTime: 0 }) as unknown as SimContext;
 
   it('aligns the fibre axis with the direction the wind blows toward (three.js x = east, z = south)', () => {
     const m = new CloudModel();
