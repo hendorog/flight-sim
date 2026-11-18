@@ -14,7 +14,7 @@ import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear
 import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type DrainLine, type LakeMask } from './drainage';
 import { channelCourse, courseSpline } from './erosion';
 import { bedWidth, breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, REGIME, refineSteep, STREAM_SPACING, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
-import { beltOffsets, bendOf, fitSwing, formOf, hSmooth, layThread, sineAmplitude, stepWhite, threadDepth, type ThreadLaw } from './channelForm';
+import { BED_BIG, beltOffsets, bendOf, fitSwing, formOf, hSmooth, layThread, sineAmplitude, stepWhite, threadDepth, type ThreadLaw } from './channelForm';
 import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
 import { buildFaults, FaultIndex } from './faults';
 import { pitchPool, type PitchReport } from './pitchPool';
@@ -126,6 +126,12 @@ const JOIN_BLEND = 2;
 /** The bed's width varies as exp(WIDTH_SPREAD h) (DESIGN.md's 0.45 drew widths too loosely tied to their catchment: the
  * owner's 'the catchment size should dictate the width of the stream bed'; drawnGate's correlation 0.68 needs 0.2). */
 const WIDTH_SPREAD = 0.2;
+/** Each wet edge wanders in and out by this share of the water's half-width, read at the bed's own scale (H_CELL single-
+ * thread widths): the water's width changes reach by reach within a bed whose width its catchment sets (WIDTH_SPREAD).
+ * From the first share on a small line to the second on a big river (channelForm.ts BED_BIG, where a bed widens toward its
+ * gravel belt): 0.12 everywhere left the biggest rivers to the coast an even-width canal; 0.25 everywhere loosened the
+ * streams' drawn widths from their catchments (drawnGate 0.678 on seed 42). */
+const WET_SPREAD = [0.12, 0.25];
 /** A reach with no white water draws at most this steepness (water.ts FLOW_FROM: placid below it). */
 const WHITE_FROM = 0.19;
 
@@ -2039,11 +2045,12 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const side1 = bent * Math.max(-1, Math.min(1, kap / 0.3)) + (1 - bent) * alt;
       const mid = wide * stay + (1 - wide) * 0.5 * spare * side1;
       const bar = spare;
+      const wetSpread = WET_SPREAD[0] + (WET_SPREAD[1] - WET_SPREAD[0]) * smooth(BED_BIG[0], BED_BIG[1], L.A[i]);
       for (const side of [1, -1]) {
         const base = Math.max(0.5 * w, side * mid + 0.5 * (w + bar));
         const en = pn + side * rn * base;
         const ee = pe + side * re * base;
-        const wetE = 0.5 * w * (1 + 0.12 * Math.max(-1.25, Math.min(1.25, hSmooth(en / (2 * Wh), ee / (2 * Wh), 3))));
+        const wetE = 0.5 * w * (1 + wetSpread * Math.max(-1.25, Math.min(1.25, hSmooth(en / Wh, ee / Wh, 3))));
         const room = side > 0 ? roomR : roomL;
         const bed = Math.max(wetE + 0.3, Math.min(Math.max(room, wetE + 0.3), base + 0.2 * bar * hSmooth(en / (2 * Wh), ee / (2 * Wh), 2)));
         if (side > 0) {

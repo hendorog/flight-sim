@@ -158,7 +158,7 @@ export function formOf(A: number, S: number, F: number): Form {
 }
 
 /** formOf: a river's bed widens toward its gravel belt from the first catchment (km²) to the second. */
-const BED_BIG = [100, 1000];
+export const BED_BIG = [100, 1000];
 
 /** The thread's depth at its middle, m: shallow at a crossing, deep in a pool at a bend's apex (kap 0..1). */
 export const threadDepth = (w: number, kap: number): number => (0.15 + w / 20) * (0.7 + 0.6 * kap);
