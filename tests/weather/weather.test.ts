@@ -7,6 +7,8 @@ import { createEnvironment, type TerrainProvider } from '../../src/physics/envir
 import { gradientWindFactor, milTurbulenceIntensity, WindField, type TurbulenceIntensity } from '../../src/physics/weather';
 import { drydenLongitudinalSpectrum, drydenTransverseSpectrum } from '../../src/physics/weather/turbulence';
 import { welchPsd } from './spectrum';
+import { createWorldEnvironment } from '../../src/sim/worldEnvironment';
+import { terrainHeight } from '../../src/world/terrain/heightfield';
 
 const ELEV = 120;
 const report = (label: string, values: Record<string, number | string>) =>
@@ -383,6 +385,32 @@ describe('performance', () => {
     report('performance', { microsecondsPerWindCall: us, checksum: acc });
     expect(us).toBeLessThan(30);
   });
+
+  test('cost per wind() call in a four-tile corner of the mountain-wave tiles over the Alps', () => {
+    // (32 km, 32 km) lies in the overlap of tiles (0,0), (1,0), (0,1) and (1,1), north of the airport in the range.
+    const weather = { ...defaultWeather(), windDirectionDeg: 315, windSpeedKt: 25, gustKt: 30, turbulence: 0.5, timeOfDay: 13 };
+    const env = createWorldEnvironment(weather);
+    const n = 50000;
+    const p = { x: 32_000, y: 32_000, z: -3000 };
+    const t0 = performance.now();
+    env.wind(p, 0); // solves the four tiles
+    const solveMs = performance.now() - t0;
+    let acc = 0;
+    const result: Record<string, number> = { firstCallMs: solveMs };
+    for (const [label, alt] of [['us3000m', 3000], ['us100mAgl', terrainHeight(32_000, 32_000) + 100]] as const) {
+      p.z = -alt;
+      for (let i = 0; i < 2000; i++) acc += env.wind(p, i / 240).z;
+      const start = performance.now();
+      for (let i = 0; i < n; i++) {
+        p.x = 32_000 + i * 0.2;
+        acc += env.wind(p, i / 240).z;
+      }
+      result[label] = ((performance.now() - start) / n) * 1000;
+    }
+    report('performance, Alps corner', { ...result, checksum: acc });
+    expect(result.us3000m).toBeLessThan(30);
+    expect(result.us100mAgl).toBeLessThan(30);
+  }, 120_000);
 });
 
 describe('reset', () => {
@@ -444,9 +472,10 @@ describe('storm cells absent', () => {
   }
 
   test('the wind equals the pre-change field at 2000 points, with storms absent or empty', () => {
-    // Without winds aloft (windsAloft: []) the field is the one before the winds aloft existed.
-    const absent = windHash({ windsAloft: [] });
-    const empty = windHash({ storms: [], windsAloft: [] });
+    // Without winds aloft (windsAloft: []) and terrain effects (mountainWaves: 0) the field is the one before
+    // either existed.
+    const absent = windHash({ windsAloft: [], mountainWaves: 0 });
+    const empty = windHash({ storms: [], windsAloft: [], mountainWaves: 0 });
     report('wind without storms', { hash: absent, hashEmptyList: empty });
     expect(absent).toBe(WIND_NO_STORMS_HASH);
     expect(empty).toBe(WIND_NO_STORMS_HASH);
