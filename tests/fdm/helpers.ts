@@ -46,7 +46,8 @@ export const LOADING = {
 
 /** Still, standard air (ISA, no wind, no turbulence) unless overridden. */
 export function calmWeather(over: Partial<WeatherSettings> = {}): WeatherSettings {
-  return { ...defaultWeather(), windSpeedKt: 0, gustKt: 0, turbulence: 0, isaDeviation: 0, qnhHpa: 1013.25, cloudCover: 0, ...over };
+  // No winds aloft and no terrain effects either (windsAloft: [], mountainWaves: 0): the air is still at every height.
+  return { ...defaultWeather(), windSpeedKt: 0, gustKt: 0, turbulence: 0, isaDeviation: 0, qnhHpa: 1013.25, cloudCover: 0, windsAloft: [], mountainWaves: 0, ...over };
 }
 
 /** Flat terrain at `elevation`, one surface type everywhere. */

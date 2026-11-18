@@ -23,6 +23,8 @@ export const FADE_S = 3;
 const SOLUTION_CACHE = 8;
 /** Tile terrains kept by the synchronous source. */
 const TERRAIN_CACHE = 16;
+/** A tile that missed is queried again after this much simulated time, s. */
+const REQUERY_S = 0.25;
 /** Entries a field keeps per wave weather before dropping the farthest. */
 const MAX_ENTRIES = 12;
 
@@ -139,8 +141,8 @@ export class OrographyField {
   private key: string | null = null;
   private keyTime = -Infinity;
   private ww: WaveWeather | null = null;
-  /** Tiles that missed (worker source) for the current key: they ramp in on arrival. */
-  private readonly missed = new Set<number>();
+  /** Tiles that missed (worker source) for the current key, with the time of the last query: they ramp in on arrival. */
+  private readonly missed = new Map<number, number>();
   // Change detection of the wave weather.
   private kDir = NaN;
   private kSpeed = NaN;
@@ -209,10 +211,13 @@ export class OrographyField {
     const e = this.cur.get(k);
     if (e) return e;
     if (!this.ww || !this.key) return null;
+    // A tile that missed is asked for again at most every REQUERY_S simulated seconds (no work per sample).
+    const last = this.missed.get(k);
+    if (last !== undefined && Math.abs(t - last) < REQUERY_S) return null;
     const src = sources.get(this.heightFn);
     const sol = src ? src.get(ti, tj, this.ww, this.key) : syncSolution(this.heightFn, ti, tj, this.ww, this.key);
     if (!sol) {
-      this.missed.add(k);
+      this.missed.set(k, t);
       return null;
     }
     if (this.cur.size >= MAX_ENTRIES) this.evict();
@@ -336,7 +341,7 @@ export class OrographyField {
 
   /**
    * True when every tile with weight > 0 at (north, east) has its solution for the current wave weather (the boot
-   * wait in the browser). Requests the missing ones.
+   * wait in the browser). Requests the missing ones; one that has arrived is taken in full (no ramp).
    */
   ready(north: number, east: number): boolean {
     if (!this.ww || !this.key) return false;
@@ -349,7 +354,12 @@ export class OrographyField {
       if (tileWeight1d(north - ti * TILE_SPACING) === 0) continue;
       for (let tj = j0; tj <= j0 + 1; tj++) {
         if (tileWeight1d(east - tj * TILE_SPACING) === 0) continue;
-        if (!this.cur.has(pack(ti, tj)) && !src.get(ti, tj, this.ww, this.key)) ok = false;
+        const k = pack(ti, tj);
+        if (this.cur.has(k)) continue;
+        const sol = src.get(ti, tj, this.ww, this.key);
+        // Waited for at boot: in full at once (no ramp).
+        if (sol) this.cur.set(k, { sol, start: -Infinity });
+        else ok = false;
       }
     }
     return ok;

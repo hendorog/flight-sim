@@ -50,6 +50,8 @@ const W_LIMIT = 12;
 const BREAK_SEVERITY = 0.9;
 /** Baseline of the terrain gradient for the slope winds, m. */
 const SLOPE_WIND_BASELINE = 200;
+/** Slope winds are not evaluated above this height AGL, m (the profile is under 1e-8 m/s there). */
+const SLOPE_WIND_TOP = 1500;
 /** Lee shelter: share of the wind removed deep in the wake (orography/shelter.ts SHELTER_DEPTH). */
 const SHELTER_DEPTH = 0.6;
 /** Veer of the gradient wind from the 10 m wind (boundaryLayer.ts), rad. */
@@ -278,7 +280,7 @@ export class WindField {
           parts.mean.y += d[1];
         }
       }
-      if (slopeWinds && m > 0) {
+      if (slopeWinds && m > 0 && agl < SLOPE_WIND_TOP) {
         const gr = this.terrain.gradient(p.x, p.y, SLOPE_WIND_BASELINE, this.grad);
         if (gr.slopeNorth !== 0 || gr.slopeEast !== 0) {
           const s = slopeWindAt(this.slopeSky, gr.slopeNorth, gr.slopeEast, agl, freeSpeed, this.slopeOut);
