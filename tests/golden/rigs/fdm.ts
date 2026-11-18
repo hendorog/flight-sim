@@ -36,9 +36,13 @@ export const LOADING = {
   aft: { payload: MAX_GROSS_PAYLOAD, payloadPosition: { x: -0.8, y: 0, z: -0.05 } },
 } satisfies Record<string, C172Options>;
 
-/** Still, standard air (ISA, no wind, no turbulence) unless overridden. */
+/**
+ * Still, standard air (ISA, no wind, no turbulence) unless overridden. No winds aloft (windsAloft: []: the derived
+ * winds aloft exist even over a calm surface) and no terrain effects on the wind (mountainWaves: 0), so the records
+ * stay those of still air.
+ */
 export function calmWeather(over: Partial<WeatherSettings> = {}): WeatherSettings {
-  return { ...defaultWeather(), windSpeedKt: 0, gustKt: 0, turbulence: 0, isaDeviation: 0, qnhHpa: 1013.25, cloudCover: 0, ...over };
+  return { ...defaultWeather(), windSpeedKt: 0, gustKt: 0, turbulence: 0, isaDeviation: 0, qnhHpa: 1013.25, cloudCover: 0, windsAloft: [], mountainWaves: 0, ...over };
 }
 
 /** Flat terrain at `elevation`, one surface type everywhere. */
