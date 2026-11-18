@@ -1056,6 +1056,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const formMs = { room: 0, lay: 0, chan: 0, form: 0, streams: 0 };
   endTrims.n = 0;
   endTrims.m = 0;
+  mouthRamps.n = 0;
+  mouthRamps.m = 0;
   /**
    * The law along a line's axis or course (arc lengths s; river or stream alike): at each sample its floor (the room
    * either side, roomOfLine), the law's widths, the thread's swing fitted to the room, the thread's room each side (none
@@ -1564,6 +1566,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // Its end at the water of the line it joins (final: that line came first).
     if (st.joins >= 0) st.level[st.level.length - 1] = Math.min(st.level[st.level.length - 1], levelOn(lineOf(st.joins), st.joinS));
     for (let i = 1; i < st.level.length; i++) st.level[i] = Math.min(st.level[i], st.level[i - 1]);
+    if (st.joins >= 0 && st.end !== 'lake') mouthRamp(st.level, st.s);
     const keep = new Uint8Array(st.level.length);
     // (An outlet's first samples keep its lake's level.)
     for (let i = 0; i < st.held - 1; i++) keep[i] = 1;
@@ -2796,6 +2799,31 @@ function endAtReceiver(north: Float64Array, east: Float64Array, s: Float64Array,
   }
   if (first < 1 || first >= m - 1) return null;
   return { i: first, s: P.s[firstQ], trimmed: total - s[first] };
+}
+
+/** A joining line's water comes down to its receiver's at no steeper than MOUTH_GRADE, over at most MOUTH_RUN m (mouthRamp). */
+const MOUTH_GRADE = 0.15;
+const MOUTH_RUN = 150;
+export const mouthRamps = { n: 0, m: 0 };
+/**
+ * A joining line's last reach, where its water stands over the ramp at MOUTH_GRADE up from its mouth (a drop onto its
+ * receiver's water at the last sample: a river incised below the floor the line was traced on), takes the drop evenly
+ * from where it meets that ramp (at most MOUTH_RUN m up) to the mouth: its own channel is cut down through the
+ * receiver's bank, instead of its water standing over the bank's cut (seed 42 line 1259: 7 m).
+ */
+function mouthRamp(level: Float64Array, s: Float64Array): void {
+  const m = level.length;
+  if (m < 3) return;
+  const Lend = level[m - 1];
+  const sEnd = s[m - 1];
+  let k = m - 2;
+  while (k > 0 && level[k] > Lend + MOUTH_GRADE * (sEnd - s[k]) && sEnd - s[k - 1] <= MOUTH_RUN) k--;
+  if (k >= m - 2) return;
+  const L0 = level[k];
+  const s0 = s[k];
+  for (let i = k + 1; i < m - 1; i++) level[i] = Math.min(level[i], L0 + ((Lend - L0) * (s[i] - s0)) / Math.max(1e-6, sEnd - s0));
+  mouthRamps.n++;
+  mouthRamps.m += sEnd - s0;
 }
 
 /** Index of the segment containing arc length sv (clamped). */
