@@ -434,10 +434,14 @@ describe('reset', () => {
 
 
 describe('storm cells absent', () => {
-  // Pre-change capture: WIND_NO_STORMS_HASH is the FNV-1a hash of the float64 bits of env.wind() at 2000 points
-  // (three weathers, sloped terrain, thermals, gusts and turbulence on), taken from the WindField of commit c0f8711,
-  // before the convective term existed. With `storms` absent, or present and empty, the field must reproduce it.
-  const WIND_NO_STORMS_HASH = 'e21787aa';
+  // FNV-1a hashes of the float64 bits of env.wind() at 2000 points (three weathers, sloped terrain, thermals, gusts
+  // and turbulence on), with `storms` absent or present and empty:
+  //   WIND_NO_STORMS_HASH: the weathers with their default extras (derived winds aloft, terrain effects at gain 1),
+  //     captured at commit 2f219b5 (wind-aloft branch, after the review fixes);
+  //   WIND_BEFORE_ALOFT_HASH: with windsAloft: [] and mountainWaves: 0, taken from the WindField of commit c0f8711,
+  //     before the convective term, the winds aloft and the terrain effects existed.
+  const WIND_NO_STORMS_HASH = 'a3bcc871';
+  const WIND_BEFORE_ALOFT_HASH = 'e21787aa';
   const terrain: TerrainProvider = {
     height: (n, e) => ELEV + 80 * Math.sin(n / 700) * Math.cos(e / 900),
     normal: () => ({ x: 0, y: 0, z: -1 }),
@@ -471,13 +475,21 @@ describe('storm cells absent', () => {
     return h.toString(16).padStart(8, '0');
   }
 
+  test('the wind with the default extras equals its capture at 2000 points, with storms absent or empty', () => {
+    const absent = windHash({});
+    const empty = windHash({ storms: [] });
+    report('wind without storms, default extras', { hash: absent, hashEmptyList: empty });
+    expect(absent).toBe(WIND_NO_STORMS_HASH);
+    expect(empty).toBe(WIND_NO_STORMS_HASH);
+  }, 120_000);
+
   test('the wind equals the pre-change field at 2000 points, with storms absent or empty', () => {
     // Without winds aloft (windsAloft: []) and terrain effects (mountainWaves: 0) the field is the one before
     // either existed.
     const absent = windHash({ windsAloft: [], mountainWaves: 0 });
     const empty = windHash({ storms: [], windsAloft: [], mountainWaves: 0 });
     report('wind without storms', { hash: absent, hashEmptyList: empty });
-    expect(absent).toBe(WIND_NO_STORMS_HASH);
-    expect(empty).toBe(WIND_NO_STORMS_HASH);
+    expect(absent).toBe(WIND_BEFORE_ALOFT_HASH);
+    expect(empty).toBe(WIND_BEFORE_ALOFT_HASH);
   });
 });
