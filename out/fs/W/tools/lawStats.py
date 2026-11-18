@@ -20,6 +20,8 @@ from organicMap.test.ts dumps (lines-/stations-/reaches-s<seed>.json). Rows are 
 """
 import os
 CLS = set(os.environ.get('CLS', 'river').split(','))
+# (Round W R: AMIN km2 - only lines whose catchment reaches it, the trunks.)
+AMIN = float(os.environ.get('AMIN', '0'))
 import json, math, sys
 import numpy as np
 
@@ -37,9 +39,9 @@ def run(d, seeds, label):
         lines = LD['lines']
         ST = {x['li']: np.array(x['st'], float) for x in json.load(open(f'{d}/stations-s{seed}.json'))}
         RC = json.load(open(f'{d}/reaches-s{seed}.json'))
-        river = {L['li'] for L in lines if L['cls'] in CLS}
+        river = {L['li'] for L in lines if L['cls'] in CLS and max(L['a']) >= AMIN}
         for L in lines:
-            if L['cls'] not in CLS or len(L['s']) < 3:
+            if L['cls'] not in CLS or len(L['s']) < 3 or max(L['a']) < AMIN:
                 continue
             s = np.array(L['s'], float); n = np.array(L['n'], float); e = np.array(L['e'], float)
             hw = np.array(L['hw'], float)

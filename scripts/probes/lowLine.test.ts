@@ -50,6 +50,8 @@ const env = (globalThis as unknown as { process: { env: Record<string, string | 
 type Line = { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; kind?: number; joins?: number; area?: Float64Array; wetR?: Float32Array; wetL?: Float32Array };
 
 const STEP = 100, END_SKIP = 300, WALK = 10, WALK_MAX = 2000, RIDGE = 20, FLOOR_TOP = 5, OFF_DROP = 3, OFF_BEYOND = 30, CLS = 0.5;
+/** Round W R: the land the owner sees as the floor - up to SLOPE_TOP m over the water, past FLOOR_TOP no steeper than SLOPE_MAX. */
+const SLOPE_TOP = 12, SLOPE_MAX = 0.1;
 const q = (a: number[], p: number): number => (a.length ? [...a].sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(p * a.length))] : NaN);
 const r1 = (x: number): number => Math.round(x * 10) / 10;
 
@@ -120,7 +122,7 @@ it('low line', () => {
     const A = (k: string): Agg => agg[k] ?? (agg[k] = { km: 0, off: 0, cls: [0, 0, 0], offCls: [0, 0, 0], drop: [], offs: [], cen: [], cenOff: [], pos: [], offFloor: 0, raw: 0, band: [0, 0, 0], fall: [0, 0, 0], c2l: [] });
     type Off = { line: number; kind: string; s: number; A: number; n: number; e: number; water: number; abreast: number; low: number; drop: number; dropRaw: number; off: number; lowN: number; lowE: number; floorW: number; floorL: number; floorR: number; cls: string; other: number; onFloor: boolean; centring: number; chanPos: number; fall: number; modelChan: number; modelLow: number; course: { n: number; e: number; off: number; src: string } | null };
     const offs: Off[] = [];
-    const pos: Array<{ li: number; s: number; A: number; pos: number; fw: number; bed: number }> = [];
+    const pos: Array<{ li: number; s: number; A: number; pos: number; fw: number; bed: number; pos2: number; fw2: number }> = [];
     let skipped = { end: 0, conf: 0, standing: 0 };
     const t1 = performance.now();
     for (let li = 0; li < L.length; li++) {
@@ -146,24 +148,33 @@ it('low line', () => {
         ag.km += STEP / 1000;
         let low = Infinity, lowO = 0, lowCls = 2, lowOther = -1, lowOnFloor = true;
         const fl = [0, 0];
+        const fl2 = [0, 0];
         for (const sd of [1, -1]) {
           let floorEnd = -1, maxG = -Infinity, last = hw;
+          // (Round W R: and the floor as the land the owner sees as it - the ground up to SLOPE_TOP over the water, rising
+          // past FLOOR_TOP no more steeply than SLOPE_MAX over the last 30 m: not the walls.)
+          let floorEnd2 = -1;
+          const gs: number[] = [];
           for (let o = hw + WALK; o <= WALK_MAX; o += WALK) {
             const pn = cn - de * o * sd, pe = ce2 + dn * o * sd;
             last = o;
             const w = otherWater(pn, pe, li, water);
             if (w) {
               if (w.level < low) { low = w.level; lowO = o * sd; lowCls = 0; lowOther = w.line; lowOnFloor = maxG < water + FLOOR_TOP; }
+              if (floorEnd2 < 0) floorEnd2 = o;
               break;
             }
             if (S.river > -Infinity) continue; // (its own water: a braid, a loop's other limb)
             const g = S.ground;
+            gs.push(g);
+            if (floorEnd2 < 0 && (g > water + SLOPE_TOP || (g > water + FLOOR_TOP && gs.length > 3 && g - gs[gs.length - 4] > SLOPE_MAX * 3 * WALK))) floorEnd2 = o;
             if (g > water + RIDGE) break;
             if (floorEnd < 0 && g >= water + FLOOR_TOP) floorEnd = o;
             if (g < low) { low = g; lowO = o * sd; lowCls = 1; lowOther = -1; lowOnFloor = maxG < water + FLOOR_TOP; }
             maxG = Math.max(maxG, g);
           }
           fl[sd > 0 ? 1 : 0] = floorEnd < 0 ? last : floorEnd;
+          fl2[sd > 0 ? 1 : 0] = floorEnd2 < 0 ? last : floorEnd2;
         }
         const drop = water - low;
         const cls = drop > CLS ? lowCls : 2;
@@ -174,7 +185,7 @@ it('low line', () => {
         ag.cen.push(centring);
         ag.pos.push(Math.abs(chanPos));
         // (Round W R: every river sample's place in its floor and its bed's share of the floor, for the side measures.)
-        if (kind === 'river') { const bw = (r as unknown as { bedR?: Float32Array; bedL?: Float32Array }); pos.push({ li, s: sv, A: r.area ? lerp(r.area, p) : 0, pos: chanPos, fw: floorW, bed: bw.bedR && bw.bedL ? lerp(bw.bedR, p) + lerp(bw.bedL, p) : 2 * hw }); }
+        if (kind === 'river') { const bw = (r as unknown as { bedR?: Float32Array; bedL?: Float32Array }); const fw2 = fl2[0] + fl2[1]; pos.push({ li, s: sv, A: r.area ? lerp(r.area, p) : 0, pos: chanPos, fw: floorW, bed: bw.bedR && bw.bedL ? lerp(bw.bedR, p) + lerp(bw.bedL, p) : 2 * hw, pos2: (fl2[1] - fl2[0]) / Math.max(1, fw2), fw2 }); }
         if (!(drop > OFF_DROP && Math.abs(lowO) > hw + OFF_BEYOND)) continue;
         ag.raw += STEP / 1000;
         // (Against the water abreast of the low point too - the line's own level at its point nearest the low point - so
@@ -231,6 +242,24 @@ it('low line', () => {
     // samples of a line in the same outer third (a gap of one sample allowed), its length in km and in floor widths.
     // At a wall: |chanPos| > 0.67. Bed share: the bed's width over the floor's, by catchment band.
     const side: Record<string, unknown> = {};
+    const sideOf = (which: 'pos' | 'pos2'): Record<string, unknown> => {
+      const P = pos.map((q) => ({ ...q, pos: which === 'pos' ? q.pos : q.pos2, fw: which === 'pos' ? q.fw : q.fw2 }));
+      const runsKm: number[] = [];
+      let cur = { li: -1, sd: 0, s0: 0, s1: 0, n: 0 };
+      const flushS = (): void => { if (cur.sd !== 0 && cur.n > 0) runsKm.push((cur.s1 - cur.s0 + STEP) / 1000); };
+      for (const q of P) {
+        const sd = q.pos > 1 / 3 ? 1 : q.pos < -1 / 3 ? -1 : 0;
+        if (q.li === cur.li && sd === cur.sd && sd !== 0 && q.s - cur.s1 <= 2 * STEP + 1) { cur.s1 = q.s; cur.n++; continue; }
+        flushS();
+        cur = { li: q.li, sd, s0: q.s, s1: q.s, n: 1 };
+      }
+      flushS();
+      const thirds = [0, 0, 0];
+      let wall = 0;
+      for (const q of P) { thirds[q.pos < -1 / 3 ? 0 : q.pos > 1 / 3 ? 2 : 1]++; if (Math.abs(q.pos) > 0.67) wall++; }
+      return { thirdsPct: thirds.map((t) => Math.round((1000 * t) / Math.max(1, P.length)) / 10), wallPct: Math.round((1000 * wall) / Math.max(1, P.length)) / 10, runKmP50: r1(q(runsKm, 0.5)), runKmP90: r1(q(runsKm, 0.9)), runKmMax: r1(q(runsKm, 1)), oneSideKmIn2kmPlusRuns: r1(runsKm.filter((x) => x >= 2).reduce((a, b) => a + b, 0)), floorWidthP50: Math.round(q(P.map((x) => x.fw), 0.5)), bedOverFloorP50: Math.round(100 * q(P.map((x) => x.bed / Math.max(1, x.fw)), 0.5)) / 100, bedOverFloorP90: Math.round(100 * q(P.map((x) => x.bed / Math.max(1, x.fw)), 0.9)) / 100 };
+    };
+    side.slopeFloor = sideOf('pos2');
     {
       const runsKm: number[] = [];
       const runsW: number[] = [];

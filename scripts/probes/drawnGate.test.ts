@@ -73,7 +73,7 @@ it('drawn gate', () => {
     let cov = 0, vw = 0, va = 0;
     for (let k = 0; k < lw.length; k++) { cov += (lw[k] - mw) * (la[k] - ma); vw += (lw[k] - mw) ** 2; va += (la[k] - ma) ** 2; }
     const corr = cov / Math.sqrt(vw * va || 1);
-    console.log(`seed ${seed} (i): ${ratios.length} profiles; drawn width / law p10 ${q(0.1)} p25 ${q(0.25)} p50 ${q(0.5)} p75 ${q(0.75)} p90 ${q(0.9)}; within x0.6-1.6 ${((100 * within) / Math.max(1, ratios.length)).toFixed(1)} %; corr(log width, log A) ${corr.toFixed(2)}`);
+    console.log(`seed ${seed} (i): ${ratios.length} profiles; drawn width / law p10 ${q(0.1)} p25 ${q(0.25)} p50 ${q(0.5)} p75 ${q(0.75)} p90 ${q(0.9)}; within x0.6-1.6 ${((100 * within) / Math.max(1, ratios.length)).toFixed(1)} %; corr(log width, log A) ${corr.toFixed(3)}`);
     // (ii)
     let joins = 0, thin = 0;
     const worst: Array<[number, string]> = [];
