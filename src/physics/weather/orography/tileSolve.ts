@@ -5,9 +5,12 @@
 //
 // Background: layers bounded by the tile mean and LAYER_BOUNDS_M (bounds within LAYER_MIN_DEPTH_M of the mean are
 // dropped), each with the free-atmosphere wind (windsAloft.ts) and N^2 (stability.ts) at its middle.
-// Blocked flow: the terrain is filled to the envelope minus h_c = BLOCKING_FROUDE U_low / N_low (lowest layer):
-// h_eff = max(h, envelope - h_c). The least-squares plane of h_eff is removed and the edges tapered (tiles.ts).
-// Levels: OUTPUT_LEVELS_M above the tile mean; amplitudes scaled by sqrt(rho(mean) / rho(z)).
+// Launch layer: the lowest layer whose wind reaches MIN_WAVE_WIND. The waves are solved from its bottom (the
+// solution's base) up; the layers below it (a calm surface under winds aloft) are blocked: the terrain is filled to
+// the base. With wind in the lowest layer the base is the tile mean.
+// Blocked flow: the terrain is filled to the envelope minus h_c = BLOCKING_FROUDE U / N of the launch layer:
+// h_eff = max(h, envelope - h_c, base). The least-squares plane of h_eff is removed and the edges tapered (tiles.ts).
+// Levels: OUTPUT_LEVELS_M above the base; amplitudes scaled by sqrt(rho(base) / rho(z)).
 
 import type { AtmosphereSample, WeatherSettings, WindAloftLevel } from '../../../core/types';
 import { atmosphereInto, type AtmosphereConditions } from '../../atmosphere';
@@ -32,8 +35,8 @@ export const STORED_KINDS = [FIELD_W, FIELD_U, FIELD_V] as const;
 export const WAVE_OPTIONS: WaveOptions = { nu: 1.5e-4, minWavelength: 3 * TILE_DX, criticalSpeed: 0.5 };
 /** Critical Froude number of the blocking height h_c = F_c U / N. Unconfirmed. */
 const BLOCKING_FROUDE = 1;
-/** Below this free-atmosphere wind in every layer no waves are solved, m/s. */
-const MIN_WAVE_WIND = 0.5;
+/** The lowest layer with at least this free-atmosphere wind launches the waves (none: no waves), m/s. */
+export const MIN_WAVE_WIND = 0.5;
 /** Below this low-level wind no lee shelter is stored, m/s. */
 const MIN_SHELTER_WIND = 0.1;
 /** Smallest relaxation depth of the terrain-following coordinate, m; and its multiple of the largest terrain offset. */
@@ -84,6 +87,8 @@ export interface TileSolution {
   key: string;
   /** Tile mean, m MSL. */
   mean: number;
+  /** Reference height of the wave fields (the launch layer's bottom; the tile mean when the lowest layer has wind), m MSL. */
+  base: number;
   /** Relaxation depth of the terrain-following coordinate, m. */
   relaxDepth: number;
   /** Wave fields on the window: (level * 3 + kind) * WINDOW_N^2 + cell, kinds w, u (north), v (east), m/s; null: none. */
@@ -121,6 +126,7 @@ export function solveTile(t: TileTerrain, ww: WaveWeather): TileSolution {
     tj: t.tj,
     key: waveWeatherKey(ww),
     mean: t.mean,
+    base: t.mean,
     relaxDepth: MIN_RELAX_DEPTH,
     fields: null,
     hEff: null,
@@ -141,34 +147,45 @@ export function solveTile(t: TileTerrain, ww: WaveWeather): TileSolution {
   const bounds = [t.mean];
   for (const b of LAYER_BOUNDS_M) if (b > t.mean + LAYER_MIN_DEPTH_M) bounds.push(b);
   L.count = bounds.length;
-  let maxWind = 0;
+  // The launch layer: the lowest with wind; the layers from it up form the background, re-based to its bottom.
+  let launch = -1;
+  let lowN = 0;
+  let lowE = 0;
   for (let j = 0; j < bounds.length; j++) {
     const mid = j + 1 < bounds.length ? 0.5 * (bounds[j] + bounds[j + 1]) : bounds[j] + TOP_LAYER_SAMPLE_M;
     aloft.freeWind(mid, _f);
-    L.bottom[j] = bounds[j] - t.mean;
-    L.U[j] = _f.north;
-    L.V[j] = _f.east;
-    L.N2[j] = bruntVaisala2(mid, cond);
-    maxWind = Math.max(maxWind, Math.hypot(_f.north, _f.east));
+    if (j === 0) {
+      lowN = _f.north;
+      lowE = _f.east;
+    }
+    if (launch < 0 && Math.hypot(_f.north, _f.east) >= MIN_WAVE_WIND) launch = j;
+    if (launch < 0) continue;
+    const l = j - launch;
+    L.bottom[l] = bounds[j] - bounds[launch];
+    L.U[l] = _f.north;
+    L.V[l] = _f.east;
+    L.N2[l] = bruntVaisala2(mid, cond);
   }
-  const lowN = L.U[0];
-  const lowE = L.V[0];
   const lowSpeed = Math.hypot(lowN, lowE);
 
   // Lee shelter for the low-level wind.
   if (lowSpeed > MIN_SHELTER_WIND) sol.shelter = shelterExcess(t, lowN / lowSpeed, lowE / lowSpeed, new Float32Array(WINDOW_N * WINDOW_N));
 
-  if (t.relief < FLAT_RELIEF || maxWind < MIN_WAVE_WIND) {
+  if (t.relief < FLAT_RELIEF || launch < 0) {
     sol.ms = (typeof performance !== 'undefined' ? performance.now() : 0) - start;
     return sol;
   }
+  L.count = bounds.length - launch;
+  const base = bounds[launch];
+  sol.base = base;
 
-  // Blocked flow: fill to the envelope minus h_c.
+  // Blocked flow: fill to the envelope minus h_c, and the calm layers below the launch layer to its bottom.
   const n = TILE_N;
-  const hc = (BLOCKING_FROUDE * lowSpeed) / Math.sqrt(L.N2[0]);
+  const hc = (BLOCKING_FROUDE * Math.hypot(L.U[0], L.V[0])) / Math.sqrt(L.N2[0]);
   const hEff = new Float64Array(n * n);
   const env = t.envelope;
-  for (let i = 0; i < n * n; i++) hEff[i] = Math.max(t.h[i], env[i] - hc);
+  const fill = launch > 0 ? base : -Infinity;
+  for (let i = 0; i < n * n; i++) hEff[i] = Math.max(t.h[i], env[i] - hc, fill);
   const [c0, c1, c2] = planeFit(hEff);
   const d = new Float64Array(n * n);
   for (let i = 0; i < n; i++) {
@@ -177,9 +194,9 @@ export function solveTile(t: TileTerrain, ww: WaveWeather): TileSolution {
   }
 
   // Density scaling per level.
-  const rho0 = atmosphereInto(t.mean, cond, _atm).density;
+  const rho0 = atmosphereInto(base, cond, _atm).density;
   const scale = new Float64Array(OUTPUT_LEVELS_M.length);
-  for (let l = 0; l < scale.length; l++) scale[l] = Math.sqrt(rho0 / atmosphereInto(t.mean + OUTPUT_LEVELS_M[l], cond, _atm).density);
+  for (let l = 0; l < scale.length; l++) scale[l] = Math.sqrt(rho0 / atmosphereInto(base + OUTPUT_LEVELS_M[l], cond, _atm).density);
 
   const W = WINDOW_N;
   const cells = W * W;
@@ -198,7 +215,7 @@ export function solveTile(t: TileTerrain, ww: WaveWeather): TileSolution {
     for (let wj = 0; wj < W; wj++) {
       const v = hEff[(WINDOW_START + wi) * n + WINDOW_START + wj];
       hw[wi * W + wj] = v;
-      maxOffset = Math.max(maxOffset, Math.abs(v - t.mean));
+      maxOffset = Math.max(maxOffset, Math.abs(v - base));
     }
   }
   sol.hEff = hw;

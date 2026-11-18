@@ -446,9 +446,9 @@ export class OrographyField {
     if (f && s.hEff) {
       const he = s.hEff;
       const hEff = he[o] * w00 + he[o10] * w10 + he[o01] * w01 + he[o11] * w11;
-      // Terrain-following height above the tile mean, relaxing to z - mean aloft.
+      // Terrain-following height above the solution's base, relaxing to z - base aloft.
       const above = z - hEff;
-      const zeta = z - s.mean - (hEff - s.mean) * Math.exp(-(above > 0 ? above : 0) / s.relaxDepth);
+      const zeta = z - s.base - (hEff - s.base) * Math.exp(-(above > 0 ? above : 0) / s.relaxDepth);
       let l = 0;
       let fl = 0;
       if (zeta >= OUTPUT_LEVELS_M[LEVELS - 1]) {

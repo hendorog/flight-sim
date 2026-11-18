@@ -1,7 +1,7 @@
 // The terrain terms of the wind in time and across caches (physics/weather/orography/orographyField.ts): a reset
 // after a weather change, two weather changes within the fade, a sample before the last change, eviction and the
 // ramp of a tile found again, the requery of a missed tile, the terrain tag in the cache keys, the frozen day of the
-// wave weather, and the windsock's horizontal sample inside the reference-site mask.
+// wave weather, the windsock's horizontal sample inside the reference-site mask, and the waves under a calm surface.
 // Each test logs its measured numbers.
 
 import { describe, expect, test } from 'vitest';
@@ -17,8 +17,9 @@ import {
   tileTerrainOf,
   type OrographySource,
 } from '../../src/physics/weather/orography/orographyField';
-import { solveTile, type TileSolution, type WaveWeather } from '../../src/physics/weather/orography/tileSolve';
-import { TILE_SPACING } from '../../src/physics/weather/orography/tiles';
+import { buildTileTerrain } from '../../src/physics/weather/orography/terrainGrid';
+import { MIN_WAVE_WIND, solveTile, type TileSolution, type WaveWeather } from '../../src/physics/weather/orography/tileSolve';
+import { TILE_SPACING, WINDOW_N } from '../../src/physics/weather/orography/tiles';
 import { advanceTimeOfDay } from '../../src/sim/clock';
 
 const report = (label: string, values: Record<string, number | string>) =>
@@ -305,5 +306,27 @@ describe('the field and its source', () => {
     } finally {
       setOrographySource(height, null);
     }
+  }, 120_000);
+});
+
+describe('waves under a calm surface', () => {
+  test('a calm surface with winds aloft launches waves from the lowest layer with wind; the air below is blocked', () => {
+    // A 2000 m ridge across the westerlies, the tile mean near 400 m.
+    const ridge = (n: number, e: number) => 300 + 2000 * Math.exp(-((e / 6000) ** 2) - (n / 30_000) ** 2);
+    const t = buildTileTerrain(ridge, 0, 0);
+    const ww: WaveWeather = { windDirectionDeg: 270, windSpeedKt: 0, dayOfYear: 15, isaDeviation: 0 };
+    const s = solveTile(t, ww);
+    let maxW = 0;
+    const cells = WINDOW_N * WINDOW_N;
+    for (let l = 0; l < 18; l++) for (let c = 0; c < cells; c++) maxW = Math.max(maxW, Math.abs(s.fields![l * 3 * cells + c]));
+    let minEff = Infinity;
+    for (const v of s.hEff!) minEff = Math.min(minEff, v);
+    // The same ridge in a 25 kt westerly: launched from the tile mean.
+    const windy = solveTile(t, { ...ww, windSpeedKt: 25 });
+    report('calm surface, day 15, 2000 m ridge', { tileMean: t.mean, base: s.base, lowestEffectiveTerrain: minEff, maxAbsW: maxW, windyBase: windy.base, minWaveWind: MIN_WAVE_WIND });
+    expect(s.base).toBeGreaterThan(t.mean);
+    expect(minEff).toBeGreaterThanOrEqual(s.base - 1e-3);
+    expect(maxW).toBeGreaterThan(0.1);
+    expect(windy.base).toBe(t.mean);
   }, 120_000);
 });

@@ -473,17 +473,24 @@ Derived tables (free wind `F`, direction FROM / kt; the 0 ft column is `G0`; the
 - Background (`tileSolve.ts`): layers bounded by the tile mean and 1500, 3000, 4500, 6500, 9000, 11000, 14000 m
   (bounds within 300 m of the mean dropped), each with `F` and `N^2` (`stability.ts`, `N^2 = (g/T)(g/cp + dT/dz)`;
   ISA gives N = 0.0112 1/s at 5 km and 0.0210 1/s above 11 km) at its middle (top layer: 2000 m above its bottom).
-- Blocked flow: `h_eff = max(h, envelope - U_low / N_low)` (critical Froude number 1, unconfirmed). On 1000 m
-  corrugations 5 km apart the spread of `h_eff` is 1000 m at 40 and 20 kt, 788 m at 10 kt, 394 m at 5 kt.
+- Launch layer: the lowest layer whose `|F|` is at least 0.5 m/s (`MIN_WAVE_WIND`). The waves are solved from its
+  bottom (the solution's `base`) up, and the terrain below the base is filled to it (the calm air under it is
+  blocked). With wind in the lowest layer the base is the tile mean and nothing is filled. Calm surface, day 15,
+  derived winds aloft, world terrain (`tests/weather/orographyTime.test.ts` and a probe, 2026-11-18): tiles (0, 0)
+  and (0, -1) launch from 1500 m; the largest |w| in their fields is 0.727 and 0.562 m/s (0 for both before the
+  launch layer, when the lowest layer's wind decided every mode).
+- Blocked flow: `h_eff = max(h, envelope - U / N, base fill)` with U and N of the launch layer (critical Froude
+  number 1, unconfirmed). On 1000 m corrugations 5 km apart the spread of `h_eff` is 1000 m at 40 and 20 kt, 788 m
+  at 10 kt, 394 m at 5 kt.
 - Solver (`linearWaves.ts`): per Fourier mode, `sigma = k U + l V - i nu` (nu 1.5e-4 1/s, unconfirmed),
   `m^2 = K^2 (N^2 / sigma^2 - 1)` with Im(m) > 0 (for nu = 0 and a propagating mode, sign(Re m) = sign(Re sigma)), a radiating top layer, eta and sigma^2 eta' continuous at the
   interfaces, critical levels (Re sigma changes sign or |Re sigma| < 0.5 m/s K) absorbing. Wavelengths under 1.5 km
   are removed. Fields w, u, v at 0, 150, 300, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 7500, 9000,
-  10500, 12000, 14000 m above the tile mean, times sqrt(rho(mean) / rho(z)). Checked against analytic solutions in
+  10500, 12000, 14000 m above the base, times sqrt(rho(base) / rho(z)). Checked against analytic solutions in
   `tests/weather/linearWaves.test.ts` (Witch of Agnesi, non-hydrostatic wavelength, evanescent decay, two-layer
   trapped wave, energy flux, critical level).
-- Lookup (`orographyField.ts`): terrain-following height `zeta = (z - mean) - (h_eff - mean) exp(-max(0, z - h_eff) / H_s)`,
-  `H_s = max(1500 m, 1.2 max|h_eff - mean|)`; trilinear in the window; sum over the tiles with their weights.
+- Lookup (`orographyField.ts`): terrain-following height `zeta = (z - base) - (h_eff - base) exp(-max(0, z - h_eff) / H_s)`,
+  `H_s = max(1500 m, 1.2 max|h_eff - base|)`; trilinear in the window; sum over the tiles with their weights.
 - In `WindField`: the horizontal perturbation times `s(agl)` is added to the mean wind; the vertical speed is added
   times `1 - exp(-agl / 300 m)` (the fine-terrain lift `V . grad(h)` keeps its form and its 4 m/s clamp).
   Breaking: `b = -(u' . F) / |F|^2`; for b > 0 every perturbation times `tanh(b / 0.8) / (b / 0.8)`; w limited to
