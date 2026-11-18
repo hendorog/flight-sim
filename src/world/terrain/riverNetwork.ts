@@ -1048,6 +1048,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   const lawAx: Array<{ Wa: Float64Array; lam2: Float64Array; om2: Float64Array }> = [];
   /** Where the law's time goes (probes): the room transects, laying the threads, the rest of the channel loop. */
   const formMs = { room: 0, lay: 0, chan: 0, form: 0, streams: 0 };
+  endTrims.n = 0;
+  endTrims.m = 0;
   /**
    * The law along a line's axis or course (arc lengths s; river or stream alike): at each sample its floor (the room
    * either side, roomOfLine), the law's widths, the thread's swing fitted to the room, the thread's room each side (none
@@ -1463,7 +1465,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const pj = st.joins - nR;
       if (st.joins < 0) continue;
       const P = st.joins < nR ? rivers[st.joins] : traced.streams[pj];
-      const m = st.north.length;
+      let m = st.north.length;
       if (m < 2 || P.s.length < 2) continue;
       if (pj >= 0 && remap[pj]) {
         const s0 = remap[pj]!(st.joinS);
@@ -1475,6 +1477,27 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
           if (d < bd) (bd = d), (best = P.s[q]);
         }
         st.joinS = best;
+      }
+      // It ends where it first reaches its receiver's bed (as a river its parent's: endAtReceiver).
+      if (st.end !== 'lake') {
+        const cut = endAtReceiver(st.north, st.east, st.s, P, st.joinS);
+        if (cut) {
+          const n = cut.i + 1;
+          st.north = st.north.slice(0, n);
+          st.east = st.east.slice(0, n);
+          st.s = st.s.slice(0, n);
+          st.level = st.level.slice(0, n);
+          st.halfWidth = st.halfWidth.slice(0, n);
+          st.area = st.area.slice(0, n);
+          st.breach = st.breach.slice(0, n);
+          st.cut = st.cut.slice(0, n);
+          if (st.held > n) st.held = n;
+          if (st.chainS >= 0) st.chainS = Math.min(st.chainS, st.s[n - 1]);
+          st.joinS = cut.s;
+          m = n;
+          endTrims.n++;
+          endTrims.m += cut.trimmed;
+        }
       }
       const k = Math.min(P.s.length - 2, Math.max(0, segmentAt(P.s, st.joinS)));
       const u = Math.min(1, Math.max(0, (st.joinS - P.s[k]) / Math.max(1e-9, P.s[k + 1] - P.s[k])));
@@ -2726,6 +2749,46 @@ function cutOffLoops(ch: { north: number[]; east: number[]; valleyS: number[]; o
   ch.valleyS = v2;
   ch.off = o2;
   return out;
+}
+
+/** A line looks this far back up its course, and this far along its receiver either side of its junction, for where it
+ * first reaches the receiver's bed (endAtReceiver), m. */
+const END_LOOK = 1000;
+/** Lines ended where they first reach their receiver's bed (endAtReceiver), and the length so ended, m (probes). */
+export const endTrims = { n: 0, m: 0 };
+/**
+ * Where a line first reaches its receiver's bed - the receiver's water and as far again beyond it (its gravel, at the
+ * least) - within END_LOOK of its end and of its junction at the receiver's arc `joinS`: its sample there and the
+ * receiver's arc nearest it, or null if it reaches the bed only at its end. Its water flows into the receiver there. A
+ * course traced on ground that does not carry the receiver's bed ran on inside it, over the receiver's water (seed
+ * 777777's home field: a stream 4.5 m over its river, 20 m from the river's thread for 250 m).
+ */
+function endAtReceiver(north: Float64Array, east: Float64Array, s: Float64Array, P: { north: Float64Array; east: Float64Array; s: Float64Array; halfWidth: Float64Array }, joinS: number): { i: number; s: number; trimmed: number } | null {
+  const m = north.length;
+  const np = P.s.length;
+  if (m < 3 || np < 2) return null;
+  const total = s[m - 1];
+  const q0 = Math.max(0, segmentAt(P.s, joinS - END_LOOK));
+  const q1 = Math.min(np - 1, segmentAt(P.s, joinS + END_LOOK) + 1);
+  let q = Math.min(q1, Math.max(q0, segmentAt(P.s, joinS)));
+  let first = -1;
+  let firstQ = q;
+  for (let i = m - 1; i >= 1 && s[i] >= total - END_LOOK; i--) {
+    // (The receiver's nearest sample, walked from the last one found: the line runs beside its receiver this far.)
+    let best = Math.hypot(P.north[q] - north[i], P.east[q] - east[i]);
+    for (let moved = true; moved; ) {
+      moved = false;
+      for (const dq of [-4, -1, 1, 4]) {
+        const r = q + dq;
+        if (r < q0 || r > q1) continue;
+        const d = Math.hypot(P.north[r] - north[i], P.east[r] - east[i]);
+        if (d < best) (best = d), (q = r), (moved = true);
+      }
+    }
+    if (best < 2 * P.halfWidth[q]) (first = i), (firstQ = q);
+  }
+  if (first < 1 || first >= m - 1) return null;
+  return { i: first, s: P.s[firstQ], trimmed: total - s[first] };
 }
 
 /** Index of the segment containing arc length sv (clamped). */

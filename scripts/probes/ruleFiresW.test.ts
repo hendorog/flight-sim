@@ -3,10 +3,10 @@
 // past its bank by its slope (stations whose floor stands over FLOOR_OVER + bank + 1 at its edge), the floors laid
 // (axis samples with a floor beyond the belt's sweep), the wide gravel bed (samples whose pattern share passes 0.2,
 // BED_BIG), the junction blend (lines ending on another), the pitch-pool samples put in at a foot, the half-bends scaled
-// into their room. RW_SEEDS.
+// into their room, the lines ended where they first reach their receiver's bed (endAtReceiver). RW_SEEDS.
 import { it } from 'vitest';
 import { hydrology, terrainHeight } from '../../src/world/terrain/heightfield';
-import { formProbe } from '../../src/world/terrain/riverNetwork';
+import { endTrims, formProbe } from '../../src/world/terrain/riverNetwork';
 import { setWorldSeed } from '../../src/world/worldSeed';
 const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
 it('rule fires W', () => {
@@ -31,7 +31,7 @@ it('rule fires W', () => {
     let joins = 0;
     for (const r of L) if ((r.joins ?? -1) >= 0) joins++;
     wide = rep.form?.wideBed ?? 0;
-    console.log(`RW seed ${seed}: river axis samples ${ax}; belt off its course ${off} (${((100 * off) / Math.max(1, ax)).toFixed(0)} %); with a floor beyond its bed ${floored}; kept off a side falling away ${fell}; floor read past its bank by its slope ${slope}; form samples ${rep.form?.samples}, wide gravel bed ${wide}, white ${rep.form?.white}; junction blends ${joins}; pitch units ${rep.pitch?.found}, shaped ${rep.pitch?.units}, samples put in ${rep.pitch?.inserted}`);
+    console.log(`RW seed ${seed}: river axis samples ${ax}; belt off its course ${off} (${((100 * off) / Math.max(1, ax)).toFixed(0)} %); with a floor beyond its bed ${floored}; kept off a side falling away ${fell}; floor read past its bank by its slope ${slope}; form samples ${rep.form?.samples}, wide gravel bed ${wide}, white ${rep.form?.white}; junction blends ${joins}; pitch units ${rep.pitch?.found}, shaped ${rep.pitch?.units}, samples put in ${rep.pitch?.inserted}; ended where they first reach their receiver's bed ${endTrims.n} lines (${(endTrims.m / 1000).toFixed(1)} km cut)`);
   }
   setWorldSeed(0);
 });
