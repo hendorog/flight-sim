@@ -27,6 +27,18 @@ export class SmoothedTerrain {
     return out;
   }
 
+  /**
+   * Gradient of the interpolated surface by central differences over `baseline` m (dh/dnorth, dh/deast written into
+   * out.slopeNorth, out.slopeEast; out.height is the height at the point).
+   */
+  gradient(north: number, east: number, baseline: number, out: TerrainSample): TerrainSample {
+    const d = 0.5 * baseline;
+    out.height = this.height(north, east);
+    out.slopeNorth = (this.height(north + d, east) - this.height(north - d, east)) / baseline;
+    out.slopeEast = (this.height(north, east + d) - this.height(north, east - d)) / baseline;
+    return out;
+  }
+
   private height(north: number, east: number): number {
     const x = north / SPACING;
     const y = east / SPACING;
