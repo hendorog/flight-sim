@@ -40,5 +40,8 @@ export const CRETACEOUS: EraParams = Object.freeze({
   // the safari, 23 km out, at 45 km; ~34 % at 85 km); a 2600 m MSL cumulus base at 0.25 cover, level with the
   // summit, so the plume column rises into clear sky instead of behind the deck; ISA +10 (a higher density
   // altitude, honestly); a little cirrus for the low sun to colour at dusk. No sun tint and no colour grade.
-  weather: Object.freeze({ visibilityM: 85000, cloudCover: 0.25, cloudBaseM: 2600, cirrusCover: 0.2, isaDeviation: 10 }),
+  // mountainWaves 0: the safari's first-minute staging (cretaceousAnchors.ts SAFARI_FLIGHT, and the fauna hashes
+  // pinned on it) was measured without the terrain effects on the wind; with them at gain 1 the flown path is 56 m
+  // from that model after 60 s (tests/era/safariGeometry.test.ts tolerance 30 m), 14 m without.
+  weather: Object.freeze({ visibilityM: 85000, cloudCover: 0.25, cloudBaseM: 2600, cirrusCover: 0.2, isaDeviation: 10, mountainWaves: 0 }),
 } as const satisfies EraParams);
