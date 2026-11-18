@@ -106,7 +106,9 @@ export class ModeSolver {
       }
     }
     this.top = top;
-    // Vertical wavenumbers: m^2 = K^2 (N^2 / sigma^2 - 1), the root with Im(m) >= 0.
+    // Vertical wavenumbers: m^2 = K^2 (N^2 / sigma^2 - 1), the root with Im(m) >= 0. With nu > 0 the sign of Im(m^2)
+    // (that of Re sigma) picks the branch. On the real axis (nu = 0, a propagating mode) the radiating root is the
+    // one with sign(Re m) = sign(Re sigma): upward group velocity in both wind directions.
     for (let j = 0; j <= top; j++) {
       const sr = this.sr[j];
       const s2r = sr * sr - si * si;
@@ -117,7 +119,7 @@ export class ModeSolver {
       const r = Math.hypot(qr, qi);
       let mr = Math.sqrt(Math.max(0, (r + qr) / 2));
       let mi = Math.sqrt(Math.max(0, (r - qr) / 2));
-      if (qi < 0) mr = -mr;
+      if (qi < 0 || (qi === 0 && sr < 0)) mr = -mr;
       if (mi < 0) {
         mr = -mr;
         mi = -mi;

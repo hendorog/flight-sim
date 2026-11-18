@@ -123,6 +123,39 @@ describe('uniform atmosphere', () => {
     }
   });
 
+  test('no damping (nu = 0): the radiating root for a wind along +x and along -x (Witch of Agnesi within 5 % of h0)', () => {
+    const a = 10_000;
+    const h0 = 100;
+    const N = 0.01;
+    const nx = 512;
+    const dx = 1000;
+    const Lx = nx * dx;
+    const errors: Record<string, number> = {};
+    for (const U of [10, -10]) {
+      const l = N / Math.abs(U);
+      const z = Math.PI / (2 * l);
+      const rows = solve2d(nx, dx, (x) => (h0 * a * a) / (x * x + a * a), layers([{ bottom: 0, U, N }]), [z], [FIELD_ETA], { ...TEST_OPTIONS, nu: 0 });
+      // The lee side is downwind: x s = x sign(U) in the analytic solution.
+      const analytic = new Float64Array(nx);
+      let mean = 0;
+      for (let i = 0; i < nx; i++) {
+        const x0 = (i < nx / 2 ? i : i - nx) * dx;
+        let sum = 0;
+        for (let n = -400; n <= 400; n++) {
+          const xs = (x0 + n * Lx) * Math.sign(U);
+          sum += (h0 * a * (a * Math.cos(l * z) - xs * Math.sin(l * z))) / (xs * xs + a * a);
+        }
+        analytic[i] = sum;
+        mean += sum / nx;
+      }
+      let err = 0;
+      for (let i = 0; i < nx; i++) err = Math.max(err, Math.abs(rows[0][i] - (analytic[i] - mean)));
+      errors[`maxErrorOverH0_U${U}`] = err / h0;
+      expect(err / h0).toBeLessThan(0.05);
+    }
+    report('nu = 0, both wind directions', errors);
+  });
+
   test('non-hydrostatic ridge (aN/U = 1): downstream wavelength 2 pi U / N within 10 %', () => {
     const a = 1000;
     const U = 10;
