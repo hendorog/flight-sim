@@ -51,9 +51,8 @@
 //   SimPhysics.resetTo sets the simulation time to 0 and leaves timeOfDay, so a reset or a resume moves no cell.
 //   With the clock frozen (clock=0) T does not advance and the cells stand still. Past day SKY_DAYS_IN_YEAR the
 //   date wraps to 1 and T jumps back a year (every cell changes). Editing the time of day moves T with it.
-//   Drift: a cell moves from its birth position with the steering wind (stormSteering): from windDirectionDeg veered
-//   by the boundary layer's veer at STEERING_HEIGHT_M (boundaryLayer windVeer, 25 deg) at windSpeedKt x
-//   STEERING_FACTOR (the factor the cumulus layer drifts with, render/clouds CLOUD_WIND_FACTOR). It is not stored:
+//   Drift: a cell moves from its birth position with the steering wind (stormSteering): the free-atmosphere wind at
+//   STEERING_ALT_M MSL (windsAloft.ts windAloftAt: derived from the conditions, or the manual levels). It is not stored:
 //   a change of the wind settings moves every live cell by the change of velocity times its age.
 //   Life cycle, a = age / L, every share 0 at a = 0 and at a = 1:
 //     growth    0..GROWTH_END: the top rises from 0.3 to 1 of its height above the base, the core radius from
@@ -88,7 +87,7 @@ import type { AtmosphereSample, CloudType, StormCell, WeatherSettings } from '..
 import { CLOUD_TYPE_PROFILES, MAX_STORMS, cloudTypeOf, stormsOf } from '../../core/weatherFields';
 import { AIRPORT, sunDirectionNED } from '../../core/world';
 import { ISA_SEA_LEVEL, R_AIR, atmosphereInto, geopotentialAltitude, type AtmosphereConditions } from '../atmosphere';
-import { windVeer } from './boundaryLayer';
+import { windAloftAt, windFromDeg, windKt, type WindNE } from './windsAloft';
 import { hashU32 } from './random';
 
 // ---------------------------------------------------------------------------------------------- activity constants
@@ -172,10 +171,8 @@ export const MIN_CELL_DEPTH_M = 3000;
 export const MIN_GROWING_DEPTH_M = 2000;
 /** End of the growth phase, as a share of the life. */
 export const GROWTH_END = 0.3;
-/** Steering wind: the surface wind's speed times this (render/clouds CLOUD_WIND_FACTOR, 1.8). */
-export const STEERING_FACTOR = 1.8;
-/** Steering wind: the surface direction veered as the boundary layer veers it at this height (boundaryLayer windVeer), m AGL. */
-export const STEERING_HEIGHT_M = 2000;
+/** Steering wind: the free-atmosphere wind (windsAloft.ts) at this altitude, m MSL. */
+export const STEERING_ALT_M = 3000;
 /** Default seed of the lattice. */
 export const STORM_SEED = 1;
 
@@ -377,11 +374,16 @@ export function regionFactor(north: number, east: number, seed = STORM_SEED): nu
   return REGION_MIN + (REGION_MAX - REGION_MIN) * regionNoise(hashU32(hashU32(seed ^ SALT) ^ REGION_SALT), north, east);
 }
 
-/** The steering wind of the derived cells: where it blows from, deg in [0, 360), and its speed, kt. */
-export function stormSteering(w: Pick<WeatherSettings, 'windDirectionDeg' | 'windSpeedKt'>, out: { fromDeg: number; kt: number }): { fromDeg: number; kt: number } {
-  const from = w.windDirectionDeg + windVeer(STEERING_HEIGHT_M) / DEG;
-  out.fromDeg = ((from % 360) + 360) % 360;
-  out.kt = Math.max(0, w.windSpeedKt) * STEERING_FACTOR;
+const _steerWind: WindNE = { north: 0, east: 0 };
+
+/**
+ * The steering wind of the derived cells: the free-atmosphere wind at STEERING_ALT_M (windAloftAt): where it blows
+ * from, deg in [0, 360), and its speed, kt.
+ */
+export function stormSteering(w: WeatherSettings, out: { fromDeg: number; kt: number }): { fromDeg: number; kt: number } {
+  const v = windAloftAt(w, STEERING_ALT_M, _steerWind);
+  out.kt = windKt(v);
+  out.fromDeg = out.kt > 0 ? windFromDeg(v) : ((w.windDirectionDeg % 360) + 360) % 360;
   return out;
 }
 
@@ -412,6 +414,7 @@ export class StormField {
   private sClock = NaN;
   private kDir = NaN;
   private kSpeed = NaN;
+  private kAloft: unknown = null;
   private kNorth = NaN;
   private kEast = NaN;
   /** Birth-activity grid: the clock index k (time k BIRTH_GRID_S) held in each slot, its activity and equilibrium level. */
@@ -503,9 +506,11 @@ export class StormField {
       this.windowMax = max;
       this.kNorth = NaN;
     }
-    if (w.windDirectionDeg !== this.kDir || w.windSpeedKt !== this.kSpeed) {
+    const aloft = (w as { windsAloft?: unknown }).windsAloft;
+    if (w.windDirectionDeg !== this.kDir || w.windSpeedKt !== this.kSpeed || aloft !== this.kAloft) {
       this.kDir = w.windDirectionDeg;
       this.kSpeed = w.windSpeedKt;
+      this.kAloft = aloft;
       this.kNorth = NaN;
     }
   }

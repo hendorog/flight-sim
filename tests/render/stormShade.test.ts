@@ -10,7 +10,8 @@ import { cellOverheadTau, overheadSkyFactors } from '../../src/render/weather/st
 const cell: StormCell = { northM: 0, eastM: 0, radiusM: 3000, topM: 11_000, intensity: 0.8, motionDeg: 0, motionKt: 0 };
 
 describe('cellOverheadTau', () => {
-  const w = { ...defaultWeather(), cloudBaseM: 900, windDirectionDeg: 270, windSpeedKt: 0 };
+  // Still air at every height (no winds aloft): the anvil sits over the core.
+  const w = { ...defaultWeather(), cloudBaseM: 900, windDirectionDeg: 270, windSpeedKt: 0, windsAloft: [] };
   const g = cellGeometry(cell, w, 0, makeCellGeometry());
   const anvilBot = g.top - STORM_ANVIL_DEPTH_M;
 

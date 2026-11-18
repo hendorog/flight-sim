@@ -519,6 +519,13 @@ Derived tables (free wind `F`, direction FROM / kt; the 0 ft column is `G0`; the
 - Cost (node, this container, 2026-11-18, with a full test run in the background): 268-306 ms per 256 x 256 solve,
   468 ms to sample a tile's terrain, 8.3 MB per solution; `env.wind` 13.6 us at 3000 m and 14.5 us at 100 m AGL in
   the four-tile corner at (32 km, 32 km), 10.5 us on flat terrain (the cost tests assert under 30 us).
+- Consumers of the winds aloft: the storm steering wind (above; also the anvil offset of `cellGeometry.ts`), the
+  cloud drift (`src/render/clouds/cloudModel.ts`: the low layer with `windAloftAt` at its mid-height, the mid-level
+  sheet at `midAltM` with a 2-D offset in the world frame, the cirrus at 9000 m along its own axis; the factors 1.8,
+  2.2 and 2.5 on the surface wind are gone) and the L20 nav log (`src/training/content/syllabus/route.ts`
+  `cruiseWind`, `meanWindAt` at 3500 ft MSL and 2500 ft AGL on day 172: 124.9/14.5 kt, 123.9/14.5 kt before).
+  The ATIS, the tower and the training weather line keep the surface wind; the HUD, the windsock, the flight model
+  and the precipitation streaks read `env.wind`.
 - Wave field for a 25 kt north-westerly, default stability, over 0..60 km north and +/-30 km east, at the altitude
   or 200 m above the ground where that is higher: largest w 6.4 /
   -7.1 m/s at 3000 m, 6.6 / -6.4 m/s at 5000 m, 5.3 / -4.8 m/s at 8000 m; at 4000 m along the wind through the range,
@@ -615,9 +622,9 @@ Activity of the Thunderstorm conditions with one field varied (same test):
 - Time base: T = ((`dayOfYear` − 1) x 24 + `timeOfDay`) x 3600 s. The simulation time is not used: a scenario
   reset (clock to 0) and a resume leave T unchanged. `clock=0` stops T, and the cells stand still. Editing the
   time of day or the date moves T. The date wraps from day 366 to 1, and T goes back a year.
-- Drift: from the birth position with the steering wind (`stormSteering`): from `windDirectionDeg` plus the
-  boundary layer's veer at `STEERING_HEIGHT_M` 2000 m (`windVeer`, 24.95 deg), at `windSpeedKt` x
-  `STEERING_FACTOR` 1.8 (the factor the cumulus layer drifts with, `CLOUD_WIND_FACTOR`). A derived cell's
+- Drift: from the birth position with the steering wind (`stormSteering`): the free-atmosphere wind at
+  `STEERING_ALT_M` 3000 m MSL (`windAloftAt`, "Winds aloft and terrain effects on the wind"). Before the winds
+  aloft it was `windDirectionDeg` veered 24.95 deg at `windSpeedKt` x 1.8. A derived cell's
   `motionDeg` and `motionKt` carry it, so the physics and the render move the cell alike. The drift is not stored:
   a change of the wind settings moves each live cell by the change of velocity times its age.
 

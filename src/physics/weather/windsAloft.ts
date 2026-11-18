@@ -21,7 +21,7 @@ import type { WeatherSettings, WindAloftLevel } from '../../core/types';
 import { windsAloftOf } from '../../core/weatherFields';
 import { AIRPORT } from '../../core/world';
 import { geopotentialAltitude, isaTemperature, temperatureProfile, type TemperatureProfile } from '../atmosphere';
-import { gradientWindFactor } from './boundaryLayer';
+import { gradientWindFactor, windSpeedFactor, windVeer } from './boundaryLayer';
 
 /** Veer of the gradient wind from the 10 m wind (boundaryLayer.ts SURFACE_BACKING), rad. */
 const GRADIENT_VEER = 25 * DEG;
@@ -208,6 +208,35 @@ export function windAloftAt(w: WeatherSettings, zMSL: number, out: WindNE): Wind
 export function derivedWindAloftAt(w: WeatherSettings, zMSL: number, out: WindNE): WindNE {
   return shared.update(w).derivedWind(zMSL, out);
 }
+
+/**
+ * The steady mean wind of windField.ts without terrain terms at `agl` m above the ground and z m MSL: the boundary
+ * layer of the setting plus the share of F(z) - G0 the boundary layer carries (for consumers that need the wind at a
+ * height without a WindField, e.g. a lesson's nav log). Toward, m/s.
+ */
+export function meanWindAt(w: WeatherSettings, zMSL: number, agl: number, out: WindNE): WindNE {
+  const p = shared.update(w);
+  const veer = windVeer(agl);
+  const profile = windSpeedFactor(agl);
+  const from = w.windDirectionDeg * DEG + veer;
+  const U = Math.max(0, w.windSpeedKt) * KT * profile;
+  let n = -U * Math.cos(from);
+  let e = -U * Math.sin(from);
+  if (!p.isGradient(zMSL)) {
+    const f = p.freeWind(zMSL, _mean);
+    const dN = f.north - p.g0N;
+    const dE = f.east - p.g0E;
+    const share = profile / gradientWindFactor;
+    const beta = GRADIENT_VEER - veer;
+    n += share * (dN * Math.cos(beta) + dE * Math.sin(beta));
+    e += share * (-dN * Math.sin(beta) + dE * Math.cos(beta));
+  }
+  out.north = n;
+  out.east = e;
+  return out;
+}
+
+const _mean: WindNE = { north: 0, east: 0 };
 
 /** Direction a wind vector blows FROM, deg in [0, 360). */
 export function windFromDeg(v: WindNE): number {

@@ -72,10 +72,10 @@ describe('cellGeometry', () => {
     expect(c.top).toBeGreaterThanOrEqual(c.base + 2000);
   });
 
-  it('moves the anvil downwind of the steering wind (from 270 veered to 2000 m) by half its radius in a strong wind', () => {
+  it('moves the anvil downwind of the steering wind (the wind aloft at 3000 m MSL) by half its radius in a strong wind', () => {
     const g = cellGeometry(cell(), w, 0, makeCellGeometry());
     const steer = stormSteering(w, { fromDeg: 0, kt: 0 });
-    // 30 kt at the surface: 54 kt steering, above ANVIL_FULL_DRIFT_KT.
+    // 30 kt at the surface: the steering wind is above ANVIL_FULL_DRIFT_KT.
     expect(steer.kt).toBeGreaterThan(ANVIL_FULL_DRIFT_KT);
     const to = (steer.fromDeg + 180) * DEG;
     // three.js x = east, z = -north.
@@ -84,8 +84,8 @@ describe('cellGeometry', () => {
     // The veer turns the offset from due east (wind from 270) toward the south-east.
     expect(steer.fromDeg).toBeGreaterThan(270);
     expect(g.anvilZ - g.z).toBeGreaterThan(0);
-    // No wind: no offset.
-    const calm = cellGeometry(cell(), { ...w, windSpeedKt: 0 }, 0, makeCellGeometry());
+    // No wind, and no shear aloft: no offset.
+    const calm = cellGeometry(cell(), { ...w, windSpeedKt: 0, windsAloft: [] }, 0, makeCellGeometry());
     expect(calm.anvilX).toBe(calm.x);
     expect(calm.anvilZ).toBe(calm.z);
   });

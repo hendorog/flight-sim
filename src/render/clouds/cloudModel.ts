@@ -34,7 +34,7 @@
 //     cells' core columns and anvils (render/weather/stormGlsl.ts STORM_SHADOW_GLSL, stormSunTau).
 
 import * as THREE from 'three';
-import { KT } from '../../core/math';
+import { windAloftAt, type WindNE } from '../../physics/weather/windsAloft';
 import type { SimContext } from '../../core/context';
 import type { CloudType, MidCloudType, WeatherSettings } from '../../core/types';
 import { CLOUD_TYPE_PROFILES, cloudTypeOf, midLayerOf, type MidLayer } from '../../core/weatherFields';
@@ -54,11 +54,9 @@ const DETAIL_PERIOD = 480;
 const CIRRUS_PERIOD = 30_000;
 /** Tile period of the cirrus fibre texture, m (its second field is sampled at a third of it); divides CIRRUS_PERIOD. */
 const CIRRUS_FIBRE_PERIOD = 10_000;
-/** Upper-level (~8-10 km) wind relative to the surface wind. */
-const CIRRUS_WIND_FACTOR = 2.5;
+/** The cirrus deck drifts with the free-atmosphere wind (physics/weather/windsAloft.ts) at this altitude, m MSL. */
+const CIRRUS_WIND_ALT_M = 9000;
 const EARTH_RADIUS = 6_371_000;
-/** Wind at cloud level relative to the surface wind: 1/7 power law from 10 m to ~1.5 km AGL gives ~2x; use 1.8. */
-export const CLOUD_WIND_FACTOR = 1.8;
 /**
  * Where the weather map starts relative to the world, m (three.js x, z). The cloud field has clusters and
  * clearings several km across; this phase puts the home airfield under a representative part of it, where
@@ -124,11 +122,6 @@ const MID_TAU_MIN = 0.5;
 export function midSheetTau(cover: number, type: MidCloudType): number {
   return MID_TAU_MIN + (MID_TAU_MAX[type] - MID_TAU_MIN) * cover;
 }
-/**
- * Wind at the mid-level sheet relative to the surface wind. Unconfirmed: between the cloud-level factor
- * (CLOUD_WIND_FACTOR) and the cirrus factor (CIRRUS_WIND_FACTOR).
- */
-export const MID_WIND_FACTOR = 2.2;
 
 /**
  * Cumulus clearing around a storm cell: full between the centre and CLEAR_INNER core radii, none from CLEAR_OUTER
@@ -584,7 +577,7 @@ float diffuseTransmission(float tau) { return 1.0 / (1.0 + 0.75 * tau * (1.0 - 0
  */
 export const MID_SHEET_GLSL = /* glsl */ `
 uniform vec4 uMid;            // mid-level sheet: cover 0..1 (0 = none, or not above uLayer.y), altitude m MSL, kind (0 As, 1 Ac), tau at full cover
-uniform vec2 uMidOffset;      // drift in the sheet's frame (x along the upper wind), m
+uniform vec2 uMidOffset;      // drift of the sheet, world (x, z), m (each component wrapped to the 30 km period)
 const float MID_TAU_MIN = ${MID_TAU_MIN.toFixed(3)};
 // Mean optical depth of the sheet inside its patches (midSheetTau).
 float midTau() { return mix(MID_TAU_MIN, uMid.w, uMid.x); }
@@ -640,7 +633,7 @@ export interface CloudModelUniforms {
   uCloudShape: THREE.IUniform<THREE.Vector4>;
   /** Mid-level sheet: cover 0..1 (0 = none, or not above the extended layer top), altitude m MSL, kind (0 altostratus, 1 altocumulus), MID_TAU_MAX of the kind. */
   uMid: THREE.IUniform<THREE.Vector4>;
-  /** Drift of the mid-level sheet in its own frame (as cirrusOffset: x along the upper wind), m. */
+  /** Drift of the mid-level sheet, three.js world (x, z), m: with the wind aloft at its altitude, its own direction. */
   uMidOffset: THREE.IUniform<THREE.Vector2>;
   /** Storm cells clearing the cumulus: centre x, z (three.js world), drawn core radius, core share; MAX_STORMS entries. */
   uStormClear: THREE.IUniform<THREE.Vector4[]>;
@@ -739,11 +732,12 @@ export class CloudModel {
     this.midAboveLayer = mid.cover > 0 && mid.altM > top;
     this.uniforms.uMid.value.set(this.midAboveLayer ? mid.cover : 0, mid.altM, mid.type === 'altocumulus' ? 1 : 0, MID_TAU_MAX[mid.type]);
 
-    // Wind blows FROM windDirectionDeg; the air moves toward the opposite heading. NED (n, e) -> three (x = e, z = -n).
-    const speed = w.windSpeedKt * KT * CLOUD_WIND_FACTOR;
-    const from = THREE.MathUtils.degToRad(w.windDirectionDeg);
-    const vx = -Math.sin(from) * speed;
-    const vz = Math.cos(from) * speed;
+    // Each layer drifts with the free-atmosphere wind at its height (physics/weather/windsAloft.ts: derived from the
+    // conditions or the manual levels): the low layer at its mid-height, the mid sheet at its altitude, the cirrus
+    // at CIRRUS_WIND_ALT_M. NED (n, e) -> three (x = e, z = -n).
+    const low = windAloftAt(w, 0.5 * (base + top), _wind);
+    const vx = low.east;
+    const vz = -low.north;
     advect(this.shapeDrift, vx, vz, dt, WEATHER_PERIOD);
     this.drift.set(vx * dt, 0, vz * dt);
     // Detail noise moves a little faster than the cells so their edges boil while the cells hold their shape.
@@ -752,11 +746,16 @@ export class CloudModel {
     advect(this.detailDrift, vx * 1.06, vz * 1.06, dt, WEATHER_PERIOD);
     // The second coverage field drifts slightly off-wind so the cross-fade between fields never repeats.
     advect(this.fieldDrift, vx * 0.9 + 0.35, vz * 0.9 - 0.2, dt, WEATHER_PERIOD);
-    this.cirrusAxis.set(-Math.sin(from), Math.cos(from));
-    this.cirrusOffset.set(wrap(this.cirrusOffset.x - speed * CIRRUS_WIND_FACTOR * dt, CIRRUS_PERIOD), 0);
-    // The mid-level sheet drifts along the same axis (its textures tile with CIRRUS_PERIOD too).
+    // The cirrus fibres lie along the upper wind (the axis is kept while that wind is calm).
+    const upper = windAloftAt(w, CIRRUS_WIND_ALT_M, _wind);
+    const upperSpeed = Math.hypot(upper.north, upper.east);
+    if (upperSpeed > 1e-3) this.cirrusAxis.set(upper.east / upperSpeed, -upper.north / upperSpeed);
+    this.cirrusOffset.set(wrap(this.cirrusOffset.x - upperSpeed * dt, CIRRUS_PERIOD), 0);
+    // The mid-level sheet: a 2-D drift in the world frame (its textures tile with CIRRUS_PERIOD on both axes), so it
+    // keeps its pattern when the wind at its altitude turns.
+    const sheet = windAloftAt(w, mid.altM, _wind);
     const mo = this.uniforms.uMidOffset.value;
-    mo.set(wrap(mo.x - speed * MID_WIND_FACTOR * dt, CIRRUS_PERIOD), 0);
+    mo.set(wrap(mo.x - sheet.east * dt, CIRRUS_PERIOD), wrap(mo.y + sheet.north * dt, CIRRUS_PERIOD));
 
     const t = ctx.simTime;
     const u = this.uniforms;
@@ -797,6 +796,7 @@ export class CloudModel {
 }
 
 const _ne: NorthEast = { north: 0, east: 0 };
+const _wind: WindNE = { north: 0, east: 0 };
 const _geometry = makeCellGeometry();
 
 /** Move a drift offset by -velocity * dt (see the field comment), wrapped to period. */
