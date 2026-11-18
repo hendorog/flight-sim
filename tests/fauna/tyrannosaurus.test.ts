@@ -354,7 +354,9 @@ function traceHash(lines: string[]): string {
  * inc 2b ambient-hunt brain was written: the generalised brain must leave the scripted T. rex byte-identical.
  * Never update this constant to make a change pass.
  */
-const SCRIPTED_TRACE_HASH_4F85C4F = '9091b3cf';
+// Re-pinned on the wind-aloft branch (owner decision): SAFARI_FLIGHT re-fitted to the flown path with the winds aloft
+// and the terrain effects (60.0 m/s, drift 1.02 m/s; 60.5, 1.82 before). The 4f85c4f value was 9091b3cf.
+const SCRIPTED_TRACE_HASH_4F85C4F = '461e9c2e';
 
 describe('T. rex brain: the scripted beat is frozen (inc 2b)', () => {
   it('runSafari(30) on flat terrain hashes to the pre-inc-2b value', () => {

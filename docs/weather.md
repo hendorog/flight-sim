@@ -511,9 +511,7 @@ Derived tables (free wind `F`, direction FROM / kt; the 0 ft column is `G0`; the
   (calm, clear, day 172) the largest slope wind is 3.0 m/s at 13:00 at 60 m AGL and 1.8 m/s at 02:00 at 25 m AGL.
 - Reference sites (`sites.ts`): the horizontal terms are multiplied by `smoothstep(2 km, 5 km, distance)` for each
   airfield, so the mean wind at every airfield is the boundary-layer wind of the setting.
-- `mountainWaves` multiplies all of these terms and the waves; 0 skips the module. The Cretaceous era preset
-  (`src/world/era/cretaceous.ts`) sets 0: with gain 1 the safari's first-minute path is 56.0 m from its
-  straight-line model (`SAFARI_FLIGHT`) after 60 s, against a 30 m tolerance; with 0 it is 14.2 m.
+- `mountainWaves` multiplies all of these terms and the waves; 0 skips the module.
 - `WindBreakdown` gains `wave` (the horizontal contribution and the vertical speed, m/s), `slope`, `shelter` (the
   speed factor) and `waveSeverity`.
 

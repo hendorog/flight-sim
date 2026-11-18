@@ -22,10 +22,14 @@ import { MAX_HERDS, MAX_HERD_SIZE } from '../../src/world/fauna/presets';
 
 const CAPTURE = !!(globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env.CAPTURE_FIRST_MINUTE;
 
-/** Recorded on 4f85c4f (see the header). */
+/**
+ * Recorded on 4f85c4f (see the header) as 4ecd9c5d for both; re-pinned on the wind-aloft branch (owner decision) after
+ * SAFARI_FLIGHT was re-fitted to the flown path with the winds aloft and the terrain effects (60.0 m/s, drift 1.02 m/s;
+ * 60.5, 1.82 before).
+ */
 const EXPECTED: Record<'high' | 'ultra', string> = {
-  high: '4ecd9c5d',
-  ultra: '4ecd9c5d',
+  high: 'b13de748',
+  ultra: 'b13de748',
 };
 
 beforeAll(() => {

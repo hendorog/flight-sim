@@ -134,10 +134,12 @@ export const SAFARI: SafariStart = Object.freeze({
  * --ap; SimPhysics, the Cretaceous weather: wind 100/6 kt, a 3 m/s tailwind): ground speed, the drift to the
  * right of the track (the light crosswind), the pitch attitude, and the altitude held (MSL). Over the first
  * 60 s the straight-line model below stays within SAFARI_MODEL_TOLERANCE_M of the flown path (pinned by the test).
+ * Ground speed and drift re-fitted with the winds aloft and the terrain effects on the wind (least squares through the
+ * start, samples every 5 s to 60 s): 60.5 m/s and 1.82 m/s before them.
  */
 export const SAFARI_FLIGHT: { readonly groundSpeed: number; readonly driftRight: number; readonly pitchDeg: number; readonly startGround: number; readonly altitudeMSL: number } = Object.freeze({
-  groundSpeed: 60.5,
-  driftRight: 1.82,
+  groundSpeed: 60.0,
+  driftRight: 1.02,
   pitchDeg: 1.3,
   startGround: 164.5,
   altitudeMSL: 164.5 + 450 * 0.3048,

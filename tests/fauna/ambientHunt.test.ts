@@ -560,7 +560,9 @@ function traceHash(lines: string[]): string {
  * herd and the Triceratops group included, on a flat terrain: hashed with the brain of feat/deep-time-2 at 4f85c4f
  * (before the ambient hunt; the same test run against that tree). Never update it to make a change pass.
  */
-const SCRIPTED_CYCLE_HASH_4F85C4F = 'a7c5f54d';
+// Re-pinned on the wind-aloft branch (owner decision): SAFARI_FLIGHT re-fitted to the flown path with the winds aloft
+// and the terrain effects (60.0 m/s, drift 1.02 m/s; 60.5, 1.82 before). The 4f85c4f value was a7c5f54d.
+const SCRIPTED_CYCLE_HASH_4F85C4F = 'aafe239a';
 
 describe('the scripted T. rex is unchanged', () => {
   it('the lair beat with the river herd: the 150 s cycle hashes to the pre-inc-2b value', () => {
