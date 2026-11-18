@@ -13,7 +13,8 @@ import type { AircraftDefinition, AircraftPresentation, AircraftSummary } from '
 import type { CameraMode, QualityLevel, ScenarioId, SimContext } from '../core/context';
 import { DEG } from '../core/math';
 import { DEFAULT_AIRCRAFT_ID, type CloudType, type MidCloudType, type PrecipType, type WeatherSettings } from '../core/types';
-import { FOG_TOP_MAX_M, FOG_VIS_MAX_M, FOG_VIS_MIN_M, NO_STORMS, PRECIP_RATE_MAX_MMH, cloudTypeOf, fogOf, midLayerOf, precipOf, stormsOf, type FogLayer, type MidLayer, type Precip } from '../core/weatherFields';
+import { FOG_TOP_MAX_M, FOG_VIS_MAX_M, FOG_VIS_MIN_M, NO_STORMS, PRECIP_RATE_MAX_MMH, cloudTypeOf, fogOf, midLayerOf, mountainWavesOf, precipOf, stormsOf, type FogLayer, type MidLayer, type Precip } from '../core/weatherFields';
+import { MENU_ALOFT_LEVELS_FT, aloftRows, derivedTable, tableFromRows } from './windsAloftTable';
 import { convectiveState, emptyConvectiveState, proceduralStorms } from '../physics/weather/stormField';
 import { WEATHER_PRESETS, applyWeatherPreset } from '../sim/weatherPresets';
 import type { SchoolCommand } from '../training/types';
@@ -906,6 +907,7 @@ export class PauseMenu {
     this.slider(p, 'Turbulence', [0, 1, 0.05], () => w().turbulence, (v) => edit((x) => (x.turbulence = v)), (v) =>
       v < 0.05 ? 'none' : v < 0.3 ? 'light' : v < 0.6 ? 'moderate' : 'severe',
     );
+    this.buildWindsAloft(p, w, edit);
 
     el('h3', '', p, 'Clouds & visibility');
     this.slider(p, 'Cloud cover', [0, 1, 0.05], () => w().cloudCover, (v) => edit((x) => (x.cloudCover = v)), (v) =>
@@ -943,6 +945,67 @@ export class PauseMenu {
       `${Math.round(v)} hPa`,
     );
     return p;
+  }
+
+  /**
+   * Winds aloft (ui/windsAloftTable.ts): nine levels with direction, speed and temperature; an empty field shows the
+   * derived value. An edit writes a new frozen table, or deletes windsAloft when no row is set. Then the
+   * mountain-wave gain.
+   */
+  private buildWindsAloft(p: HTMLElement, w: () => WeatherSettings, edit: (fn: (w: WeatherSettings) => void) => void): void {
+    el('h3', '', p, 'Winds aloft');
+    el('p', 'sub', p, 'Empty fields show the winds derived from the surface wind and the season. A row with a value set replaces them at that level.');
+    const grid = el('div', 'aloft', p);
+    for (const h of ['Altitude', 'From °', 'kt', '°C']) el('span', 'aloft-head', grid, h);
+    const inputs: { altFt: number; dir: HTMLInputElement; kt: HTMLInputElement; temp: HTMLInputElement }[] = [];
+    const read = (i: HTMLInputElement): number | undefined => (i.value.trim() === '' || !Number.isFinite(Number(i.value)) ? undefined : Number(i.value));
+    const apply = (): void => {
+      const table = tableFromRows(w(), inputs.map((r) => ({ altFt: r.altFt, dirDeg: read(r.dir), kt: read(r.kt), tempC: read(r.temp) })));
+      edit((x) => {
+        if (table) x.windsAloft = table;
+        else delete x.windsAloft;
+      });
+      this.refresh();
+    };
+    for (const altFt of MENU_ALOFT_LEVELS_FT) {
+      el('span', 'num', grid, `${altFt.toLocaleString('en-US')} ft`);
+      const box = (label: string, range: [number, number, number]): HTMLInputElement => {
+        const i = el('input', 'num', grid);
+        i.type = 'number';
+        [i.min, i.max, i.step] = range.map(String);
+        i.setAttribute('aria-label', `${label} at ${altFt} ft`);
+        i.addEventListener('change', apply);
+        return i;
+      };
+      inputs.push({ altFt, dir: box('Direction', [0, 360, 10]), kt: box('Speed', [0, 250, 1]), temp: box('Temperature', [-90, 50, 1]) });
+    }
+    this.refreshers.push(() => {
+      const rows = aloftRows(w());
+      rows.forEach((r, k) => {
+        const i = inputs[k];
+        i.dir.placeholder = String(r.derivedDir).padStart(3, '0');
+        i.kt.placeholder = String(r.derivedKt);
+        i.temp.placeholder = String(r.derivedTempC);
+        i.dir.value = r.manual ? String(Math.round(r.manual.dirDeg)) : '';
+        i.kt.value = r.manual ? String(Math.round(r.manual.kt)) : '';
+        i.temp.value = r.manual?.tempC !== undefined ? String(Math.round(r.manual.tempC)) : '';
+      });
+    });
+    const buttons = el('div', 'chips', p);
+    const fill = el('button', '', buttons, 'Fill from derived');
+    fill.addEventListener('click', () => {
+      const table = derivedTable(w());
+      edit((x) => (x.windsAloft = table));
+      this.refresh();
+    });
+    const clear = el('button', '', buttons, 'Clear (derived)');
+    clear.addEventListener('click', () => {
+      edit((x) => delete x.windsAloft);
+      this.refresh();
+    });
+    this.slider(p, 'Mountain waves', [0, 1, 0.05], () => mountainWavesOf(w()), (v) => edit((x) => (x.mountainWaves = v)), (v) =>
+      v <= 0 ? 'off' : `${Math.round(v * 100)} %`,
+    );
   }
 
   /**

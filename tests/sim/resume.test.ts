@@ -301,6 +301,26 @@ describe('resume snapshot: the optional weather fields (core/weatherFields.ts)',
     expect(proceduralStorms(restoreWeather(defaultWeather(), now!.weather))).toBe(false);
   });
 
+  it('schema 6 keeps a wind-aloft table and the wave gain; a schema-5 snapshot reads the derived winds aloft (D3)', () => {
+    const table = [{ altFt: 9000, dirDeg: 260, kt: 35, tempC: -5 }, { altFt: 24000, dirDeg: 270, kt: 70 }];
+    const s = JSON.parse(JSON.stringify(snap(fly('cruise', 2))));
+    s.weather.windsAloft = table;
+    s.weather.mountainWaves = 0.4;
+    const back = parseSnapshot(JSON.stringify(s));
+    expect(back!.weather.windsAloft).toEqual(table);
+    expect(back!.weather.mountainWaves).toBe(0.4);
+    // An old snapshot has neither key: the flight resumes with the derived winds (no [] substitution).
+    const old = parseSnapshot(JSON.stringify({ ...s, schema: 5, weather: { ...s.weather, windsAloft: undefined, mountainWaves: undefined } }));
+    expect(old!.schema).toBe(SNAPSHOT_SCHEMA);
+    expect('windsAloft' in old!.weather && old!.weather.windsAloft !== undefined).toBe(false);
+    const live = restoreWeather({ ...defaultWeather(), windsAloft: table }, old!.weather);
+    expect(live.windsAloft).toBeUndefined();
+    // A malformed table is dropped; the flight is kept.
+    const bad = parseSnapshot(JSON.stringify({ ...s, weather: { ...s.weather, windsAloft: [{ altFt: 9000, dirDeg: 0, kt: 900 }] } }));
+    expect(bad).not.toBeNull();
+    expect('windsAloft' in bad!.weather).toBe(false);
+  });
+
   it('drops a malformed field and keeps the flight', () => {
     const s = JSON.parse(JSON.stringify(snap(fly('cruise', 2, extras))));
     s.weather.storms = [{ ...cell, radiusM: 'big' }];

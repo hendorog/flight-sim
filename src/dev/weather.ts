@@ -16,6 +16,9 @@
 //                                   cb= the cells are derived from the conditions (physics/weather/stormField.ts)
 //   fog=top[,vis]                   ground fog depth above the field, m, and its visibility, m
 //   precip=rain|drizzle|snow,rate   precipitation and its rate, mm/h
+//   aloft=altFt,dir,kt[,tempC]      a wind-aloft level as on index.html (repeatable; aloft=none: no shear); the
+//                                   cloud layers drift with the winds aloft at their heights
+//   waves=0..1                      mountain-wave gain as on index.html (no terrain in this scene: stored only)
 //   flash=1 | flash=ic              hold a lightning strike at t = FLASH_AT_S in the first cell (1: cloud-to-ground,
 //                                   ic: intracloud), its light held FLASH_HOLD_S after the first stroke, for
 //                                   screenshots; the simulation clock stays at that instant
@@ -35,7 +38,7 @@ import * as THREE from 'three';
 import type { QualityLevel } from '../core/context';
 import { KT } from '../core/math';
 import type { CloudType, PrecipType, StormCell } from '../core/types';
-import { MAX_STORMS, stormCentreAt } from '../core/weatherFields';
+import { MAX_STORMS, parseAloftParams, stormCentreAt } from '../core/weatherFields';
 import { cameraStormsOf } from '../render/weather/stormSelection';
 import { applyWeatherPreset, weatherPresetById } from '../sim/weatherPresets';
 import { CloudsEffect } from '../render/clouds';
@@ -121,6 +124,9 @@ void runHarness({
       w.precipType = precip[0] as PrecipType;
       w.precipRateMmH = Number(precip[1] ?? 2);
     }
+    const aloft = parseAloftParams(params.getAll('aloft'));
+    if (aloft) w.windsAloft = aloft;
+    if (params.has('waves')) w.mountainWaves = Math.min(1, Math.max(0, num('waves', 1)));
     if (params.has('q')) ctx.quality = params.get('q') as QualityLevel;
     if (params.has('mode')) ctx.cameraMode = params.get('mode') as CameraMode;
     if (FLASH) ctx.simTime = FLASH_AT_S + FLASH_HOLD_S;

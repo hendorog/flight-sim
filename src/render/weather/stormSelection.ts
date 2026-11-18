@@ -10,7 +10,7 @@ import { StormField, type ActiveStorm } from '../../physics/weather/stormField';
 
 export { DRAWN_RADIUS_MAX_M, DRAWN_RADIUS_MIN_M, drawnCoreRadiusM } from '../../physics/weather/cellGeometry';
 
-/** The weather fields the selection reads (besides `storms`, compared by reference). */
+/** The weather fields the selection reads (besides `storms` and `windsAloft`, the steering wind, compared by reference). */
 const KEYS = ['isaDeviation', 'qnhHpa', 'cloudCover', 'cloudBaseM', 'cloudTopM', 'timeOfDay', 'dayOfYear', 'windDirectionDeg', 'windSpeedKt'] as const;
 
 /** One context's selection at the camera and the inputs it was made for. */
@@ -23,6 +23,7 @@ export class CameraStorms {
   private east = NaN;
   private storms: unknown = null;
   private type: unknown = null;
+  private aloft: unknown = null;
   private readonly key = new Float64Array(KEYS.length).fill(NaN);
 
   /** The cells in effect at the camera at ctx.simTime (a camera-less test context: at the NED origin). */
@@ -44,7 +45,7 @@ export class CameraStorms {
 
   private same(w: WeatherSettings): boolean {
     const loose = w as unknown as Record<string, unknown>;
-    if (loose.storms !== this.storms || loose.cloudType !== this.type) return false;
+    if (loose.storms !== this.storms || loose.cloudType !== this.type || loose.windsAloft !== this.aloft) return false;
     for (let i = 0; i < KEYS.length; i++) if (w[KEYS[i]] !== this.key[i]) return false;
     return true;
   }
@@ -53,6 +54,7 @@ export class CameraStorms {
     const loose = w as unknown as Record<string, unknown>;
     this.storms = loose.storms;
     this.type = loose.cloudType;
+    this.aloft = loose.windsAloft;
     for (let i = 0; i < KEYS.length; i++) this.key[i] = w[KEYS[i]];
   }
 }

@@ -273,6 +273,31 @@ export function windsAloftOf(w: WeatherSettings): readonly WindAloftLevel[] | un
   return isAloftTable(a) ? a : undefined;
 }
 
+/**
+ * Parse URL wind-aloft levels (`aloft=altFt,dir,kt[,tempC]`, repeatable; `aloft=none` for no shear): returns the
+ * table (sorted by altitude, frozen; malformed entries and repeated altitudes dropped, values clamped to the ranges,
+ * at most MAX_ALOFT_LEVELS), [] for `none`, or undefined when nothing usable was given (derived). For
+ * sim/params.ts and the dev weather page.
+ */
+export function parseAloftParams(values: readonly string[]): readonly WindAloftLevel[] | undefined {
+  if (values.includes('none')) return Object.freeze([]);
+  const levels: WindAloftLevel[] = [];
+  for (const v of values) {
+    const c = v.split(',').map((x) => (x.trim() === '' ? NaN : Number(x)));
+    if (c.length < 3 || c.length > 4 || !c.every(Number.isFinite)) continue;
+    const l: WindAloftLevel = {
+      altFt: clamp(c[0], ALOFT_ALT_MIN_FT, ALOFT_ALT_MAX_FT),
+      dirDeg: ((c[1] % 360) + 360) % 360,
+      kt: clamp(c[2], 0, ALOFT_KT_MAX),
+    };
+    if (c.length === 4) l.tempC = clamp(c[3], ALOFT_TEMP_MIN_C, ALOFT_TEMP_MAX_C);
+    if (!levels.some((x) => x.altFt === l.altFt)) levels.push(l);
+  }
+  levels.sort((a, b) => a.altFt - b.altFt);
+  const table = Object.freeze(levels.slice(0, MAX_ALOFT_LEVELS).map((l) => Object.freeze(l)));
+  return table.length > 0 && isAloftTable(table) ? table : undefined;
+}
+
 /** The mountain-wave gain, 0..1: 1 when absent or not a finite number. */
 export function mountainWavesOf(w: WeatherSettings): number {
   const g = (w as Loose).mountainWaves;

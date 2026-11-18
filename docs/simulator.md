@@ -34,6 +34,8 @@ All are optional, for example `index.html?scenario=final&cam=chase&tod=20.5&ap=1
 | `precip=type,rate` | Precipitation `drizzle`, `rain` or `snow` at a rate in mm/h 0..50; `precip=none` for none |
 | `fog=topM[,visM]` | Ground fog depth above the field, 0..300 m, and the visibility inside it, 50..1000 m (default 200) |
 | `cb=northKm,eastKm[,topKm[,intensity[,radiusKm[,fromDeg,kt]]]]` | A cumulonimbus cell from the airport (defaults: top 11 km, intensity 0.8, core radius 3 km, stationary); repeat for up to 4 cells; `cb=none` removes a preset's cells. Fields and accessors: [weather.md](weather.md) |
+| `aloft=altFt,dir,kt[,tempC]` | A wind-aloft level: altitude in ft MSL 1000..60000, wind FROM in degrees true, speed in kt 0..250, optional temperature in deg C; repeat for up to 12 levels. Absent: the winds aloft are derived from the surface wind and the date; `aloft=none` gives no shear above the boundary layer. See [weather.md](weather.md), "Winds aloft and terrain effects on the wind" |
+| `waves=` | Gain 0..1 on the terrain effects on the wind (mountain waves, lee shelter, valley channelling, slope winds); default 1, `waves=0` turns them off |
 | `quality=` | `low`, `medium`, `high` (default), `ultra` |
 | `dpr=`, `scale=` | The 3D view renders at CSS-pixel resolution (device pixel ratio capped at 1 on every quality); `dpr=2` raises the cap on a HiDPI screen, `scale=0.5..1` sets the render scale (default 0.75 on `low`, 1 otherwise; also a menu slider). The DOM UI stays at native resolution. The 3D cockpit view alone renders at up to 1.25x / 1.5x CSS pixels (never above the screen's ratio) on high and ultra: menu, Display & camera, 3D cockpit sharpness, stored as `fs.cockpitSharpness`; Auto is 1.25x on high and 1x on ultra (src/sim/displayPrefs.ts has the GPU timings). `dpr=` overrides it |
 | `depth=` | `reversed` (default where `EXT_clip_control` exists: reversed-Z float depth, keeps early-Z) or `log` (logarithmic depth written per fragment) |
@@ -51,7 +53,9 @@ All are optional, for example `index.html?scenario=final&cam=chase&tod=20.5&ap=1
 The Flight School's parameters (`school=`, `lesson=`, `tstore=`, `unlock=1` and others) are in
 [flight-school.md](flight-school.md); `unlock=1` also unlocks the Career for the session.
 
-`window.__ready` becomes true once the terrain around the camera is built and exposure has settled.
+`window.__ready` becomes true once the terrain around the camera is built, the mountain-wave tiles at the aircraft
+have arrived from the orography worker (unless `waves=0`), and exposure has settled (each wait gives up after the
+same timeout). `__sim.orography` lists the solve times of the tiles received.
 `window.__sim` is the automation API: `step(s)`, `reset(id)`, `pause(bool)`, `setAutoflight(on)`,
 `setCamera(mode)`, `setFixedCamera(pos, look)`, `setWeather({...})` (including `cirrusCover` and the optional
 fields of [weather.md](weather.md); a `cloudBaseM` without `cloudTopM` keeps the layer depth), `summary()`,
@@ -64,7 +68,9 @@ NaN when not holding). `__sim.training` drives the Flight School and `__sim.care
 
 The menu (Escape) has tabs for the flight (scenarios, autopilot, cabin dome light, keyboard assists, simulation
 rate with the rate actually achieved), weather (presets, including radiation fog, low stratus and drizzle, rain,
-snow and thunderstorm; wind, gusts, turbulence, cloud cover and base, cirrus, visibility, cloud type, mid-level
+snow and thunderstorm; wind, gusts, turbulence, a winds-aloft table of nine levels (3000 to 39000 ft) whose empty
+fields show the derived winds and temperatures, "Fill from derived" and "Clear (derived)", the mountain-wave gain,
+cloud cover and base, cirrus, visibility, cloud type, mid-level
 sheet cover, altitude and kind, precipitation type and rate, ground fog depth and visibility, storm cells placed
 from the aircraft, temperature, QNH), time of day and date, display (quality, render scale, camera, HUD), the controls
 reference and joystick setup.
@@ -92,7 +98,10 @@ where I left off on reload" toggle (Flight tab, on by default) is on. A snapshot
 is more than 12 hours old, from a crashed aircraft, or from one parked with the engine off; corrupt or
 older-format snapshots are ignored. A restart from the menu or Shift+R marks the snapshot so that a reload
 starts that scenario fresh, until the new flight has run for 5 s. When the flight resumes, the snapshot's
-weather, camera and quality take precedence over the URL's; the simulation rate restarts at 1x.
+weather, camera and quality take precedence over the URL's; the simulation rate restarts at 1x. Snapshots are
+schema 6 (`weather.windsAloft` and `weather.mountainWaves`); a schema 5 or older snapshot is read with the derived
+winds aloft and the full terrain effects, so an aircraft resumed in flight can see a step in airspeed (owner
+decision).
 `__sim.resume` exposes the boot decision, `save()`, `stored()` and `clear()`. Measured in the real app after
 45 s of cruise on the autopilot: position, altitude, heading, attitude, rpm, flaps, trim, weather, camera and
 autopilot mode come back exactly (airspeed within 0.25 kt, as the pitot and aerodynamic lags restart), and the
