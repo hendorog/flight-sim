@@ -93,6 +93,9 @@
 //   L = 300 m (across 3220) was WP0a's pick: the longest door-window pass that keeps bodies near 20 px. WP8's look
 //   gate (round 0: the herd read as 4-8 px specks at the A-pillar) moved to L = 250 m (across 3277, solved with
 //   `solve --timeline 1 --laterals 250`): fewer seconds, bigger bodies. Clearance at 450 ft there: 284 ft.
+//   Owner decision (wind-aloft branch): with the winds aloft and the terrain effects on the wind the flown path
+//   drifts less; the same solve with the re-fitted SAFARI_FLIGHT gives across 3258 (door window 6.5 s, windscreen
+//   5.5 s, 9 m bodies 5-25 px).
 //
 // AGL TABLE (track 20, across 3220; ft above the highest ground or tree top within 500 m of the first 6 km):
 //   400 ft: 254 | 450 ft: 304 | 500 ft: 354 | 550 ft: 404. 450 ft chosen: the margin, and the door-window pass is
@@ -121,7 +124,7 @@ export interface SafariStart {
 
 export const SAFARI: SafariStart = Object.freeze({
   along: 4870,
-  across: 3277,
+  across: 3258,
   trackDeg: 20,
   aglFt: 450,
   tod: 20.0,
@@ -134,15 +137,16 @@ export const SAFARI: SafariStart = Object.freeze({
  * --ap; SimPhysics, the Cretaceous weather: wind 100/6 kt, a 3 m/s tailwind): ground speed, the drift to the
  * right of the track (the light crosswind), the pitch attitude, and the altitude held (MSL). Over the first
  * 60 s the straight-line model below stays within SAFARI_MODEL_TOLERANCE_M of the flown path (pinned by the test).
- * Ground speed and drift re-fitted with the winds aloft and the terrain effects on the wind (least squares through the
- * start, samples every 5 s to 60 s): 60.5 m/s and 1.82 m/s before them.
+ * Owner decision (wind-aloft branch): ground speed and drift re-fitted with the winds aloft and the terrain effects on
+ * the wind (least squares through the start, samples every 5 s to 60 s) at across 3258: 59.946 m/s and 1.051 m/s
+ * (60.5 m/s, 1.82 m/s and start ground 164.5 m before them).
  */
 export const SAFARI_FLIGHT: { readonly groundSpeed: number; readonly driftRight: number; readonly pitchDeg: number; readonly startGround: number; readonly altitudeMSL: number } = Object.freeze({
-  groundSpeed: 60.0,
-  driftRight: 1.02,
+  groundSpeed: 59.9,
+  driftRight: 1.05,
   pitchDeg: 1.3,
-  startGround: 164.5,
-  altitudeMSL: 164.5 + 450 * 0.3048,
+  startGround: 163.9,
+  altitudeMSL: 163.9 + 450 * 0.3048,
 });
 export const SAFARI_MODEL_TOLERANCE_M = 30;
 
@@ -407,7 +411,8 @@ export const ALAMOSAURUS_STAND: GroundAnchor = Object.freeze({ north: -1743.7, e
  * `ground` is the terrain under it.
  */
 export const KETTLE0_ACROSS_M = 35;
-export const KETTLE0_EVENING: GroundAnchor = Object.freeze({ north: -1378.7, east: 3704.1, ground: 155.7, heading: 0 });
+// Re-pinned with SAFARI.across 3258 (owner decision, wind-aloft branch); it was north -1378.7, east 3704.1, ground 155.7.
+export const KETTLE0_EVENING: GroundAnchor = Object.freeze({ north: -1360.9, east: 3697.6, ground: 154.4, heading: 0 });
 /** The showcase kettle's height band about the safari start's height above the ground, m (+-). 60 before round 2
  *  (the band then spread kettle 0 over +-9 deg at 370 m); 35 keeps it within ~+-5 deg. */
 export const KETTLE_BAND_M = 35;
@@ -453,7 +458,7 @@ export const FIRST_MINUTE_FRAMES: readonly FirstMinuteFrame[] = Object.freeze([
       { group: 'volcano', where: 'windscreen', minPx: 300, note: 'cone 8 deg right of the nose, summit 4 deg above the body horizontal' },
       { group: 'riverHerd', where: 'windscreen', minPx: 4, note: '1.3 km: ~5 px bodies (the plan asked >= 6 px: not reachable through the windscreen)' },
       { group: 'triceratops', where: 'windscreen', minPx: 4, note: '1.6 km, 13 deg left (just right of the A-pillar), ~4.5 px' },
-      { group: 'tyrannosaurus', where: 'windscreen', minPx: 8, note: 'lurking/stalking at the lair, 20 deg left at the windscreen\'s lower-left edge (the door window from ~4 s)' },
+      { group: 'tyrannosaurus', where: 'door', minPx: 8, note: 'lurking/stalking at the lair, 21 deg left at the door window\'s forward edge (windscreen before the re-solve of SAFARI.across to 3258, wind-aloft branch)' },
       { group: 'alamosaurus', where: 'windscreen', minPx: 7, note: 'teaser silhouette 8 deg left, 2.7 km' },
     ],
   },
