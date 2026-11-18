@@ -24,6 +24,7 @@ import { smoothstep } from '../core/math';
 import type { StormCell } from '../core/types';
 import { NO_STORMS } from '../core/weatherFields';
 import { WindField } from './weather/windField';
+import { temperatureProfileOf } from './weather/windsAloft';
 
 /** Terrain queries supplied by the world modules. */
 export interface TerrainProvider {
@@ -112,6 +113,8 @@ export function createEnvironment({ weather, terrain, seed = 1 }: EnvironmentOpt
     atmosphere(altitudeMSL) {
       conditions.isaDeviation = weather.isaDeviation;
       conditions.seaLevelPressure = weather.qnhHpa * 100;
+      // The temperatures of the manual wind-aloft levels, when any (windsAloft.ts); absent, the uniform deviation.
+      conditions.profile = temperatureProfileOf(weather);
       return atmosphereAt(altitudeMSL, conditions);
     },
     wind: (position, time) => windField.sample(position, time),

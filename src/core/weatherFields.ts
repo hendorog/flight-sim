@@ -1,5 +1,5 @@
 // Accessors for the optional weather fields of WeatherSettings (cloud type, mid-level sheet, precipitation, ground
-// fog, cumulonimbus cells). Node-safe (no three.js): physics, render, audio, UI and the snapshot validation all read
+// fog, cumulonimbus cells, winds aloft, mountain-wave gain). Node-safe (no three.js): physics, render, audio, UI and the snapshot validation all read
 // the fields through this module, so each one is clamped and defaulted in one place.
 //
 // Every accessor treats an absent field, a non-finite number, a value of the wrong type and an unknown enum string
@@ -9,7 +9,7 @@
 // See docs/weather.md for the field and accessor tables.
 
 import { DEG, KT, clamp } from './math';
-import type { CloudType, MidCloudType, PrecipType, StormCell, WeatherSettings } from './types';
+import type { CloudType, MidCloudType, PrecipType, StormCell, WeatherSettings, WindAloftLevel } from './types';
 
 // ---------------------------------------------------------------------------------------------- ranges and defaults
 /** Mid-level sheet altitude when midAltM is absent: max(MID_ALT_MIN_DEFAULT_M, cloudTopM + MID_ABOVE_TOP_M), m MSL. */
@@ -27,6 +27,13 @@ export const FOG_VIS_MAX_M = 1000;
 export const FOG_VIS_DEFAULT_M = 200;
 /** Most storm cells the consumers read (the first entries of `storms`). */
 export const MAX_STORMS = 6;
+/** Wind-aloft table limits: entries, altitude range ft MSL, speed kt, temperature deg C. */
+export const MAX_ALOFT_LEVELS = 12;
+export const ALOFT_ALT_MIN_FT = 1000;
+export const ALOFT_ALT_MAX_FT = 60_000;
+export const ALOFT_KT_MAX = 250;
+export const ALOFT_TEMP_MIN_C = -90;
+export const ALOFT_TEMP_MAX_C = 50;
 /** Koschmieder constant: visibility = KOSCHMIEDER / extinction for a 2 % contrast threshold (as Simulator.ts and render/sky/params.ts use). */
 const KOSCHMIEDER = 3.912;
 
@@ -45,6 +52,8 @@ export const WEATHER_EXTRA_KEYS = [
   'fogTopM',
   'fogVisibilityM',
   'storms',
+  'windsAloft',
+  'mountainWaves',
 ] as const;
 export type WeatherExtraKey = typeof WEATHER_EXTRA_KEYS[number];
 
@@ -56,9 +65,13 @@ export const NO_STORMS: readonly StormCell[] = Object.freeze([]);
  * (`{ ...NEUTRAL_EXTRAS, ...saved }`) so a key the copy lacks does not stay set from a lesson or preset.
  * midAltM is the fixed MID_ALT_MIN_DEFAULT_M, not the cloud-top rule: with midCover 0 no sheet is drawn.
  * storms is undefined, which reads as absent: the cells are derived from the conditions
- * (physics/weather/stormField.ts). An empty array instead means no cells at all.
+ * (physics/weather/stormField.ts). An empty array instead means no cells at all. windsAloft is undefined too: the
+ * winds aloft are derived (physics/weather/windsAloft.ts); an empty array would mean no shear above the boundary
+ * layer. mountainWaves is 1, the value absent reads as.
  */
-export const NEUTRAL_EXTRAS: Readonly<Required<Pick<WeatherSettings, Exclude<WeatherExtraKey, 'storms'>>> & { storms: undefined }> = Object.freeze({
+export const NEUTRAL_EXTRAS: Readonly<
+  Required<Pick<WeatherSettings, Exclude<WeatherExtraKey, 'storms' | 'windsAloft'>>> & { storms: undefined; windsAloft: undefined }
+> = Object.freeze({
   cloudType: 'auto',
   midCover: 0,
   midType: 'altostratus',
@@ -68,6 +81,8 @@ export const NEUTRAL_EXTRAS: Readonly<Required<Pick<WeatherSettings, Exclude<Wea
   fogTopM: 0,
   fogVisibilityM: FOG_VIS_DEFAULT_M,
   storms: undefined,
+  windsAloft: undefined,
+  mountainWaves: 1,
 });
 
 // ---------------------------------------------------------------------------------------------- cloud type profiles
@@ -222,6 +237,48 @@ export function stormsOf(w: WeatherSettings): readonly StormCell[] {
   return s as readonly StormCell[];
 }
 
+/** True when `l` is a WindAloftLevel with every field finite and inside the documented ranges. */
+function isAloftLevel(l: unknown): l is WindAloftLevel {
+  if (typeof l !== 'object' || l === null) return false;
+  const v = l as Record<string, unknown>;
+  return (
+    finite(v.altFt) &&
+    v.altFt >= ALOFT_ALT_MIN_FT &&
+    v.altFt <= ALOFT_ALT_MAX_FT &&
+    finite(v.dirDeg) &&
+    finite(v.kt) &&
+    v.kt >= 0 &&
+    v.kt <= ALOFT_KT_MAX &&
+    (v.tempC === undefined || (finite(v.tempC) && v.tempC >= ALOFT_TEMP_MIN_C && v.tempC <= ALOFT_TEMP_MAX_C))
+  );
+}
+
+/** True when `a` is a valid wind-aloft table: at most MAX_ALOFT_LEVELS valid levels, altitudes strictly ascending. */
+export function isAloftTable(a: unknown): a is readonly WindAloftLevel[] {
+  if (!Array.isArray(a) || a.length > MAX_ALOFT_LEVELS) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (!isAloftLevel(a[i])) return false;
+    if (i > 0 && !((a[i] as WindAloftLevel).altFt > (a[i - 1] as WindAloftLevel).altFt)) return false;
+  }
+  return true;
+}
+
+/**
+ * The manual wind-aloft table: w.windsAloft when it is a valid table (isAloftTable), else undefined, which reads as
+ * derived (a malformed table is treated as absent). An empty array is returned as is: no shear above the boundary
+ * layer. The array is returned as stored.
+ */
+export function windsAloftOf(w: WeatherSettings): readonly WindAloftLevel[] | undefined {
+  const a = (w as Loose).windsAloft;
+  return isAloftTable(a) ? a : undefined;
+}
+
+/** The mountain-wave gain, 0..1: 1 when absent or not a finite number. */
+export function mountainWavesOf(w: WeatherSettings): number {
+  const g = (w as Loose).mountainWaves;
+  return finite(g) ? clamp(g, 0, 1) : 1;
+}
+
 /**
  * Centre of a cell at simulation time t, s, written into `out` (NED m). The cell moves toward motionDeg + 180 at
  * motionKt: north = northM - cos(motionDeg) v t, east = eastM - sin(motionDeg) v t. Analytic, no state.
@@ -257,7 +314,8 @@ export function deriveCloudTop(partial: Partial<WeatherSettings>, current: Weath
 
 /**
  * Delete every optional key of WEATHER_EXTRA_KEYS whose value fails its type check (a wrong type, a non-finite
- * number, an unknown enum string, a `storms` value that is not an array of well-formed cells). Values of the right
+ * number, an unknown enum string, a `storms` value that is not an array of well-formed cells, a `windsAloft` value
+ * that is not a valid table). Values of the right
  * type stay as they are; the accessors clamp them. For snapshot validation (sim/resume.ts).
  */
 export function sanitizeExtras(w: Record<string, unknown>): void {
@@ -273,4 +331,6 @@ export function sanitizeExtras(w: Record<string, unknown>): void {
   drop('fogTopM', finite(w.fogTopM));
   drop('fogVisibilityM', finite(w.fogVisibilityM));
   drop('storms', Array.isArray(w.storms) && w.storms.every(isStormCell));
+  drop('windsAloft', isAloftTable(w.windsAloft));
+  drop('mountainWaves', finite(w.mountainWaves));
 }

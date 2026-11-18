@@ -19,6 +19,8 @@ import {
   sanitizeExtras,
   stormCentreAt,
   stormsOf,
+  mountainWavesOf,
+  windsAloftOf,
   type FogLayer,
   type MidLayer,
   type Precip,
@@ -183,7 +185,7 @@ describe('deriveCloudTop', () => {
 
 describe('NEUTRAL_EXTRAS and sanitizeExtras', () => {
   it('NEUTRAL_EXTRAS holds exactly the optional keys, each reading as absent', () => {
-    const keys = ['cloudType', 'midCover', 'midType', 'midAltM', 'precipType', 'precipRateMmH', 'fogTopM', 'fogVisibilityM', 'storms'];
+    const keys = ['cloudType', 'midCover', 'midType', 'midAltM', 'precipType', 'precipRateMmH', 'fogTopM', 'fogVisibilityM', 'storms', 'windsAloft', 'mountainWaves'];
     expect(Object.keys(NEUTRAL_EXTRAS)).toEqual(keys);
     expect([...WEATHER_EXTRA_KEYS]).toEqual(keys);
     expect(Object.isFrozen(NEUTRAL_EXTRAS)).toBe(true);
@@ -193,6 +195,8 @@ describe('NEUTRAL_EXTRAS and sanitizeExtras', () => {
     expect(precipOf(w, precip()).rateMmH).toBe(0);
     expect(fogOf(w, fog()).topM).toBe(0);
     expect(stormsOf(w)).toBe(NO_STORMS);
+    expect(windsAloftOf(w)).toBeUndefined();
+    expect(mountainWavesOf(w)).toBe(1);
     expect(effectiveVisibilityM(w)).toBe(w.visibilityM);
   });
 
@@ -224,14 +228,53 @@ describe('NEUTRAL_EXTRAS and sanitizeExtras', () => {
       fogTopM: 400,
       fogVisibilityM: Number.POSITIVE_INFINITY,
       storms: 'none',
+      windsAloft: [{ altFt: 9000, dirDeg: 270, kt: 300 }],
+      mountainWaves: '1',
     };
     sanitizeExtras(w);
     expect(w).toEqual({ fogTopM: 400 });
-    const ok: Record<string, unknown> = { storms: [cell()] };
+    const ok: Record<string, unknown> = { storms: [cell()], windsAloft: [], mountainWaves: 2 };
     sanitizeExtras(ok);
     expect(ok.storms).toEqual([cell()]);
+    expect(ok.windsAloft).toEqual([]);
+    expect(ok.mountainWaves).toBe(2);
     const empty: Record<string, unknown> = {};
     sanitizeExtras(empty);
     expect(empty).toEqual({});
+  });
+});
+
+describe('windsAloft and mountainWaves', () => {
+  const table = [
+    { altFt: 6000, dirDeg: 250, kt: 20 },
+    { altFt: 12000, dirDeg: 270, kt: 35, tempC: -10 },
+  ];
+
+  it('a valid table is returned as stored; [] is kept (no shear)', () => {
+    const w = withFields({ windsAloft: table });
+    expect(windsAloftOf(w)).toBe(w.windsAloft);
+    const none = withFields({ windsAloft: [] });
+    expect(windsAloftOf(none)).toEqual([]);
+  });
+
+  it('a malformed table reads as derived (undefined)', () => {
+    const bad: unknown[] = [
+      'x',
+      [{ altFt: 500, dirDeg: 0, kt: 10 }],
+      [{ altFt: 6000, dirDeg: 0, kt: 251 }],
+      [{ altFt: 6000, dirDeg: Number.NaN, kt: 10 }],
+      [{ altFt: 6000, dirDeg: 0, kt: 10, tempC: 60 }],
+      [{ altFt: 6000, dirDeg: 0, kt: 10 }, { altFt: 6000, dirDeg: 0, kt: 10 }],
+      [{ altFt: 9000, dirDeg: 0, kt: 10 }, { altFt: 6000, dirDeg: 0, kt: 10 }],
+      Array.from({ length: 13 }, (_, i) => ({ altFt: 2000 + i * 1000, dirDeg: 0, kt: 10 })),
+    ];
+    for (const b of bad) expect(windsAloftOf(withFields({ windsAloft: b }))).toBeUndefined();
+  });
+
+  it('mountainWaves is clamped to 0..1 and reads 1 when malformed', () => {
+    expect(mountainWavesOf(withFields({ mountainWaves: 0.4 }))).toBe(0.4);
+    expect(mountainWavesOf(withFields({ mountainWaves: -1 }))).toBe(0);
+    expect(mountainWavesOf(withFields({ mountainWaves: 3 }))).toBe(1);
+    for (const b of BAD) expect(mountainWavesOf(withFields({ mountainWaves: b }))).toBe(1);
   });
 });

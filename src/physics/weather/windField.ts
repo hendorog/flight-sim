@@ -1,4 +1,4 @@
-// The air-mass velocity field: steady boundary-layer wind + discrete gusts + Dryden continuous turbulence +
+// The air-mass velocity field: steady boundary-layer wind (with the winds aloft above it, windsAloft.ts) + discrete gusts + Dryden continuous turbulence +
 // orographic up/down-draughts + convective thermals + cumulonimbus cells (convection.ts; the cells in effect at the
 // sample point from stormField.ts: WeatherSettings.storms when present, else the cells derived from the conditions).
 // Reads the live WeatherSettings object on every call, and is deterministic for a given seed and settings history.
@@ -8,7 +8,7 @@
 import { DEG, KT, clamp, smoothstep, type Vec3 } from '../../core/math';
 import type { WeatherSettings } from '../../core/types';
 import { sunDirectionNED } from '../../core/world';
-import { windSpeedFactor, windVeer } from './boundaryLayer';
+import { gradientWindFactor, windSpeedFactor, windVeer } from './boundaryLayer';
 import { cbSample, cbSeverity, emptyCbSample, type CbSample } from './convection';
 import { gustAt, type GustSample } from './gusts';
 import { hashU32 } from './random';
@@ -16,6 +16,7 @@ import { StormField, type ActiveStorm } from './stormField';
 import { SmoothedTerrain, type TerrainSample } from './terrainSampler';
 import { thermalUpdraft } from './thermals';
 import { milTurbulenceIntensity, SpectralTurbulence, type TurbulenceIntensity } from './turbulence';
+import { AloftProfile, type WindNE } from './windsAloft';
 
 /** The log profile is evaluated no lower than this, m. */
 const MIN_HEIGHT = 0.3;
@@ -34,6 +35,8 @@ const SLOPE_ROUGHNESS = 4;
 const CONVECTIVE_MAX = 2.2;
 /** Minimum convective layer depth, m. */
 const MIN_CONVECTIVE_DEPTH = 300;
+/** Veer of the gradient wind from the 10 m wind (boundaryLayer.ts), rad. */
+const SURFACE_BACKING = 25 * DEG;
 /** Past a record-length backward time jump (a reset), the advection restarts from t = 0. */
 const TIME_RESET = 1;
 
@@ -87,6 +90,9 @@ export class WindField {
   private sunElevationSin = 0;
 
   private readonly ter: TerrainSample = { height: 0, slopeNorth: 0, slopeEast: 0 };
+  /** The free-atmosphere wind profile (windsAloft.ts), re-derived when the settings change. */
+  readonly aloft = new AloftProfile();
+  private readonly free: WindNE = { north: 0, east: 0 };
   private readonly gust: GustSample = { speed: 0, angle: 0 };
   private readonly cb: CbSample = emptyCbSample();
   /** The storm cells in effect at a point (explicit or derived); shared by sample, stormTurbulence and stormCells. */
@@ -133,13 +139,35 @@ export class WindField {
 
     // Steady wind: log profile and Ekman veer. `to` is the unit vector the wind blows toward.
     const u10 = Math.max(0, w.windSpeedKt) * KT;
-    const from = w.windDirectionDeg * DEG + windVeer(agl);
+    const veer = windVeer(agl);
+    const from = w.windDirectionDeg * DEG + veer;
     const toN = -Math.cos(from);
     const toE = -Math.sin(from);
     const profile = windSpeedFactor(agl);
     const U = u10 * profile;
     parts.mean.x = U * toN;
     parts.mean.y = U * toE;
+    // Winds aloft: above the shear base the free-atmosphere wind F(z) (by MSL altitude) differs from the gradient
+    // wind G0; the boundary layer carries the difference with the same speed share s = profile / gradientWindFactor
+    // and backing beta = 25 deg - veer as the gradient wind itself, so far above the ground the mean wind is F(z).
+    // Below the base (or with windsAloft: []) F = G0 and nothing is added.
+    const aloft = this.aloft.update(w);
+    const altitude = -p.z;
+    let mechanicalWind = u10;
+    if (!aloft.isGradient(altitude)) {
+      const f = aloft.freeWind(altitude, this.free);
+      const dN = f.north - aloft.g0N;
+      const dE = f.east - aloft.g0E;
+      const share = profile / gradientWindFactor;
+      // Rotating a vector's FROM direction by -beta: (n, e) -> (n cos b + e sin b, -n sin b + e cos b).
+      const beta = SURFACE_BACKING - veer;
+      const cb = Math.cos(beta);
+      const sb = Math.sin(beta);
+      parts.mean.x += share * (dN * cb + dE * sb);
+      parts.mean.y += share * (-dN * sb + dE * cb);
+      // Mechanical turbulence sees the local equivalent 10 m wind of the free-atmosphere wind.
+      mechanicalWind = Math.hypot(f.north, f.east) / gradientWindFactor;
+    }
 
     // Discrete gusts, sheared like the mean wind.
     const g = gustAt(this.gustSeed, t, Math.max(0, w.gustKt - w.windSpeedKt) * KT, this.gust);
@@ -165,7 +193,7 @@ export class WindField {
     // Continuous turbulence; mechanical turbulence grows with the surface wind and the terrain slope.
     const slope = Math.hypot(ter.slopeNorth, ter.slopeEast);
     const roughness = 1 + Math.min(1, SLOPE_ROUGHNESS * slope);
-    const I = milTurbulenceIntensity(agl, severity, u10 * windSpeedFactor(W20_HEIGHT) * roughness, parts.intensity);
+    const I = milTurbulenceIntensity(agl, severity, mechanicalWind * windSpeedFactor(W20_HEIGHT) * roughness, parts.intensity);
     const tb = parts.turbulence;
     this.turbulence.sample(p.x - this.driftN, p.y - this.driftE, p.z, t, I, tb);
     tb.w *= Math.min(1, agl / W_GROUND_SCALE);

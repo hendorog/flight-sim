@@ -444,8 +444,9 @@ describe('storm cells absent', () => {
   }
 
   test('the wind equals the pre-change field at 2000 points, with storms absent or empty', () => {
-    const absent = windHash({});
-    const empty = windHash({ storms: [] });
+    // Without winds aloft (windsAloft: []) the field is the one before the winds aloft existed.
+    const absent = windHash({ windsAloft: [] });
+    const empty = windHash({ storms: [], windsAloft: [] });
     report('wind without storms', { hash: absent, hashEmptyList: empty });
     expect(absent).toBe(WIND_NO_STORMS_HASH);
     expect(empty).toBe(WIND_NO_STORMS_HASH);
