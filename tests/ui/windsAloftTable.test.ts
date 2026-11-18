@@ -9,7 +9,8 @@ import { FT } from '../../src/core/math';
 import { defaultControls, defaultWeather } from '../../src/core/types';
 import { windAloftAt, windFromDeg, windKt } from '../../src/physics/weather/windsAloft';
 import { PauseMenu, type MenuHost, type SchoolMenuLink } from '../../src/ui/menu';
-import { MENU_ALOFT_LEVELS_FT, aloftRows, derivedTable, levelTemperatureC, tableFromRows } from '../../src/ui/windsAloftTable';
+import { MENU_ALOFT_LEVELS_FT, aloftEdit, aloftRows, derivedTable, levelTemperatureC, tableFromRows } from '../../src/ui/windsAloftTable';
+import { MAX_ALOFT_LEVELS, parseAloftParams, windsAloftOf } from '../../src/core/weatherFields';
 import { FakeElement, installFakeDom } from './fakeDom';
 
 beforeAll(installFakeDom);
@@ -43,6 +44,28 @@ describe('winds-aloft table', () => {
     expect(tableFromRows(w, [])).toEqual([{ altFt: 15000, dirDeg: 200, kt: 30 }]);
     const all = derivedTable(defaultWeather());
     expect(all.map((l) => l.altFt)).toEqual([...MENU_ALOFT_LEVELS_FT]);
+  });
+
+  it('an edit past MAX_ALOFT_LEVELS is refused with a reason; every edit it accepts is a table windsAloftOf reads', () => {
+    // 12 URL levels at altitudes the table does not show, then one row set: 13 levels, refused.
+    const url = parseAloftParams(Array.from({ length: 12 }, (_, i) => `${4100 + i * 3500},270,${20 + i}`))!;
+    expect(url).toHaveLength(12);
+    const full = { ...defaultWeather(), windsAloft: url };
+    const refused = aloftEdit(full, [{ altFt: 18000, kt: 50 }]);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.reason).toContain(`at most ${MAX_ALOFT_LEVELS} levels`);
+    // Removing the row edit (no row set) keeps the URL table.
+    const kept = aloftEdit(full, []);
+    expect(kept.ok && kept.table).toEqual(url);
+    // 3 URL levels plus all nine rows: 12, accepted and read back as stored.
+    for (const n of [0, 3, 4]) {
+      const w = { ...defaultWeather(), windsAloft: parseAloftParams(Array.from({ length: n }, (_, i) => `${4000 + i * 3500},270,30`)) };
+      const r = aloftEdit(w, MENU_ALOFT_LEVELS_FT.map((altFt) => ({ altFt, kt: 40 })));
+      if (n + MENU_ALOFT_LEVELS_FT.length <= MAX_ALOFT_LEVELS) {
+        expect(r.ok).toBe(true);
+        if (r.ok) expect(windsAloftOf({ ...w, windsAloft: r.table })).toBe(r.table);
+      } else expect(r.ok).toBe(false);
+    }
   });
 
   it('the Weather page holds the table: nine rows of three inputs and the mountain-wave slider', () => {

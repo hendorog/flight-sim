@@ -26,9 +26,10 @@
 //                  6..14[, intensity 0..1[, core radius km 1..5[, moving FROM deg, kt]]]]; repeat cb= for up to 6
 //                  cells. Without cb= the cells are derived from the conditions (physics/weather/stormField.ts);
 //                  any cb= replaces them with the listed cells, and cb=none gives no cells at all
-//   aloft=18000,270,45[,-21]   a wind-aloft level: altitude ft MSL 1000..60000, wind FROM deg, kt 0..250[, temperature
-//                  deg C]; repeat aloft= for up to 12 levels. Without aloft= the winds aloft are derived from the
-//                  conditions (physics/weather/windsAloft.ts); aloft=none gives no shear above the boundary layer
+//   aloft=18000,270,45[,-21]   a wind-aloft level: altitude ft MSL 2700..60000, wind FROM deg, kt 0..250[, temperature
+//                  deg C -90..50]; repeat aloft= for up to 12 levels; an entry out of range is ignored. Without aloft=
+//                  the winds aloft are derived from the conditions (physics/weather/windsAloft.ts); aloft=none alone
+//                  gives no shear above the boundary layer; none together with levels ignores the whole parameter
 //   waves=0.5      mountain-wave gain 0..1 (default 1): scales the terrain waves, lee shelter, valley channelling
 //                  and slope winds; 0 turns them off
 //   quality=low|medium|high|ultra (default high)    dpr=1.5      device-pixel-ratio cap (default 1: the 3D

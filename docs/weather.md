@@ -242,14 +242,16 @@ all read as the default in the last column.
 | `fogTopM` | number | m above `AIRPORT.elevation` (120 m) | 0..300 | 0 (no fog) |
 | `fogVisibilityM` | number | m | 50..1000 | 200 |
 | `storms` | `readonly StormCell[]` | | first 6 entries (`MAX_STORMS`) read | absent: cells derived from the conditions; an array (also empty) replaces them |
-| `windsAloft` | `readonly WindAloftLevel[]` | | at most 12 levels, altitudes 1000..60000 ft strictly ascending, kt 0..250, tempC -90..50 | absent or malformed: derived from the conditions; `[]`: no shear above the boundary layer |
+| `windsAloft` | `readonly WindAloftLevel[]` | | at most 12 levels, altitudes 2700..60000 ft strictly ascending, kt 0..250, tempC -90..50 | absent or malformed: derived from the conditions; `[]`: no shear above the boundary layer |
 | `mountainWaves` | number | gain | 0..1 | 1 |
 
 `visibilityM` stays the prevailing visibility; `fogVisibilityM` applies only inside the fog layer.
 
 `WindAloftLevel` fields: `altFt` (ft MSL), `dirDeg` (wind FROM, degrees true), `kt`, optional `tempC` (deg C). A
 table that fails any check (an entry out of range, altitudes not strictly ascending, more than 12 entries) reads as
-absent. Writers replace the array and do not edit a level in place.
+absent. The lowest altitude, 2700 ft (`ALOFT_ALT_MIN_FT`), is the lowest whole hundred feet above the level the wind
+profile ignores (shear base + 100 m = 820 m MSL = 2690 ft): every accepted level sets both its wind and its
+temperature. Writers replace the array and do not edit a level in place.
 
 `StormCell` fields: `northM`, `eastM` (NED m at simTime 0), `radiusM` (core radius, 1000..5000 m), `topM` (anvil
 top, 6000..14000 m MSL; the base is `cloudBaseM`), `intensity` (0..1), `motionDeg` (direction the cell moves from,
@@ -289,7 +291,7 @@ The module does not import three.js. The accessors that take an `out` object wri
 | `deriveCloudTop(partial, current)` | sets `partial.cloudTopM` to `cloudBaseM` + the current layer depth when `partial` has a base and no top |
 | `windsAloftOf(w)` | the manual wind-aloft table when `isAloftTable` accepts it (returned as stored; `[]` included); otherwise undefined (derived) |
 | `isAloftTable(a)` | the table check of `windsAloftOf` and `sanitizeExtras` |
-| `parseAloftParams(values)` | the table of the `aloft=` URL values (sorted, clamped, repeated altitudes dropped), `[]` for `none`, undefined when nothing usable |
+| `parseAloftParams(values)` | the table of the `aloft=` URL values (sorted; an entry out of range or malformed is left out, not clamped; a repeated altitude keeps its first entry; the lowest 12 kept), `[]` for `none` alone, undefined when nothing usable or when `none` is combined with levels |
 | `mountainWavesOf(w)` | the gain clamped to 0..1; 1 when absent or not finite |
 | `sanitizeExtras(w)` | deletes each new key whose value fails its type check; keeps values of the right type unclamped |
 | `NEUTRAL_EXTRAS` | frozen object with every new key at its "nothing there" value (below) |

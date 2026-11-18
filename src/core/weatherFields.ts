@@ -27,9 +27,14 @@ export const FOG_VIS_MAX_M = 1000;
 export const FOG_VIS_DEFAULT_M = 200;
 /** Most storm cells the consumers read (the first entries of `storms`). */
 export const MAX_STORMS = 6;
-/** Wind-aloft table limits: entries, altitude range ft MSL, speed kt, temperature deg C. */
+/**
+ * Wind-aloft table limits: entries, altitude range ft MSL, speed kt, temperature deg C. ALOFT_ALT_MIN_FT is the
+ * lowest whole hundred feet the wind profile uses: physics/weather/windsAloft.ts ignores levels at or below the
+ * shear base plus 100 m (820 m MSL = 2690 ft at the 120 m field elevation), so a lower level would set a temperature
+ * and no wind. Every level the table accepts is used for both.
+ */
 export const MAX_ALOFT_LEVELS = 12;
-export const ALOFT_ALT_MIN_FT = 1000;
+export const ALOFT_ALT_MIN_FT = 2700;
 export const ALOFT_ALT_MAX_FT = 60_000;
 export const ALOFT_KT_MAX = 250;
 export const ALOFT_TEMP_MIN_C = -90;
@@ -274,23 +279,23 @@ export function windsAloftOf(w: WeatherSettings): readonly WindAloftLevel[] | un
 }
 
 /**
- * Parse URL wind-aloft levels (`aloft=altFt,dir,kt[,tempC]`, repeatable; `aloft=none` for no shear): returns the
- * table (sorted by altitude, frozen; malformed entries and repeated altitudes dropped, values clamped to the ranges,
- * at most MAX_ALOFT_LEVELS), [] for `none`, or undefined when nothing usable was given (derived). For
- * sim/params.ts and the dev weather page.
+ * Parse URL wind-aloft levels (`aloft=altFt,dir,kt[,tempC]`, repeatable; `aloft=none` for no shear). An entry is
+ * rejected (left out, not clamped) when it is malformed or a value lies outside its range (altitude
+ * ALOFT_ALT_MIN_FT..ALOFT_ALT_MAX_FT, speed 0..ALOFT_KT_MAX, temperature ALOFT_TEMP_MIN_C..ALOFT_TEMP_MAX_C); the
+ * direction is taken modulo 360. A repeated altitude keeps its first entry; more than MAX_ALOFT_LEVELS keep the lowest.
+ * Returns the table (sorted by altitude, frozen), [] for `none` alone, or undefined (the derived winds) when nothing
+ * usable was given or when `none` is combined with levels (an invalid parameter: the whole `aloft` is ignored).
+ * For sim/params.ts and the dev weather page.
  */
 export function parseAloftParams(values: readonly string[]): readonly WindAloftLevel[] | undefined {
-  if (values.includes('none')) return Object.freeze([]);
+  if (values.includes('none')) return values.every((v) => v === 'none') ? Object.freeze([]) : undefined;
   const levels: WindAloftLevel[] = [];
   for (const v of values) {
     const c = v.split(',').map((x) => (x.trim() === '' ? NaN : Number(x)));
     if (c.length < 3 || c.length > 4 || !c.every(Number.isFinite)) continue;
-    const l: WindAloftLevel = {
-      altFt: clamp(c[0], ALOFT_ALT_MIN_FT, ALOFT_ALT_MAX_FT),
-      dirDeg: ((c[1] % 360) + 360) % 360,
-      kt: clamp(c[2], 0, ALOFT_KT_MAX),
-    };
-    if (c.length === 4) l.tempC = clamp(c[3], ALOFT_TEMP_MIN_C, ALOFT_TEMP_MAX_C);
+    const l: WindAloftLevel = { altFt: c[0], dirDeg: ((c[1] % 360) + 360) % 360, kt: c[2] };
+    if (c.length === 4) l.tempC = c[3];
+    if (!isAloftLevel(l)) continue;
     if (!levels.some((x) => x.altFt === l.altFt)) levels.push(l);
   }
   levels.sort((a, b) => a.altFt - b.altFt);

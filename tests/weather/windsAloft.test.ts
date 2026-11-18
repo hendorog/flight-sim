@@ -6,6 +6,7 @@ import { describe, expect, test } from 'vitest';
 import { DEG, FT, KT, type Vec3 } from '../../src/core/math';
 import { defaultWeather, type WeatherSettings } from '../../src/core/types';
 import { AIRPORT } from '../../src/core/world';
+import { ALOFT_ALT_MIN_FT } from '../../src/core/weatherFields';
 import { atmosphereAt, isaTemperature, geopotentialAltitude } from '../../src/physics/atmosphere';
 import { createEnvironment, type TerrainProvider } from '../../src/physics/environment';
 import { gradientWindFactor, windSpeedFactor, windVeer, WindField } from '../../src/physics/weather';
@@ -151,11 +152,19 @@ describe('manual levels', () => {
     expect(windKt(mid)).toBeLessThan(2);
   });
 
-  test('levels at or below the shear base are ignored', () => {
+  test('a table with a level below ALOFT_ALT_MIN_FT reads as derived; a level at ALOFT_ALT_MIN_FT is used (wind and temperature)', () => {
+    // The profile ignores levels at or below the shear base + 100 m; the table check rejects every such altitude.
+    expect(ALOFT_ALT_MIN_FT * FT).toBeGreaterThan(PROFILE_BASE_M + 100);
+    expect((ALOFT_ALT_MIN_FT - 100) * FT).toBeLessThanOrEqual(PROFILE_BASE_M + 100);
     const derived = windAloftAt(still({ windSpeedKt: 8 }), 3000, v());
-    const low = windAloftAt(still({ windSpeedKt: 8, windsAloft: [{ altFt: 2000, dirDeg: 0, kt: 50 }] }), 3000, v());
-    expect(low.north).toBeCloseTo(derived.north, 12);
-    expect(low.east).toBeCloseTo(derived.east, 12);
+    const low = windAloftAt(still({ windSpeedKt: 8, windsAloft: [{ altFt: 2000, dirDeg: 0, kt: 50, tempC: 30 }] }), 3000, v());
+    expect(low.north).toBe(derived.north);
+    expect(low.east).toBe(derived.east);
+    expect(temperatureProfileOf(still({ windsAloft: [{ altFt: 2000, dirDeg: 0, kt: 50, tempC: 30 }] }))).toBeUndefined();
+    const atMin = still({ windSpeedKt: 8, windsAloft: [{ altFt: ALOFT_ALT_MIN_FT, dirDeg: 0, kt: 50, tempC: 30 }] });
+    const f = windAloftAt(atMin, ALOFT_ALT_MIN_FT * FT, v());
+    expect(windKt(f)).toBeCloseTo(50, 9);
+    expect(temperatureProfileOf(atMin)).toBeDefined();
   });
 });
 

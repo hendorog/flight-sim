@@ -34,7 +34,7 @@ All are optional, for example `index.html?scenario=final&cam=chase&tod=20.5&ap=1
 | `precip=type,rate` | Precipitation `drizzle`, `rain` or `snow` at a rate in mm/h 0..50; `precip=none` for none |
 | `fog=topM[,visM]` | Ground fog depth above the field, 0..300 m, and the visibility inside it, 50..1000 m (default 200) |
 | `cb=northKm,eastKm[,topKm[,intensity[,radiusKm[,fromDeg,kt]]]]` | A cumulonimbus cell from the airport (defaults: top 11 km, intensity 0.8, core radius 3 km, stationary); repeat for up to 4 cells; `cb=none` removes a preset's cells. Fields and accessors: [weather.md](weather.md) |
-| `aloft=altFt,dir,kt[,tempC]` | A wind-aloft level: altitude in ft MSL 1000..60000, wind FROM in degrees true, speed in kt 0..250, optional temperature in deg C; repeat for up to 12 levels. Absent: the winds aloft are derived from the surface wind and the date; `aloft=none` gives no shear above the boundary layer. See [weather.md](weather.md), "Winds aloft and terrain effects on the wind" |
+| `aloft=altFt,dir,kt[,tempC]` | A wind-aloft level: altitude in ft MSL 2700..60000, wind FROM in degrees true, speed in kt 0..250, optional temperature in deg C -90..50; repeat for up to 12 levels. An entry outside these ranges or malformed is ignored (not clamped); a repeated altitude keeps its first entry. Absent: the winds aloft are derived from the surface wind and the date; `aloft=none` alone gives no shear above the boundary layer; `aloft=none` together with levels is invalid and the whole `aloft=` parameter is ignored (derived winds). See [weather.md](weather.md), "Winds aloft and terrain effects on the wind" |
 | `waves=` | Gain 0..1 on the terrain effects on the wind (mountain waves, lee shelter, valley channelling, slope winds); default 1, `waves=0` turns them off |
 | `quality=` | `low`, `medium`, `high` (default), `ultra` |
 | `dpr=`, `scale=` | The 3D view renders at CSS-pixel resolution (device pixel ratio capped at 1 on every quality); `dpr=2` raises the cap on a HiDPI screen, `scale=0.5..1` sets the render scale (default 0.75 on `low`, 1 otherwise; also a menu slider). The DOM UI stays at native resolution. The 3D cockpit view alone renders at up to 1.25x / 1.5x CSS pixels (never above the screen's ratio) on high and ultra: menu, Display & camera, 3D cockpit sharpness, stored as `fs.cockpitSharpness`; Auto is 1.25x on high and 1x on ultra (src/sim/displayPrefs.ts has the GPU timings). `dpr=` overrides it |
@@ -69,7 +69,8 @@ NaN when not holding). `__sim.training` drives the Flight School and `__sim.care
 The menu (Escape) has tabs for the flight (scenarios, autopilot, cabin dome light, keyboard assists, simulation
 rate with the rate actually achieved), weather (presets, including radiation fog, low stratus and drizzle, rain,
 snow and thunderstorm; wind, gusts, turbulence, a winds-aloft table of nine levels (3000 to 39000 ft) whose empty
-fields show the derived winds and temperatures, "Fill from derived" and "Clear (derived)", the mountain-wave gain,
+fields show the derived winds and temperatures, "Fill from derived" and "Clear (derived)" (an edit that would make
+more than 12 levels, counting levels from the URL at other altitudes, is refused with a message), the mountain-wave gain,
 cloud cover and base, cirrus, visibility, cloud type, mid-level
 sheet cover, altitude and kind, precipitation type and rate, ground fog depth and visibility, storm cells placed
 from the aircraft, temperature, QNH), time of day and date, display (quality, render scale, camera, HUD), the controls

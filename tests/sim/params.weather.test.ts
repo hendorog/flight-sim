@@ -9,12 +9,24 @@ import { CB_DEFAULT_INTENSITY, CB_DEFAULT_RADIUS_M, CB_DEFAULT_TOP_M, weatherPre
 const wx = (search: string) => parseParams(search).weather;
 
 describe('URL weather parameters for the optional fields', () => {
-  it('aloft= builds a sorted, clamped wind-aloft table; aloft=none gives []; waves= is clamped to 0..1', () => {
+  it('aloft= builds a sorted wind-aloft table, rejecting out-of-range entries; aloft=none gives []; waves= is clamped to 0..1', () => {
     expect(wx('?aloft=18000,270,45,-21&aloft=6000,250,20')).toEqual({
       windsAloft: [{ altFt: 6000, dirDeg: 250, kt: 20 }, { altFt: 18000, dirDeg: 270, kt: 45, tempC: -21 }],
     });
-    expect(wx('?aloft=90000,-90,400,80').windsAloft).toEqual([{ altFt: 60000, dirDeg: 270, kt: 250, tempC: 50 }]);
+    // Out of range: rejected, not clamped (the direction is taken modulo 360).
+    expect(wx('?aloft=90000,-90,40').windsAloft).toBeUndefined();
+    expect(wx('?aloft=9000,-90,400').windsAloft).toBeUndefined();
+    expect(wx('?aloft=9000,-90,40,80').windsAloft).toBeUndefined();
+    expect(wx('?aloft=60000,-90,250,50').windsAloft).toEqual([{ altFt: 60000, dirDeg: 270, kt: 250, tempC: 50 }]);
+    // Below the lowest altitude the wind profile uses (2700 ft): rejected, so two such levels do not collide either.
+    expect(wx('?aloft=500,270,45').windsAloft).toBeUndefined();
+    expect(wx('?aloft=500,270,45&aloft=800,250,30&aloft=9000,270,30').windsAloft).toEqual([{ altFt: 9000, dirDeg: 270, kt: 30 }]);
+    expect(wx('?aloft=2600,270,45').windsAloft).toBeUndefined();
+    expect(wx('?aloft=2700,270,45').windsAloft).toEqual([{ altFt: 2700, dirDeg: 270, kt: 45 }]);
     expect(wx('?aloft=none').windsAloft).toEqual([]);
+    // none combined with levels is an invalid parameter: the whole aloft= is ignored (derived winds).
+    expect(wx('?aloft=none&aloft=9000,270,30').windsAloft).toBeUndefined();
+    expect(wx('?aloft=9000,270,30&aloft=none').windsAloft).toBeUndefined();
     expect(wx('?aloft=9000,270').windsAloft).toBeUndefined();
     expect(wx('?aloft=x,1,2&aloft=9000,270,30').windsAloft).toEqual([{ altFt: 9000, dirDeg: 270, kt: 30 }]);
     expect(wx('?aloft=9000,270,30&aloft=9000,90,10').windsAloft).toHaveLength(1);

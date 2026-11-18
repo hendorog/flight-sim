@@ -14,7 +14,7 @@ import type { CameraMode, QualityLevel, ScenarioId, SimContext } from '../core/c
 import { DEG } from '../core/math';
 import { DEFAULT_AIRCRAFT_ID, type CloudType, type MidCloudType, type PrecipType, type WeatherSettings } from '../core/types';
 import { FOG_TOP_MAX_M, FOG_VIS_MAX_M, FOG_VIS_MIN_M, NO_STORMS, PRECIP_RATE_MAX_MMH, cloudTypeOf, fogOf, midLayerOf, mountainWavesOf, precipOf, stormsOf, type FogLayer, type MidLayer, type Precip } from '../core/weatherFields';
-import { MENU_ALOFT_LEVELS_FT, aloftRows, derivedTable, tableFromRows } from './windsAloftTable';
+import { MENU_ALOFT_LEVELS_FT, aloftEdit, aloftRows, derivedTable } from './windsAloftTable';
 import { convectiveState, emptyConvectiveState, proceduralStorms } from '../physics/weather/stormField';
 import { WEATHER_PRESETS, applyWeatherPreset } from '../sim/weatherPresets';
 import type { SchoolCommand } from '../training/types';
@@ -960,7 +960,14 @@ export class PauseMenu {
     const inputs: { altFt: number; dir: HTMLInputElement; kt: HTMLInputElement; temp: HTMLInputElement }[] = [];
     const read = (i: HTMLInputElement): number | undefined => (i.value.trim() === '' || !Number.isFinite(Number(i.value)) ? undefined : Number(i.value));
     const apply = (): void => {
-      const table = tableFromRows(w(), inputs.map((r) => ({ altFt: r.altFt, dirDeg: read(r.dir), kt: read(r.kt), tempC: read(r.temp) })));
+      const result = aloftEdit(w(), inputs.map((r) => ({ altFt: r.altFt, dirDeg: read(r.dir), kt: read(r.kt), tempC: read(r.temp) })));
+      if (!result.ok) {
+        // Refused (too many levels): say why; the refresh puts the stored table back in the inputs.
+        this.host.toast(result.reason);
+        this.refresh();
+        return;
+      }
+      const table = result.table;
       edit((x) => {
         if (table) x.windsAloft = table;
         else delete x.windsAloft;

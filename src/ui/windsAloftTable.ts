@@ -1,11 +1,13 @@
 // The menu's winds-aloft table (src/ui/menu.ts, Weather page): nine standard levels with direction, speed and
 // temperature. An empty field shows the derived value (physics/weather/windsAloft.ts, the atmosphere model) as its
 // placeholder. A row with any field set is a manual level; its empty fields take the derived values. Levels at other
-// altitudes (from the URL) are kept. Node-safe; the DOM side is in menu.ts.
+// altitudes (from the URL) are kept. An edit whose table would hold more than MAX_ALOFT_LEVELS levels is refused
+// (aloftEdit; the menu shows why and keeps the stored table), so every table the menu writes is one windsAloftOf
+// accepts. Node-safe; the DOM side is in menu.ts.
 
 import { FT } from '../core/math';
 import type { WeatherSettings, WindAloftLevel } from '../core/types';
-import { ALOFT_KT_MAX, ALOFT_TEMP_MAX_C, ALOFT_TEMP_MIN_C, windsAloftOf } from '../core/weatherFields';
+import { ALOFT_KT_MAX, ALOFT_TEMP_MAX_C, ALOFT_TEMP_MIN_C, MAX_ALOFT_LEVELS, isAloftTable, windsAloftOf } from '../core/weatherFields';
 import { atmosphereAt } from '../physics/atmosphere';
 import { derivedWindAloftAt, temperatureProfileOf, windFromDeg, windKt, type WindNE } from '../physics/weather/windsAloft';
 
@@ -73,6 +75,24 @@ export function tableFromRows(w: WeatherSettings, rows: readonly AloftRowInput[]
   if (levels.length === 0) return undefined;
   levels.sort((a, b) => a.altFt - b.altFt);
   return Object.freeze(levels.map((l) => Object.freeze(l)));
+}
+
+/** The result of a table edit: the new table (undefined: back to derived), or the reason it is refused. */
+export type AloftEdit = { ok: true; table: readonly WindAloftLevel[] | undefined } | { ok: false; reason: string };
+
+/**
+ * tableFromRows, refused when the result is not a table windsAloftOf accepts (more than MAX_ALOFT_LEVELS levels: the
+ * nine rows plus levels at other altitudes from the URL).
+ */
+export function aloftEdit(w: WeatherSettings, rows: readonly AloftRowInput[]): AloftEdit {
+  const table = tableFromRows(w, rows);
+  const n = table?.length ?? 0;
+  if (table === undefined || isAloftTable(table)) return { ok: true, table };
+  const other = n - rows.filter((r) => r.dirDeg !== undefined || r.kt !== undefined || r.tempC !== undefined).length;
+  return {
+    ok: false,
+    reason: `Winds aloft: at most ${MAX_ALOFT_LEVELS} levels (this edit makes ${n}, ${other} of them from the URL at other altitudes). Not applied; "Clear (derived)" removes them.`,
+  };
 }
 
 /** "Fill from derived": every table level set to the derived wind (no temperatures; they stay derived). */

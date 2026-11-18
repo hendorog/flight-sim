@@ -266,7 +266,8 @@ describe('windsAloft and mountainWaves', () => {
       [{ altFt: 6000, dirDeg: 0, kt: 10, tempC: 60 }],
       [{ altFt: 6000, dirDeg: 0, kt: 10 }, { altFt: 6000, dirDeg: 0, kt: 10 }],
       [{ altFt: 9000, dirDeg: 0, kt: 10 }, { altFt: 6000, dirDeg: 0, kt: 10 }],
-      Array.from({ length: 13 }, (_, i) => ({ altFt: 2000 + i * 1000, dirDeg: 0, kt: 10 })),
+      [{ altFt: 2600, dirDeg: 0, kt: 10 }],
+      Array.from({ length: 13 }, (_, i) => ({ altFt: 3000 + i * 1000, dirDeg: 0, kt: 10 })),
     ];
     for (const b of bad) expect(windsAloftOf(withFields({ windsAloft: b }))).toBeUndefined();
   });
