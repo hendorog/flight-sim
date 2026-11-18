@@ -9,9 +9,13 @@ import { createEnvironment, type SimEnvironment, type TerrainProvider } from '..
 import { airportSurface } from '../world/airport/layout';
 import { airfieldSurface, airfields, generatedAirfields, type Airfield } from '../world/airfields';
 import type { ReferenceSite } from '../physics/weather/orography/sites';
+import { setTerrainTag } from '../physics/weather/orography/orographyField';
 import { RUNWAY_HEIGHT, TAXIWAY_HEIGHT } from '../world/airport/pavement';
 import { isPresent, era } from '../world/era/eraState';
-import { makeSample, sampleTerrain, terrainHeight, terrainNormal, terrainSurface } from '../world/terrain/heightfield';
+import { makeSample, sampleTerrain, terrainGenerationTag, terrainHeight, terrainNormal, terrainSurface } from '../world/terrain/heightfield';
+
+// The mountain-wave caches key the world terrain on its era and world seed (terrainHeight depends on both).
+setTerrainTag(terrainHeight, terrainGenerationTag);
 
 // Deep Time: an era with no airport ('flats') has neither the pavement surface nor its lift: the ground is the
 // terrain (terrainSurface gives the era's flat surface inside the airport zone). Read per call (era is boot data,

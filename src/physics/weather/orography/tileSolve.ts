@@ -49,9 +49,12 @@ export interface WaveWeather {
   windsAloft?: readonly WindAloftLevel[];
 }
 
-/** The wave weather of a WeatherSettings (allocates; on a change of the settings only). */
-export function waveWeatherOf(w: WeatherSettings, windsAloft: readonly WindAloftLevel[] | undefined): WaveWeather {
-  const ww: WaveWeather = { windDirectionDeg: w.windDirectionDeg, windSpeedKt: w.windSpeedKt, dayOfYear: w.dayOfYear, isaDeviation: w.isaDeviation };
+/**
+ * The wave weather of a WeatherSettings (allocates; on a change of the settings only). `dayOfYear` is the day the
+ * solution uses (default w.dayOfYear; OrographyField passes the day frozen at its last reset or weather edit).
+ */
+export function waveWeatherOf(w: WeatherSettings, windsAloft: readonly WindAloftLevel[] | undefined, dayOfYear = w.dayOfYear): WaveWeather {
+  const ww: WaveWeather = { windDirectionDeg: w.windDirectionDeg, windSpeedKt: w.windSpeedKt, dayOfYear, isaDeviation: w.isaDeviation };
   if (windsAloft) ww.windsAloft = windsAloft;
   return ww;
 }

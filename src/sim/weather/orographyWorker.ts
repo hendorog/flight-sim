@@ -5,12 +5,14 @@
 
 import { setEra } from '../../world/era/eraState';
 import { setTownSite } from '../../world/terrain/townMask';
-import { terrainHeight } from '../../world/terrain/heightfield';
+import { terrainGenerationTag, terrainHeight } from '../../world/terrain/heightfield';
 import { setWorldSeed } from '../../world/worldSeed';
-import { tileTerrainOf } from '../../physics/weather/orography/orographyField';
+import { setTerrainTag, tileTerrainOf } from '../../physics/weather/orography/orographyField';
 import { detachableSolution, solutionBuffers, solveTile } from '../../physics/weather/orography/tileSolve';
 import type { OrographyJob, OrographyReply } from './orographyPrefetch';
 import type { WorkerSetup } from '../../world/terrain/terrainWorker';
+
+setTerrainTag(terrainHeight, terrainGenerationTag);
 
 self.onmessage = (e: MessageEvent<OrographyJob | WorkerSetup>) => {
   const m = e.data;

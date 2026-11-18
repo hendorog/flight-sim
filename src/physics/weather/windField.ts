@@ -160,6 +160,8 @@ export class WindField {
   private skyTime = NaN;
   private skyDay = NaN;
   private skyCover = NaN;
+  /** Set during sampleHorizontal(). */
+  private horizontalOnly = false;
 
   constructor(
     private readonly weather: WeatherSettings,
@@ -177,12 +179,28 @@ export class WindField {
 
   /**
    * Restart the advection of the turbulence and thermal field for a new flight whose clock starts again at 0
-   * (a scenario reset): the same scenario then meets the same air, whatever flew before it.
+   * (a scenario reset): the same scenario then meets the same air, whatever flew before it. The terrain terms take
+   * the current weather's tiles in full (no fade from the weather flown before).
    */
   reset(): void {
     this.lastTime = null;
     this.driftN = this.driftE = 0;
-    this.orography.reset();
+    this.orography.reset(this.weather);
+  }
+
+  /**
+   * The horizontal air-mass velocity at a point for a caller that reads only x and y (the airfield windsocks), NED
+   * m/s. Equal to sample() except inside the reference-site mask (orography/sites.ts), where the horizontal terrain
+   * terms are 0: there the orography tiles are not sampled (no tile is requested or solved for it), so the vertical
+   * wave and the wave-breaking turbulence severity are left out; z is not meaningful.
+   */
+  sampleHorizontal(p: Vec3, t: number, out: Vec3 = { x: 0, y: 0, z: 0 }): Vec3 {
+    this.horizontalOnly = true;
+    try {
+      return this.sample(p, t, out);
+    } finally {
+      this.horizontalOnly = false;
+    }
   }
 
   /** Air-mass velocity at a point, NED m/s. */
@@ -237,7 +255,8 @@ export class WindField {
     parts.waveSeverity = 0;
     let shelter = 0;
     const gain = mountainWavesOf(w);
-    if (gain > 0) {
+    const sites = typeof this.sites === 'function' ? this.sites() : this.sites;
+    if (gain > 0 && !(this.horizontalOnly && sites.length > 0 && siteMask(sites, p.x, p.y) === 0)) {
       const oro = this.orography;
       oro.update(w, t);
       const o = oro.sample(p.x, p.y, altitude, t, this.oro);
@@ -246,7 +265,6 @@ export class WindField {
       const freeE = gradient ? aloft.g0E : this.free.east;
       const freeSpeed = Math.hypot(freeN, freeE);
       const slopeWinds = this.slopeWindsOn();
-      const sites = typeof this.sites === 'function' ? this.sites() : this.sites;
       const terms = o.waveN !== 0 || o.waveE !== 0 || o.shelter !== 0 || o.nn !== 0 || o.ee !== 0 || slopeWinds;
       const mask = sites.length > 0 && terms ? siteMask(sites, p.x, p.y) : 1;
       if (o.waveN !== 0 || o.waveE !== 0 || o.waveW !== 0) {

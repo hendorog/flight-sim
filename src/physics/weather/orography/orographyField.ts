@@ -5,9 +5,21 @@
 //     (module-level LRU of SOLUTION_CACHE solutions and TERRAIN_CACHE tile terrains);
 //   - the browser: setOrographySource() registers the worker-backed source (sim/weather/orographyPrefetch.ts) for
 //     the world terrain; a missing solution is requested and reads as absent until it arrives.
-// Continuity in time: a solution that arrives after a miss ramps in over FADE_S simulated seconds; after a change of
-// the wave weather the previous solutions fade out over FADE_S while the new ones (synchronous: at once; worker: on
-// arrival) fade in. reset() (a scenario reset) ends every fade. Allocation-free per sample.
+// Cache keys hold the terrain function, its terrain tag (setTerrainTag: era and world seed for the world terrain)
+// and the tile; a field's wave key holds the tag too, so a change of era or seed never reuses an old tile.
+//
+// Continuity in time:
+//   - a solution that arrives after a miss ramps in over FADE_S simulated seconds; a tile that was evicted and is
+//     found again without a miss keeps its ramp (no restart);
+//   - a change of the wave weather turns the set on display into the fading set: each tile with the weight it had at
+//     that moment, all scaled by 1 - ramp(t - change) over FADE_S, while the new set fades in. A further change while
+//     that fade runs and part of the newer set is already on display waits until the fade ends (at most FADE_S), so
+//     the field never steps; a change while nothing of the newer set is on display replaces it at once;
+//   - reset(w) (a scenario reset) takes the current weather's set in full, with no fade; a sample more than
+//     TIME_RESET s before the previous one is treated the same way (a clock set back).
+// The day used by the wave weather is frozen at a reset and at a weather edit: the date advancing at midnight with the
+// clock running re-solves nothing (the free-atmosphere wind of the flight itself still follows the date).
+// Allocation-free per sample.
 
 import type { WeatherSettings, WindAloftLevel } from '../../../core/types';
 import { windsAloftOf } from '../../../core/weatherFields';
@@ -23,18 +35,43 @@ export const FADE_S = 3;
 const SOLUTION_CACHE = 8;
 /** Tile terrains kept by the synchronous source. */
 const TERRAIN_CACHE = 16;
-/** A tile that missed is queried again after this much simulated time, s. */
-const REQUERY_S = 0.25;
-/** Entries a field keeps per wave weather before dropping the farthest. */
-const MAX_ENTRIES = 12;
+/** Entries a field keeps for its wave weather before dropping the least recently sampled one not in use. */
+export const MAX_ENTRIES = 12;
+/** An entry sampled within this simulated time before the current sample is in use and never dropped, s. */
+const IN_USE_S = 1;
+/** A sample this much earlier than the previous one is a clock set back (a reset), s (windField.ts TIME_RESET). */
+const TIME_RESET = 1;
 
 /** Where the solutions come from. */
 export interface OrographySource {
   /** True when get() never misses (computes on demand). */
   readonly sync: boolean;
+  /**
+   * Bumped whenever a solution arrives (optional). A field asks again for a tile that missed only after it changed;
+   * without it the field asks on every sample.
+   */
+  readonly version?: number;
   /** The solution of tile (ti, tj) for the wave weather, or null when not available yet (then requested). */
   get(ti: number, tj: number, ww: WaveWeather, key: string): TileSolution | null;
 }
+
+// ---------------------------------------------------------------------------------------------- terrain tags
+const tags = new Map<HeightFn, () => string>();
+
+/**
+ * Register (or with null remove) the tag of a terrain function: a string that changes whenever the heights it returns
+ * change (era, world seed). Part of every cache key and of the fields' wave keys. The function is called on every
+ * sample: return the same string while nothing changed.
+ */
+export function setTerrainTag(heightFn: HeightFn, tag: (() => string) | null): void {
+  if (tag) tags.set(heightFn, tag);
+  else tags.delete(heightFn);
+}
+
+const tagOf = (f: HeightFn): string => {
+  const t = tags.get(f);
+  return t ? t() : '';
+};
 
 // ---------------------------------------------------------------------------------------------- synchronous source
 const fnIds = new WeakMap<HeightFn, number>();
@@ -65,9 +102,9 @@ function lruSet<T>(m: Map<string, T>, k: string, v: T, max: number): void {
   while (m.size > max) m.delete(m.keys().next().value as string);
 }
 
-/** The tile terrain of a terrain function (cached). */
+/** The tile terrain of a terrain function (cached on the function, its terrain tag and the tile). */
 export function tileTerrainOf(heightFn: HeightFn, ti: number, tj: number): TileTerrain {
-  const k = `${fnId(heightFn)}:${ti},${tj}`;
+  const k = `${fnId(heightFn)}:${tagOf(heightFn)}:${ti},${tj}`;
   let t = lruGet(terrainCache, k);
   if (!t) {
     t = buildTileTerrain(heightFn, ti, tj);
@@ -78,7 +115,7 @@ export function tileTerrainOf(heightFn: HeightFn, ti: number, tj: number): TileT
 
 /** Solve synchronously (cached): the node path, and the reference the worker path must reproduce. */
 export function syncSolution(heightFn: HeightFn, ti: number, tj: number, ww: WaveWeather, key: string): TileSolution {
-  const k = `${fnId(heightFn)}:${ti},${tj}:${key}`;
+  const k = `${fnId(heightFn)}:${tagOf(heightFn)}:${ti},${tj}:${key}`;
   let s = lruGet(solutionCache, k);
   if (!s) {
     s = solveTile(tileTerrainOf(heightFn, ti, tj), ww);
@@ -126,6 +163,14 @@ interface Entry {
   sol: TileSolution;
   /** Simulated time the solution starts to ramp in (-Infinity: in full). */
   start: number;
+  /** Simulated time of the last sample that read it. */
+  used: number;
+}
+
+/** A tile of the fading set: its solution and the weight it had on display when the fade started. */
+interface Fading {
+  sol: TileSolution;
+  weight: number;
 }
 
 const ramp = (x: number): number => (x <= 0 ? 0 : x >= FADE_S ? 1 : x / FADE_S);
@@ -136,21 +181,29 @@ const CELLS = WINDOW_N * WINDOW_N;
 
 export class OrographyField {
   private cur = new Map<number, Entry>();
-  private prev = new Map<number, Entry>();
+  private prev = new Map<number, Fading>();
   private prevStart = -Infinity;
   private key: string | null = null;
   private keyTime = -Infinity;
   private ww: WaveWeather | null = null;
-  /** Tiles that missed (worker source) for the current key, with the time of the last query: they ramp in on arrival. */
+  /** A newer wave weather waiting for the running fade to end (see the header). */
+  private pendingKey: string | null = null;
+  private pendingWw: WaveWeather | null = null;
+  /** Tiles that missed (worker source) for the current key, with the source version at the miss. */
   private readonly missed = new Map<number, number>();
+  /** Ramp start of every tile taken for the current key (kept when an entry is evicted). */
+  private readonly starts = new Map<number, number>();
   // Change detection of the wave weather.
   private kDir = NaN;
   private kSpeed = NaN;
   private kDay = NaN;
   private kIsa = NaN;
+  private kTime = NaN;
+  private kTag: string | null = null;
   private kTable: readonly WindAloftLevel[] | undefined | null = null;
-  private lastN = 0;
-  private lastE = 0;
+  /** The day of the year the wave weather uses (frozen at a reset and at an edit). */
+  private waveDay = NaN;
+  private lastT = -Infinity;
 
   constructor(readonly heightFn: HeightFn) {}
 
@@ -163,84 +216,169 @@ export class OrographyField {
     return this.key;
   }
 
-  /** Track the settings; on a change of the wave weather at time t start the cross-fade. */
-  update(w: WeatherSettings, t: number): void {
-    const table = windsAloftOf(w);
-    if (
-      w.windDirectionDeg === this.kDir &&
-      w.windSpeedKt === this.kSpeed &&
-      w.dayOfYear === this.kDay &&
-      w.isaDeviation === this.kIsa &&
-      table === this.kTable
-    ) {
-      return;
-    }
-    this.kDir = w.windDirectionDeg;
-    this.kSpeed = w.windSpeedKt;
-    this.kDay = w.dayOfYear;
-    this.kIsa = w.isaDeviation;
-    this.kTable = table;
-    const ww = waveWeatherOf(w, table);
-    const key = waveWeatherKey(ww);
-    this.ww = ww;
-    if (key === this.key) return;
-    const first = this.key === null;
-    this.key = key;
-    if (!first) {
-      // Keep the older set while nothing of the newer one has arrived (a slider being dragged).
-      if (this.cur.size > 0) {
-        this.prev = this.cur;
-        this.prevStart = t;
-      }
-      this.cur = new Map();
-    }
-    this.keyTime = first ? -Infinity : t;
-    this.missed.clear();
+  /** The wave weather and key the field changes to when the running fade ends (null when none is waiting). */
+  get pendingWaveWeather(): WaveWeather | null {
+    return this.pendingWw;
   }
 
-  /** End every fade (a scenario reset: the clock restarts). */
-  reset(): void {
-    for (const e of this.cur.values()) e.start = -Infinity;
+  get pendingWaveKey(): string | null {
+    return this.pendingKey;
+  }
+
+  /** True when the field holds the solution of tile (ti, tj) for wave key `key`. */
+  holds(ti: number, tj: number, key: string): boolean {
+    return key === this.key && this.cur.has(pack(ti, tj));
+  }
+
+  /** Track the settings; on a change of the wave weather at time t start the cross-fade (or queue it). */
+  update(w: WeatherSettings, t: number): void {
+    this.track(w, t, false);
+  }
+
+  private track(w: WeatherSettings, t: number, resetting: boolean): void {
+    const table = windsAloftOf(w);
+    const tag = tagOf(this.heightFn);
+    const lastTime = this.kTime;
+    this.kTime = w.timeOfDay;
+    const same =
+      w.windDirectionDeg === this.kDir &&
+      w.windSpeedKt === this.kSpeed &&
+      w.isaDeviation === this.kIsa &&
+      table === this.kTable &&
+      tag === this.kTag;
+    const dayChanged = w.dayOfYear !== this.kDay;
+    if (same && !dayChanged && !resetting) return;
+    this.kDay = w.dayOfYear;
+    // The clock passed midnight (the date moved on while the time of day went back): the wave weather keeps its day.
+    if (same && !resetting && w.timeOfDay < lastTime) return;
+    this.kDir = w.windDirectionDeg;
+    this.kSpeed = w.windSpeedKt;
+    this.kIsa = w.isaDeviation;
+    this.kTable = table;
+    this.kTag = tag;
+    this.waveDay = w.dayOfYear;
+    const ww = waveWeatherOf(w, table, this.waveDay);
+    const key = tag === '' ? waveWeatherKey(ww) : `${tag}|${waveWeatherKey(ww)}`;
+    if (key === this.key) {
+      this.pendingKey = null;
+      this.pendingWw = null;
+      return;
+    }
+    if (this.key === null) {
+      this.key = key;
+      this.ww = ww;
+      this.keyTime = -Infinity;
+      return;
+    }
+    this.pendingKey = key;
+    this.pendingWw = ww;
+    if (!resetting && this.canAdopt(t)) this.adopt(t);
+  }
+
+  /** True when the waiting wave weather can be taken at t without a step (see the header). */
+  private canAdopt(t: number): boolean {
+    if (this.prev.size === 0 || t >= this.prevStart + FADE_S) return true;
+    for (const e of this.cur.values()) if (ramp(t - e.start) > 0) return false;
+    return true;
+  }
+
+  /** Take the waiting wave weather at t: the set on display becomes the fading set. */
+  private adopt(t: number): void {
+    if (this.prev.size === 0 || t >= this.prevStart + FADE_S) {
+      const fading = new Map<number, Fading>();
+      for (const [k, e] of this.cur) {
+        const r = ramp(t - e.start);
+        if (r > 0) fading.set(k, { sol: e.sol, weight: r });
+      }
+      this.prev = fading;
+      this.prevStart = fading.size > 0 ? t : -Infinity;
+    }
+    // else nothing of the current set is on display: the fading set keeps fading.
+    this.cur = new Map();
+    this.key = this.pendingKey;
+    this.ww = this.pendingWw;
+    this.pendingKey = null;
+    this.pendingWw = null;
+    this.keyTime = t;
+    this.missed.clear();
+    this.starts.clear();
+  }
+
+  /** End every fade: the current weather's set in full (a reset, or the clock set back). */
+  private settle(): void {
+    if (this.pendingKey !== null) {
+      this.cur = new Map();
+      this.key = this.pendingKey;
+      this.ww = this.pendingWw;
+      this.pendingKey = null;
+      this.pendingWw = null;
+    }
+    for (const e of this.cur.values()) {
+      e.start = -Infinity;
+      e.used = -Infinity;
+    }
     this.prev.clear();
     this.prevStart = -Infinity;
     this.keyTime = -Infinity;
+    this.missed.clear();
+    this.starts.clear();
+    this.lastT = -Infinity;
+  }
+
+  /**
+   * A scenario reset (the clock restarts): with `w`, take its wave weather now (the day included), then end every
+   * fade, so the first sample after the reset meets the current weather's set in full.
+   */
+  reset(w?: WeatherSettings): void {
+    if (w) this.track(w, 0, true);
+    this.settle();
   }
 
   private entry(ti: number, tj: number, t: number): Entry | null {
     const k = pack(ti, tj);
     const e = this.cur.get(k);
-    if (e) return e;
+    if (e) {
+      e.used = t;
+      return e;
+    }
     if (!this.ww || !this.key) return null;
-    // A tile that missed is asked for again at most every REQUERY_S simulated seconds (no work per sample).
-    const last = this.missed.get(k);
-    if (last !== undefined && Math.abs(t - last) < REQUERY_S) return null;
     const src = sources.get(this.heightFn);
+    // A tile that missed is asked for again only after a solution arrived (no work per sample while waiting).
+    if (src && src.version !== undefined && this.missed.get(k) === src.version) return null;
     const sol = src ? src.get(ti, tj, this.ww, this.key) : syncSolution(this.heightFn, ti, tj, this.ww, this.key);
     if (!sol) {
-      this.missed.set(k, t);
+      this.missed.set(k, src?.version ?? NaN);
       return null;
     }
-    if (this.cur.size >= MAX_ENTRIES) this.evict();
-    const entry: Entry = { sol, start: this.missed.has(k) ? t : this.keyTime };
+    if (this.cur.size >= MAX_ENTRIES) this.evict(t);
+    // After a miss the tile read as absent: it ramps in from now. Found again without a miss (evicted, then served
+    // from the source's cache): it keeps the ramp it had.
+    const start = this.missed.has(k) ? t : (this.starts.get(k) ?? this.keyTime);
+    this.missed.delete(k);
+    this.starts.set(k, start);
+    const entry: Entry = { sol, start, used: t };
     this.cur.set(k, entry);
     return entry;
   }
 
-  private evict(): void {
-    let far = -1;
-    let farD = -1;
+  /** Drop the least recently sampled entry that is not in use (none in use: keep all; the map grows past the cap). */
+  private evict(t: number): void {
+    let lru = -1;
+    let oldest = Infinity;
     for (const [k, e] of this.cur) {
-      const d = Math.hypot(e.sol.ti * TILE_SPACING - this.lastN, e.sol.tj * TILE_SPACING - this.lastE);
-      if (d > farD) [far, farD] = [k, d];
+      if (e.used >= t - IN_USE_S) continue;
+      if (e.used < oldest) [lru, oldest] = [k, e.used];
     }
-    this.cur.delete(far);
+    if (lru >= 0) this.cur.delete(lru);
   }
 
   /** The terms at NED (north, east) and altitude z m MSL, at simulated time t, into `out`. */
   sample(north: number, east: number, z: number, t: number, out: OrographySample): OrographySample {
     out.waveN = out.waveE = out.waveW = out.shelter = out.envelope = out.nn = out.ne = out.ee = 0;
-    this.lastN = north;
-    this.lastE = east;
+    // The clock set back by more than TIME_RESET: a reset (no fade, the current weather in full).
+    if (t < this.lastT - TIME_RESET) this.settle();
+    this.lastT = t;
+    if (this.pendingKey !== null && this.canAdopt(t)) this.adopt(t);
     let envWeight = 0;
     const i0 = tileFloor(north);
     const j0 = tileFloor(east);
@@ -260,7 +398,7 @@ export class OrographyField {
         }
         if (fadePrev > 0) {
           const p = this.prev.get(pack(ti, tj));
-          if (p) envWeight += this.accumulate(p.sol, north, east, z, ws * fadePrev, out);
+          if (p) envWeight += this.accumulate(p.sol, north, east, z, ws * fadePrev * p.weight, out);
         }
       }
     }
@@ -358,8 +496,11 @@ export class OrographyField {
         if (this.cur.has(k)) continue;
         const sol = src.get(ti, tj, this.ww, this.key);
         // Waited for at boot: in full at once (no ramp).
-        if (sol) this.cur.set(k, { sol, start: -Infinity });
-        else ok = false;
+        if (sol) {
+          this.cur.set(k, { sol, start: -Infinity, used: this.lastT });
+          this.starts.set(k, -Infinity);
+          this.missed.delete(k);
+        } else ok = false;
       }
     }
     return ok;

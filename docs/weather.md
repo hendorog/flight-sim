@@ -476,7 +476,7 @@ Derived tables (free wind `F`, direction FROM / kt; the 0 ft column is `G0`; the
 - Blocked flow: `h_eff = max(h, envelope - U_low / N_low)` (critical Froude number 1, unconfirmed). On 1000 m
   corrugations 5 km apart the spread of `h_eff` is 1000 m at 40 and 20 kt, 788 m at 10 kt, 394 m at 5 kt.
 - Solver (`linearWaves.ts`): per Fourier mode, `sigma = k U + l V - i nu` (nu 1.5e-4 1/s, unconfirmed),
-  `m^2 = K^2 (N^2 / sigma^2 - 1)` with Im(m) > 0, a radiating top layer, eta and sigma^2 eta' continuous at the
+  `m^2 = K^2 (N^2 / sigma^2 - 1)` with Im(m) > 0 (for nu = 0 and a propagating mode, sign(Re m) = sign(Re sigma)), a radiating top layer, eta and sigma^2 eta' continuous at the
   interfaces, critical levels (Re sigma changes sign or |Re sigma| < 0.5 m/s K) absorbing. Wavelengths under 1.5 km
   are removed. Fields w, u, v at 0, 150, 300, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 7500, 9000,
   10500, 12000, 14000 m above the tile mean, times sqrt(rho(mean) / rho(z)). Checked against analytic solutions in
@@ -511,15 +511,38 @@ Derived tables (free wind `F`, direction FROM / kt; the 0 ft column is `G0`; the
 ### Solutions, worker and fades
 
 - Node and tests: a missing solution is solved synchronously on first use (LRU of 8 solutions, 16 tile terrains).
+- Cache keys: the terrain function, its terrain tag (`setTerrainTag`; for `terrainHeight` the era id and the world
+  seed, `terrainGenerationTag` in `heightfield.ts`) and the tile; a field's wave key holds the tag too.
 - Browser: `src/sim/weather/orographyPrefetch.ts` is registered for `terrainHeight` before the physics is built;
-  one worker (`orographyWorker.ts`, set up with the terrain workers' era, seed and town site) solves the tiles with
-  weight > 0 at the aircraft and 60 s and 180 s ahead; a newer list replaces the queued one. `__ready` waits for the
-  tiles at the aircraft.
-- A solution that arrives after a miss ramps in over 3 s simulated; after a change of the wind, the date, the ISA
-  deviation or the table, the previous solutions fade out over 3 s while the new ones fade in. A scenario reset ends
-  the fades. The worker path reproduces the synchronous solution bit for bit (`tests/weather/orography.test.ts`).
+  one worker (`orographyWorker.ts`, set up with the terrain workers' era, seed and town site) solves one tile at a
+  time from two queues: the tiles `get()` missed (any sampler), first, and the tiles with weight > 0 at the aircraft
+  and 60 s and 180 s ahead, rebuilt every frame without touching the first queue. A tile the field holds is not
+  queued. The source keeps 10 solutions, least recently used dropped first, and counts the solutions received
+  (`version`); a field asks again for a missed tile only after that count changed. `__ready` waits for the tiles
+  at the aircraft.
+- A field keeps 12 tiles; past that it drops the least recently sampled tile that no sample read in the last 1 s
+  (if every tile is in use it keeps them all).
+- Fades: a solution that arrives after a miss ramps in over 3 s simulated; a tile dropped and found again without a
+  miss keeps its ramp. After a change of the wind, the ISA deviation, the table or the terrain tag, the tiles on
+  display fade out over 3 s from the weight each had, while the new ones fade in. A further change while that fade
+  runs and part of the newer set is on display waits until the fade ends (at most 3 s). Two changes 1.5 s apart over
+  the test hills: largest change of the wave vector per 0.01 s 0.0089 m/s against a largest difference of 3.93 m/s
+  between the three settled fields (0.916 m/s before this rule, `tests/weather/orographyTime.test.ts`).
+- The day of the year in the wave weather is frozen at a reset and at a weather edit: the date moving on at midnight
+  with the clock running re-solves nothing (the free-atmosphere wind of the flight follows the date).
+- A scenario reset (`WindField.reset`, also before `SimPhysics.hoverIntoWind`) takes the current weather's tiles in
+  full; a sample more than 1 s earlier than the previous one is treated as a reset. The worker path reproduces the
+  synchronous solution bit for bit (`tests/weather/orography.test.ts`).
+- The airfield windsocks read `WindField.sampleHorizontal`: inside the reference-site mask (2 km of a field) it
+  samples no tile, so the windsock leaves out the vertical wave and the wave-breaking turbulence severity there;
+  elsewhere it equals `sample()`.
+- Memory: a solution with waves holds 8,939,760 bytes (window 193 x 193, 18 levels x 3 fields and 6 terrain and
+  shelter windows, float32). On the main thread the source keeps at most 10, a field 12 while no more than 12 tiles
+  are sampled within 1 s, and a fading set at most as many as the field held. Under that condition at most 34
+  distinct solutions (304 MB) are held when none is shared; the bound before the least-recently-used change was the
+  same 34.
 - Cost (node, this container, 2026-11-18, with a full test run in the background): 268-306 ms per 256 x 256 solve,
-  468 ms to sample a tile's terrain, 8.3 MB per solution; `env.wind` 13.6 us at 3000 m and 14.5 us at 100 m AGL in
+  468 ms to sample a tile's terrain; `env.wind` 13.6 us at 3000 m and 14.5 us at 100 m AGL in
   the four-tile corner at (32 km, 32 km), 10.5 us on flat terrain (the cost tests assert under 30 us).
 - Consumers of the winds aloft: the storm steering wind (above; also the anvil offset of `cellGeometry.ts`), the
   cloud drift (`src/render/clouds/cloudModel.ts`: the low layer with `windAloftAt` at its mid-height, the mid-level
