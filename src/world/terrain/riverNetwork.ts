@@ -1485,7 +1485,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         }
         st.joinS = best;
       }
-      // It ends where it first reaches its receiver's bed (as a river its parent's: endAtReceiver).
+      // A stream ends where it first reaches its receiver's bed (endAtReceiver). (A stream-only rule for now: a river's
+      // end is pulled onto its parent's channel above, and Part S builds the streams' own rule.)
       if (st.end !== 'lake') {
         const cut = endAtReceiver(st.north, st.east, st.s, P, st.joinS);
         if (cut) {

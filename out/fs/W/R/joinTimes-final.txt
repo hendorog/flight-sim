@@ -1,0 +1,14 @@
+ 14:55:14 up 1 day,  1:15,  1 user,  load average: 2.51, 1.95, 1.82
+
+ RUN  v5.0.2 /home/roger/github/fs-exp/round-w-rs
+
+JT seed 1: build 16035 ms; phases 36/6793/2988/158; form ms room 1201, lay 310, chan 1948, form 2602, streams 4354; net ms refine 69, shape 65, pitch 467, flow 128, index 141; rivers 405, streams 5947 (15042 km), too short for a thread 2, no form arrays 0
+JT seed 42: build 15002 ms; phases 75/6586/2923/145; form ms room 1034, lay 243, chan 1648, form 2584, streams 4202; net ms refine 61, shape 52, pitch 523, flow 86, index 129; rivers 420, streams 5908 (15350 km), too short for a thread 2, no form arrays 0
+JT seed 777777: build 15622 ms; phases 21/6719/2987/136; form ms room 1207, lay 279, chan 1903, form 2601, streams 4362; net ms refine 62, shape 114, pitch 463, flow 122, index 119; rivers 429, streams 6240 (15762 km), too short for a thread 2, no form arrays 0
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  14:55:14
+   Duration  47.58s (tests 99%, import 1%, transform 1%)
+
+ 14:56:02 up 1 day,  1:16,  1 user,  load average: 4.11, 2.48, 2.01

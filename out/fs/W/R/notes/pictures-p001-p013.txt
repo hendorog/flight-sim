@@ -1,0 +1,25 @@
+wind: one winding gravel river down the floor before and after. After: the bed swings from the left wall in the foreground to the middle and right of the floor further up; fields on both sides; no white. The far reach's small S-bends are gentler.
+42-valley-head: after, the river is a smoother single gravel thread crossing the floor; the left tributary is a pale stream joining across the fields. The junction blends.
+floor: after, a single gravel river swinging across the floor; a tributary still joins diagonally across the fields on the right.
+42-V64-R: the near-straight pale bed with a centre thread remains (a little road-like); after its edges are smoother and the bars are fewer.
+42-V141-wide: angular wedge bars become a smooth-edged pale bed of changing width; a new side stream comes down the valley at the right.
+1-V194-wide: FIXED - the toothed decal edge (triangular pale wedges) becomes a smooth gravel bed with gentle width changes.
+777777-V215-wide: the wide gravel bed thinning to a thread becomes a single winding gravel channel; the two side-by-side channels before the junction now read as one channel with a parallel pale strip near the junction (weaker double).
+p7-8: from above: the broader river with gentle bends becomes a river with bigger loops of different sizes; the spike star at the centre confluence is gone (the beds blend).
+P7a: from above: the east meanders kept, now as bright white-rimmed hairpins of similar size (a regular train); the north river's short double threads are gone; the straight north-west chain remains.
+om-hill: the straight cleft of separate gravel patches becomes a continuous thin channel, still ruler-straight (Part S's course).
+om-plains: a meandering river with point bars of different sizes, before and after; after the bed edges are smoother. Pass.
+om-lowland: before a winding stream in a patchy corridor; after a smoother, less sinuous dark stream with a broad pale-green corridor. Less organic than before.
+om-mtnfloor: before a gravel bed mid-floor; after a single thread that swings from the middle to the left side of the floor; a side stream at bottom right now joins down a straight line.
+j1-mtn: FIXED - the triangular wedge bars become a smooth-edged gravel bed of changing width; the thread stays continuous.
+j42-mtn: a winding gravel river with a continuous thread, before and after; after it sits nearer the left of the farmed floor in the foreground and crosses further up. Pass.
+j42-plains: still a train of similar tight loops (the drawn snake), now with smooth pale rims. Not fixed.
+j777777-mtn: FIXED - the straight-edged triangular bars alternating side to side become one smooth gravel bed with a continuous thread; the side stream joining at bottom right blends.
+j777777-plains: big meanders of different sizes, before and after; after the pale rim is one-sided (point bars) rather than even. Mostly organic.
+w42-perched1: one meandering river; after it is narrower, with gravel on the inside of bends and a pale strip along one bank in the foreground. Pass.
+bw-1-82950, bw-7-33475: the river is out of frame, before and after; no wall.
+bw-1-18572: the jagged spiky bar at bottom left (before) is gone: the river has moved out of the frame; fields only.
+s7-785lake: one stream down the floor; after it is a straighter pale line along the valley foot (more ruled than before).
+w1-stepup3: the gravel stream along the valley foot, before and after; after smoother.
+n1-pool: a winding stream down the floor; after one channel nearer the right wall with smoother edges. Pass.
+n42-pool: the natural lake; after a stream below it is more visible down the right. Pass.

@@ -1,0 +1,25 @@
+/usr/lib64/python3.14/site-packages/numpy/lib/_function_base_impl.py:1317: RuntimeWarning: divide by zero encountered in divide
+  a = -(dx2) / (dx1 * (dx1 + dx2))
+/usr/lib64/python3.14/site-packages/numpy/lib/_function_base_impl.py:1318: RuntimeWarning: divide by zero encountered in divide
+  b = (dx2 - dx1) / (dx1 * dx2)
+/usr/lib64/python3.14/site-packages/numpy/lib/_function_base_impl.py:1319: RuntimeWarning: divide by zero encountered in divide
+  c = dx1 / (dx2 * (dx1 + dx2))
+/usr/lib64/python3.14/site-packages/numpy/lib/_function_base_impl.py:1328: RuntimeWarning: invalid value encountered in add
+  out[tuple(slice1)] = a * f[tuple(slice2)] + b * f[tuple(slice3)] \
+/usr/lib64/python3.14/site-packages/numpy/lib/_function_base_impl.py:1328: RuntimeWarning: invalid value encountered in multiply
+  out[tuple(slice1)] = a * f[tuple(slice2)] + b * f[tuple(slice3)] \
+/usr/lib64/python3.14/site-packages/numpy/lib/_function_base_impl.py:1329: RuntimeWarning: invalid value encountered in multiply
+  + c * f[tuple(slice4)]
+/home/roger/github/fs-exp/round-w-rs/out/fs/W/R/chk3/om: rivers 41351 km
+  wet W CV per km p50            0.207
+  bed W CV per 5 km p50          0.282
+  edge roughness / W p50         0.092
+  wet share p50 (p10-p90)        0.56 (0.33-0.78)
+  kinks R<W per 10 km            3.20
+  Rc p10 / W                     3.43
+  sinuosity 1 km p50 (p90)       1.064 (1.207)
+  lambda CV along a line p50     0.470 (13949 lines)
+  sharp bed corners per 10 km    12.84
+  white (steepness >= 0.5, rapids) on S < 0.02   0.3 %
+  running-water look (>= 0.2) on S < 0.02        0.9 %
+  longest straight / W p50 (p95) 69.5 (482.8)
