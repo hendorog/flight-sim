@@ -50,6 +50,10 @@ export interface RiverHit {
   /** Asked of a seeded world's query (an input, m): the bed's edges as their mean over this much of the line either
    * side (a coarse tile's vertex spacing: no bar or bay finer than the tile is drawn). */
   smooth?: number;
+  /** Asked by what paints or covers the bed (the ground's paint, its cover, its trees): inside a braided bed's ribbon
+   * (channelForm.ts braidTwin) dist and side are its place from the bed's middle, bedShift 0 and bed its half-width - the
+   * bed the ribbon draws, not the one the nearest point of its wandering main thread gives. */
+  bedFrame?: boolean;
 }
 
 /** Result of a valley-axis query: the smooth line the floodplain and valley walls are carved about. */

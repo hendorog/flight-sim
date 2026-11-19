@@ -1208,7 +1208,7 @@ export function makeSample(): TerrainSample {
   return { ground: 0, standing: SEA_LEVEL, river: -Infinity, airportBlend: 1, riverDist: Infinity, riverSigned: 0, riverHalfWidth: 0, riverArc: 0, approach: 0 };
 }
 
-const riverHit: RiverHit = { dist: Infinity, level: 0, halfWidth: 0, s: 0, side: 0, beyondSource: 0 };
+const riverHit: RiverHit = { dist: Infinity, level: 0, halfWidth: 0, s: 0, side: 0, beyondSource: 0, bedFrame: true };
 const valleyHit: ValleyHit = { dist: Infinity, level: 0, floodplain: 0 };
 const oxbowHit: OxbowHit = { dist: Infinity, level: 0, halfWidth: 0, depth: 0 };
 

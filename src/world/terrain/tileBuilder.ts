@@ -131,7 +131,7 @@ export const RIVER_UNITS = 8;
 /** Signed river distances are clamped to this, m (also used where the river is out of reach). */
 export const RIVER_FAR = 4000;
 
-const riverScratch: RiverHit = { dist: Infinity, level: 0, halfWidth: 0, s: 0, side: 0, beyondSource: 0 };
+const riverScratch: RiverHit = { dist: Infinity, level: 0, halfWidth: 0, s: 0, side: 0, beyondSource: 0, bedFrame: true };
 const flowScratch: FlowHit = { dist: Infinity, side: 0, line: -1, kind: 0, index: 0, s: 0, level: 0, halfWidth: 0, gradient: 0, steepness: 0, regime: 0, speed: 0, dirN: 0, dirE: 0 };
 /**
  * The flow attribute is filled out to this far beyond a channel's half-width (plus two vertex spacings), m: past the

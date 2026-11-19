@@ -2332,12 +2332,14 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     out.side = 0;
     out.beyondSource = 0;
     let best = -1;
+    let bestI = 0;
     let bestD = Infinity;
     wideIndex.perLine(pn, pe, (li, i, t, dist, side, u) => {
       // A stream counts within its own reach only (its segments are listed no further out).
       if (dist < bestD && (li < nR || dist <= STREAM_REACH)) {
         bestD = dist;
         best = li;
+        bestI = i;
         const r = allLines[li];
         out.dist = dist;
         out.side = side;
@@ -2365,7 +2367,17 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       }
       return false;
     });
-    if (best >= 0 && bestD <= CHANNEL_REACH) return out;
+    if (best >= 0 && bestD <= CHANNEL_REACH) {
+      // (Asked for the bed as drawn: a braided bed's own frame, where its ribbon is.)
+      const bz = out.bedFrame ? formOfLine[best].braid : undefined;
+      if (bz && (bz.K[bestI] > 1 || bz.K[bestI + 1] > 1) && rowFrame(bz.rows.n, bz.rows.e, bz.rows.tn, bz.rows.te, rowAt(bz.rows.idx, bestI), pn, pe) && braidTwin(bz.twin, rowHit.j, pn, pe)) {
+        out.dist = Math.abs(twinHit.u * twinHit.hb);
+        out.side = twinHit.u >= 0 ? 1 : -1;
+        out.bedShift = 0;
+        out.bed = twinHit.hb;
+      }
+      return out;
+    }
     out.dist = Infinity;
     out.side = 0;
     out.beyondSource = 0;
