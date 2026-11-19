@@ -810,7 +810,7 @@ const BAR_DAMP = 0.18;
 /** A braided bed's gravel is damp this far beside its threads, m. */
 const BRAID_DAMP_M = 6;
 /** A braided bed's other threads are drawn this deep, m (the light reaching their gravel and back). */
-const BRAID_DEPTH = 0.3;
+const BRAID_DEPTH = 0.15;
 /** A seeded world's ribbon spans its bed (ribbonRows: vDepth -1 at the bed's edge, 0 at the water's): from
  * BAR_NEAR m away it draws the gravel bars beyond its water itself, all of them from BAR_FAR - the terrain's own
  * paint of them (terrainMaterial.ts, faded out over the same distances) comes in triangles coarser than the bars,

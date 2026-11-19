@@ -645,8 +645,10 @@ const BRAID_WIG_AMP = 0.6;
  * (between their middles) is drawn onto it, all the way within BRAID_JOIN[0]: the two are one channel there - no two
  * threads run side by side a width or two apart (a doubled channel); where they close in, one joins the other. */
 const BRAID_JOIN = [0.6, 3.5];
-/** Thread k's width is the main one's times BRAID_W (k + 1)^-0.55, varied along it. */
+/** Thread k's width is the main one's times BRAID_W (k + 1)^-0.55, varied along it by exp(BRAID_W_SPREAD n), n read
+ * about every fifth of a phase unit (a thread pinches and swells within a few hundred metres). */
 const BRAID_W = 0.9;
+const BRAID_W_SPREAD = 0.5;
 /** Threads beside the main one, at most. */
 export const BRAID_MAX = 7;
 /** A thread's middle keeps within this share of the way from its bed's middle to its edge. */
@@ -693,7 +695,7 @@ export function braidAt(u: number, um: number, hb: number, K: number, ph: number
     if (p <= 0) break;
     const uk = BRAID_SPAN * bSpread(bNoise(ph + 31.1 * k, 100 + k));
     const lens = BRAID_LENS_AMP * 2 * hb * bNoise(ph * (BRAID_WAVE / BRAID_LENS) + 7.7 * k, 150 + k);
-    const wk = w * BRAID_W * Math.pow(k + 1, -0.55) * Math.exp(0.3 * bNoise(ph * 3.1 + 3.3 * k, 300 + k)) * (0.3 + 0.7 * p);
+    const wk = w * BRAID_W * Math.pow(k + 1, -0.55) * Math.exp(BRAID_W_SPREAD * bNoise(ph * 5.3 + 3.3 * k, 300 + k)) * (0.3 + 0.7 * p);
     const wig = BRAID_WIG_AMP * wk * bNoise(ps * (1.6 + 0.4 * bHash(k, 401)) + 11.3 * k, 400 + k);
     let xk = braidXs[0] + p * (uk * hb + lens + wig - braidXs[0]);
     // (Drawn onto each thread before it in turn within BRAID_JOIN of their widths: the two are one channel there.)
@@ -922,7 +924,7 @@ float braidAt(float u, float um, float hb, float K, float ph, float ps, float w,
     if (p <= 0.0) break;
     float uk = ${f(BRAID_SPAN)} * bSpread(bNoise(ph + 31.1 * fk, 100 + k));
     float lens = ${f(BRAID_LENS_AMP * 2)} * hb * bNoise(ph * ${f(BRAID_WAVE / BRAID_LENS)} + 7.7 * fk, 150 + k);
-    float wk = w * ${f(BRAID_W)} * pow(fk + 1.0, -0.55) * exp(0.3 * bNoise(ph * 3.1 + 3.3 * fk, 300 + k)) * (0.3 + 0.7 * p);
+    float wk = w * ${f(BRAID_W)} * pow(fk + 1.0, -0.55) * exp(${f(BRAID_W_SPREAD)} * bNoise(ph * 5.3 + 3.3 * fk, 300 + k)) * (0.3 + 0.7 * p);
     float wig = ${f(BRAID_WIG_AMP)} * wk * bNoise(ps * (1.6 + 0.4 * bHash(k, 401)) + 11.3 * fk, 400 + k);
     float xk = xs[0] + p * (uk * hb + lens + wig - xs[0]);
     for (int j = 0; j < k; j++) xk = xs[j] + (xk - xs[j]) * smoothstep(${f(BRAID_JOIN[0])}, ${f(BRAID_JOIN[1])}, abs(xk - xs[j]) / (0.5 * (wk + ws[j])));
