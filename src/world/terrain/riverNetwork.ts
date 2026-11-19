@@ -11,7 +11,7 @@
 
 import { hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
-import { cellEast, cellNorth, DRAIN_CELL, LAKE_RASTER, type Drainage, type DrainLine, type LakeMask } from './drainage';
+import { cellEast, cellNorth, LAKE_RASTER, type Drainage, type DrainLine, type LakeMask } from './drainage';
 import { channelCourse, courseSpline } from './erosion';
 import { bedWidth, breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, REGIME, refineSteep, STREAM_SPACING, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
 import { BED_BIG, beltOffsets, bendOf, fitSwing, formOf, hSmooth, layThread, sineAmplitude, stepWhite, threadDepth, type ThreadLaw } from './channelForm';
@@ -496,7 +496,6 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   // from the model's floors).
   markFloor?.(laid.map((a, li) => ({ north: a.north, east: a.east, half: floorHalf(d, lines[li], a.area, a.t), area: a.area })));
   for (let li = 0; li < lines.length; li++) {
-    const L = lines[li];
     const { north, east, s, area } = laid[li];
     const count = north.length;
     // Water level: the running minimum of the natural terrain downstream, level across lakes, meeting the parent.
