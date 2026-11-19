@@ -14,7 +14,7 @@ import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear
 import { cellEast, cellNorth, LAKE_RASTER, type Drainage, type DrainLine, type LakeMask } from './drainage';
 import { channelCourse, courseSpline } from './erosion';
 import { bedWidth, breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, REGIME, refineSteep, STREAM_SPACING, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
-import { BED_BIG, beltOffsets, bendOf, fitSwing, formOf, hSmooth, layThread, sineAmplitude, stepWhite, threadDepth, type ThreadLaw } from './channelForm';
+import { BED_BIG, beltOffsets, bendOf, fitSwing, formOf, hAt, layThread, sineAmplitude, stepWhite, threadDepth, type ThreadLaw } from './channelForm';
 import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
 import { buildFaults, FaultIndex } from './faults';
 import { pitchPool, type PitchReport } from './pitchPool';
@@ -2005,7 +2005,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const pn = c.north[i];
       const pe = c.east[i];
       const Wh = H_CELL * formWs(L.A[i]);
-      const vary = Math.exp(WIDTH_SPREAD * hSmooth(pn / (2 * Wh), pe / (2 * Wh), 1));
+      const vary = Math.exp(WIDTH_SPREAD * hAt(pn, pe, 2 * Wh, 1));
       const Wa = Wb * vary;
       const w = 2 * hw * vary;
       // The sample's direction, for its banks' own points.
@@ -2043,7 +2043,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const wide = smooth(BED_WIDE[0], BED_WIDE[1], Wa / Math.max(0.5, w));
       const stay = 0.5 * spare * Math.tanh(dAx / Math.max(0.5, 0.5 * spare));
       const bent = smooth(0.15, 0.6, k);
-      const alt = Math.tanh(2.5 * hSmooth(c.s[i] / (ALT_BARS * Math.max(1, Wa)), 0.37 * li, 5));
+      const alt = Math.tanh(2.5 * hAt(c.s[i], 1000 * li, ALT_BARS * Math.max(1, Wa), 5));
       const side1 = bent * Math.max(-1, Math.min(1, kap / 0.3)) + (1 - bent) * alt;
       const mid = wide * stay + (1 - wide) * 0.5 * spare * side1;
       const bar = spare;
@@ -2052,9 +2052,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         const base = Math.max(0.5 * w, side * mid + 0.5 * (w + bar));
         const en = pn + side * rn * base;
         const ee = pe + side * re * base;
-        const wetE = 0.5 * w * (1 + wetSpread * Math.max(-1.25, Math.min(1.25, hSmooth(en / Wh, ee / Wh, 3))));
+        const wetE = 0.5 * w * (1 + wetSpread * Math.max(-1.25, Math.min(1.25, hAt(en, ee, Wh, 3))));
         const room = side > 0 ? roomR : roomL;
-        const bed = Math.max(wetE + 0.3, Math.min(Math.max(room, wetE + 0.3), base + 0.2 * bar * hSmooth(en / (2 * Wh), ee / (2 * Wh), 2)));
+        const bed = Math.max(wetE + 0.3, Math.min(Math.max(room, wetE + 0.3), base + 0.2 * bar * hAt(en, ee, 2 * Wh, 2)));
         if (side > 0) {
           out.bedR[i] = bed;
           out.wetR[i] = wetE;

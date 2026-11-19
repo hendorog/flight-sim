@@ -82,6 +82,24 @@ export function hSmooth(x: number, y: number, salt: number): number {
 }
 
 /**
+ * hSmooth read at world metres (x, y) with a correlation length `scale` (m) that may change from point to point (a line's
+ * catchment's width along it): blended between the two fixed octaves 2^k <= scale < 2^(k + 1) by its log, each octave a
+ * field of its own, kept to unit spread. Smooth along a line however its scale changes - x / scale was not: where a
+ * river's catchment grew 4 % a sample its widths and bed edges jumped from sample to sample (saw-tooth, stair-cornered
+ * edges), the argument moving a cell or more between samples 25 m apart.
+ */
+export function hAt(x: number, y: number, scale: number, salt: number): number {
+  const L = Math.log2(Math.max(1e-3, scale));
+  const k = Math.floor(L);
+  const f = L - k;
+  const t = f * f * (3 - 2 * f);
+  const s0 = Math.pow(2, k);
+  const a = hSmooth(x / s0, y / s0, salt + 0.37 * k);
+  const b = hSmooth(x / (2 * s0), y / (2 * s0), salt + 0.37 * (k + 1));
+  return ((1 - t) * a + t * b) / Math.sqrt((1 - t) * (1 - t) + t * t);
+}
+
+/**
  * The heterogeneity field: a seeded, stationary fBm of unit variance and zero mean, its correlation length one unit.
  * Callers pass world coordinates divided by the scale that matters (twice the local width for a bank, a wavelength
  * for a bend) and a salt that separates the uses.
