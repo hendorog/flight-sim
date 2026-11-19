@@ -44,7 +44,7 @@ import { debugMacro, hydrology, makeSample, sampleTerrain, terrainHeight } from 
 import type { ChannelNear, ValleyNear } from '../../src/world/terrain/hydrology';
 import { AIRPORT } from '../../src/core/world';
 import { setWorldSeed } from '../../src/world/worldSeed';
-import { streamDebug } from '../../src/world/terrain/streams';
+import { streamDebug, streamHeads } from '../../src/world/terrain/streams';
 
 const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
 type Line = { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; kind?: number; joins?: number; area?: Float64Array; wetR?: Float32Array; wetL?: Float32Array };
@@ -63,6 +63,10 @@ it('low line', () => {
   const pad = Number(env.LL_PAD ?? 4000);
   const area = env.LL_AREA ? (() => { const [sd, rest] = env.LL_AREA!.split(':'); const v = rest.split(',').map(Number); return { seed: Number(sd), f1: [v[0], v[1]], f2: [v[2], v[3]], sum: v[4] }; })() : null;
   const areaRun = Number(env.LL_AREA_RUN ?? 300);
+  // (LW_LOWLAND: the streams' head catchment off the threshold slopes, km² (streams.ts streamHeads); LL_DRYONLY: the dry
+  // floors only, no walk along the lines.)
+  if (env.LW_LOWLAND) streamHeads.lowland = Number(env.LW_LOWLAND);
+  if (env.LW_STEM) streamHeads.stem = env.LW_STEM === '1';
   for (const seed of (env.LL_SEEDS ?? '42').split(',').map(Number)) {
     courses.clear();
     const t0 = performance.now();
@@ -125,7 +129,7 @@ it('low line', () => {
     const pos: Array<{ li: number; s: number; A: number; pos: number; fw: number; bed: number; pos2: number; fw2: number }> = [];
     let skipped = { end: 0, conf: 0, standing: 0 };
     const t1 = performance.now();
-    for (let li = 0; li < L.length; li++) {
+    for (let li = 0; li < (env.LL_DRYONLY ? 0 : L.length); li++) {
       const r = L[li];
       const m = r.s.length;
       if (m < 3) continue;

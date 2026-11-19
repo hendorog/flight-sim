@@ -1430,7 +1430,6 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         offR[i] = (t.north[i] - st.north[k] - tn * u) * (-te / tl) + (t.east[i] - st.east[k] - te * u) * (tn / tl);
       }
       const held = st.held > 0 ? oldS[Math.min(m - 1, st.held - 1)] : -1;
-      const chainS = st.chainS;
       st.area = at(st.area);
       st.breach = at(st.breach);
       st.cut = at(st.cut);
@@ -1444,7 +1443,6 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         while (h < n && vs[h] <= held + 1e-6) h++;
         st.held = Math.max(1, h);
       }
-      if (chainS >= 0) st.chainS = sampleAt(vs, sNew, chainS);
       remap[j] = (sv: number): number => sampleAt(vs, sNew, sv);
       // (Its room about the thread where it now runs, for the form pass: the course's, less the thread's offset.)
       lineRoom[nR + j] = {
@@ -1500,7 +1498,6 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
           st.breach = st.breach.slice(0, n);
           st.cut = st.cut.slice(0, n);
           if (st.held > n) st.held = n;
-          if (st.chainS >= 0) st.chainS = Math.min(st.chainS, st.s[n - 1]);
           st.joinS = cut.s;
           m = n;
           endTrims.n++;
@@ -1550,7 +1547,6 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       st.east = Float64Array.from(ee);
       const s2 = new Float64Array(nn.length);
       for (let i = 1; i < nn.length; i++) s2[i] = s2[i - 1] + Math.hypot(nn[i] - nn[i - 1], ee[i] - ee[i - 1]);
-      if (st.chainS >= 0) st.chainS = Math.min(st.chainS, s2[s2.length - 1]);
       st.s = s2;
     }
     formMs.streams = performance.now() - tS0;
@@ -1583,8 +1579,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     lipsOf[li] = [];
   }
   const allLines = [...rivers, ...streamLines];
-  /** Whether line li is a gully chain's stream (streams.ts, gullies.ts). */
-  const isChain = (li: number): boolean => li >= nR && traced.streams[li - nR].chainS >= 0;
+  /** Whether line li is a stream (streams.ts: every one comes down the drawn ground's own routing, in the mountains the
+   * threshold slopes' V's). */
+  const isChain = (li: number): boolean => li >= nR;
   const joinsOf = (li: number): number => (li < nR ? lines[li].joins : streamJoins[li - nR]);
   const joinSOf = (li: number): number => {
     if (li >= nR) return traced.streams[li - nR].joinS;

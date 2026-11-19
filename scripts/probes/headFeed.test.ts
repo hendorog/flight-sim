@@ -5,7 +5,11 @@
 import { it } from 'vitest';
 import { hydrology, naturalHeight } from '../../src/world/terrain/heightfield';
 import { setWorldSeed } from '../../src/world/worldSeed';
+import { streamHeads } from '../../src/world/terrain/streams';
 it('head feed', () => {
+  // (HF_LOWLAND, HF_STEM: streams.ts streamHeads, for a head rule's trade.)
+  if (process.env.HF_LOWLAND) streamHeads.lowland = Number(process.env.HF_LOWLAND);
+  if (process.env.HF_STEM) streamHeads.stem = process.env.HF_STEM === '1';
   for (const seed of (process.env.HF_SEEDS ?? '1,42,777777').split(',').map(Number)) {
     setWorldSeed(seed);
     const L = hydrology.rivers!;
