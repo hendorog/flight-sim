@@ -1,0 +1,18 @@
+seed 1: kind-1 lines 5962; side-by-side runs > 500 m (pairs) 208, 210.2 km; > 1 km 78
+   2450 m: line 1398 beside 1399 from -36412,-105757
+   2400 m: line 6151 beside 6196 from 32238,-2078
+   2050 m: line 4180 beside 4229 from -103524,-105540
+   2000 m: line 2882 beside 2945 from 34100,-123676
+   2000 m: line 2590 beside 2675 from -58202,17493
+seed 42: kind-1 lines 6119; side-by-side runs > 500 m (pairs) 219, 253.9 km; > 1 km 98
+   4050 m: line 4135 beside 4166 from 92542,14028
+   3250 m: line 3963 beside 3969 from 135358,-146616
+   3200 m: line 4457 beside 4465 from -132702,68792
+   3200 m: line 2757 beside 2836 from -147974,7178
+   3200 m: line 2556 beside 2584 from 17034,6889
+seed 777777: kind-1 lines 6327; side-by-side runs > 500 m (pairs) 211, 236.6 km; > 1 km 100
+   2850 m: line 1407 beside 1424 from -27531,-7127
+   2700 m: line 5683 beside 5772 from -39923,78881
+   2700 m: line 3502 beside 3673 from 148164,-119344
+   2650 m: line 5131 beside 5145 from -22059,81577
+   2550 m: line 4490 beside 4643 from -138582,61000

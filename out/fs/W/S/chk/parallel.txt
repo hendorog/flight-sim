@@ -1,0 +1,33 @@
+seed 1: 25 runs > 500 m, 15.50 km; junction approaches (the stream ends on that river) 25, true doubles 0 (0.00 km)
+   stream 5593 by river 211: 1031 m from 146440,-139237 (A 50), ends 0 m from it
+   stream 3389 by river 88: 865 m from 68714,84292 (A 178), ends 0 m from it
+   stream 2943 by river 88: 745 m from 63057,88936 (A 150), ends 43 m from it
+   stream 5918 by river 19: 727 m from -60676,54642 (A 515), ends 0 m from it
+   stream 5147 by river 166: 692 m from -100583,-18480 (A 32), ends 0 m from it
+   stream 5079 by river 128: 675 m from 37471,20183 (A 43), ends 40 m from it
+   stream 5593 by river 211: 660 m from 145009,-139221 (A 54), ends 0 m from it
+   stream 925 by river 2: 652 m from -23494,-50738 (A 326), ends 37 m from it
+   stream 4806 by river 49: 623 m from 84676,-120460 (A 219), ends 37 m from it
+   stream 5456 by river 264: 592 m from 97876,-67358 (A 63), ends 39 m from it
+seed 42: 26 runs > 500 m, 16.98 km; junction approaches (the stream ends on that river) 26, true doubles 0 (0.00 km)
+   stream 5410 by river 9: 1102 m from -101718,62543 (A 1518), ends 43 m from it
+   stream 2992 by river 175: 920 m from -72400,-111877 (A 30), ends 28 m from it
+   stream 5009 by river 339: 822 m from -120271,-155199 (A 47), ends 0 m from it
+   stream 991 by river 288: 809 m from -19695,-113055 (A 33), ends 19 m from it
+   stream 4867 by river 225: 799 m from 18970,93925 (A 49), ends 24 m from it
+   stream 5931 by river 82: 747 m from -72329,-47684 (A 184), ends 26 m from it
+   stream 3157 by river 98: 731 m from -54786,-19735 (A 34), ends 37 m from it
+   stream 5715 by river 304: 689 m from -22397,100352 (A 56), ends 36 m from it
+   stream 5340 by river 121: 686 m from -13738,86010 (A 144), ends 49 m from it
+   stream 1926 by river 238: 685 m from 12246,7849 (A 36), ends 26 m from it
+seed 777777: 30 runs > 500 m, 18.58 km; junction approaches (the stream ends on that river) 30, true doubles 0 (0.00 km)
+   stream 5697 by river 28: 1171 m from -37239,88125 (A 575), ends 0 m from it
+   stream 1840 by river 415: 985 m from -103099,40060 (A 50), ends 21 m from it
+   stream 4824 by river 219: 895 m from -71009,-67853 (A 61), ends 0 m from it
+   stream 1294 by river 2: 848 m from 513,-74420 (A 358), ends 44 m from it
+   stream 4353 by river 28: 693 m from -46945,64833 (A 89), ends 30 m from it
+   stream 5622 by river 325: 690 m from 43616,75441 (A 38), ends 56 m from it
+   stream 1573 by river 237: 666 m from -84645,48364 (A 57), ends 0 m from it
+   stream 3536 by river 126: 664 m from -126916,67499 (A 114), ends 47 m from it
+   stream 6041 by river 213: 659 m from -63283,98923 (A 44), ends 21 m from it
+   stream 4259 by river 1: 614 m from -85658,-1661 (A 5113), ends 0 m from it
