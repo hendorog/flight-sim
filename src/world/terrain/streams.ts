@@ -123,7 +123,7 @@ const ORIGIN = -DOMAIN_HALF;
 const SEA_DEEP = -30;
 /** Probes may change these; the sim never does. `lowland`: the catchment a stream heads at where the threshold slopes
  * did not build the ground (the model's channel area); `stem`: every channel runs up its main stem to the finest
- * channel head (stemHead). */
+ * channel head (stemHead); `beside`: a course joins another it comes beside on its floor. */
 export const streamHeads = { lowland: CHANNEL_AREA, stem: true, beside: true };
 /** The last traceStreams' routing ground (probes: endsGate's notch reaches). */
 export const streamDebug: { route?: (north: number, east: number) => number; src?: string[]; keep?: boolean; routing?: { area: Float32Array; rdir: Int8Array; G: Float64Array; F: Float64Array } } = {};
@@ -290,7 +290,10 @@ export interface StreamReport {
   routingMs?: number;
   /** The lines' raster points laid at the lowest ground across their flow: the ground samples looked at, the points moved. */
   snapSamples?: number;
-  stemDbg?: string[];
+  /** How often LOWLINE's rows fire (probes): heads by the channel-head rule, of them moved up their main stem, rivers'
+   * main stems fed, courses joined to another beside them, hollows on the courses (ponds, cut through, too shallow, on
+   * water), outlets' courses walked and those closed. */
+  lowline?: Record<string, number>;
   snapped?: number;
   /** riverNetwork.ts's sub-phases after the tracing (probes), ms. */
   netMs?: Record<string, number>;
@@ -834,6 +837,8 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
   // leaves it by its own lowest way out (outletPath) and runs on down it.
   const tRt = performance.now();
   const N = R * R;
+  const fires: Record<string, number> = { heads: 0, stemMoved: 0, riverStems: 0, beside: 0, ponds: 0, cutThrough: 0, shallow: 0, onWater: 0, outlets: 0, outletsClosed: 0 };
+  report.lowline = fires;
   /** The water standing at each raster point (a lake's level where it stands over the ground; -Infinity: none). */
   const lakeLevel = (k: number): number => {
     const pool = mask.poolAt(Math.floor(k / R), k % R);
@@ -963,11 +968,17 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     if (hollowDone[h]) return;
     hollowDone[h] = 1;
     const H = hollows[h];
-    if (H.wet) return;
+    if (H.wet) {
+      fires.onWater++;
+      return;
+    }
     const r = recv(H.out);
     const into = r >= 0 && isOutlet(r) ? F[r] : -Infinity;
     const level = Math.max(H.W - breachAllowance(area[H.out]), into);
-    if (level - H.bottom < LAKE_MIDDLE_DEPTH) return;
+    if (level - H.bottom < LAKE_MIDDLE_DEPTH) {
+      fires.shallow++;
+      return;
+    }
     const dom: number[] = [];
     let wet = 0;
     for (const q of H.pts) {
@@ -975,13 +986,18 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       dom.push(q);
       if (Gr[q] < level) wet++;
     }
-    if (wet < 2) return;
+    if (wet < 2) {
+      fires.shallow++;
+      return;
+    }
     if (wet * cellKm2 > POND_KEEP && into < level && H.W - H.bottom <= POND_SILL_CUT) {
       report.pondWhy ??= {};
       report.pondWhy.cutThrough = (report.pondWhy.cutThrough ?? 0) + 1;
+      fires.cutThrough++;
       return;
     }
     hollowLevel[h] = level;
+    fires.ponds++;
     pondOfHollow[h] = mask.addPond(dom, dom.map((q) => Gr[q]), level, H.out);
     (report.filledPonds ??= []).push(pondOfHollow[h], dom.length, level, H.W, ORIGIN + Math.floor(H.pts[0] / R) * LAKE_RASTER, ORIGIN + (H.pts[0] % R) * LAKE_RASTER, breachAllowance(area[H.out]), into, H.bottom, wet);
   };
@@ -1045,6 +1061,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
           path.push(q);
           take(q);
           joined = { kind: 'channel', line: -c, idx: onCourseAt[q], pool: -1, ok: true };
+          fires.beside++;
         }
         if (joined) {
           end = joined;
@@ -1141,10 +1158,12 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       for (const k of t.path) if (onCourse[k] === ci) onCourse[k] = 0;
       courseLv.pop();
       report.outletNone++;
+      fires.outletsClosed++;
       report.outletHigh++;
       continue;
     }
     report.outlets++;
+    fires.outlets++;
     report.outletSteps += t.path.length;
     courses.push({ path: t.path, pathA: t.path.map((k) => a0 + area[k]), end: t.end, area0: Math.max(1, a0), pool: id, first, avoid: null, lakeAvoid: lakeWalls.size ? lakeWalls : null });
   }
@@ -1182,7 +1201,13 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
     return k;
   };
   const headSet = new Set<number>();
-  for (let k = 0; k < N; k++) if (area[k] >= headArea(k) && !chDonor[k] && rdir[k] >= 0) headSet.add(streamHeads.stem ? stemHead(k) : k);
+  for (let k = 0; k < N; k++)
+    if (area[k] >= headArea(k) && !chDonor[k] && rdir[k] >= 0) {
+      const h = streamHeads.stem ? stemHead(k) : k;
+      fires.heads++;
+      if (h !== k) fires.stemMoved++;
+      headSet.add(h);
+    }
   // (A river is a channel too: its main stem above its head - where its own head has no channel above it - is a stream
   // from there.)
   if (streamHeads.stem) {
@@ -1200,8 +1225,10 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         }
       if (k0 < 0) continue;
       const h = stemHead(k0);
-      (report.stemDbg ??= []).push(`${li}:${area[k0].toFixed(1)}/${h === k0 ? 'same' : occ[h] !== 0 ? 'occ' + occLine(occ[h]) : 'ok'}/${area[h].toFixed(1)}`);
-      if (h !== k0 && occ[h] === 0) headSet.add(h);
+      if (h !== k0 && occ[h] === 0) {
+        headSet.add(h);
+        fires.riverStems++;
+      }
     }
   }
   const lheads = [...headSet];

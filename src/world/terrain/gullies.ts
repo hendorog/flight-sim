@@ -1,9 +1,9 @@
 // The gully network of a seeded world's mountains (foundation streams, out/fs/REPORT.md): the threshold hillslopes'
 // own routing (hillslopes.ts SlopeField.dir, the steepest descent over the ground the pass built, on the 250 m fine
-// grid) with its catchment summed down it. Every V the pass cut runs along it, so the water does too:
-//   - streams.ts starts a traced stream (a ribbon, its channel carved) where the pass makes a chain a channel (its
-//     channel-head catchment, hillslopes.ts SlopeParams.ac: the V begins there) and follows the chain down, sized by
-//     the chain's own catchment;
+// grid) with its catchment summed down it. Every V the pass cut runs along it:
+//   - streams.ts reads where the pass built the ground (dir set): a stream heads there at the pass's channel-head
+//     catchment (SlopeParams.ac); the streams themselves run on the drawn ground's own routing (LOWLINE), not on these
+//     chains;
 //   - rills.ts reads a chain's catchment for a rill whose catchment reaches beyond its window (it would otherwise be
 //     drawn at its window's cap), so the painted streams are sized as the ribbons are;
 //   - placement.ts keeps trees off the beds of the bigger painted ones.

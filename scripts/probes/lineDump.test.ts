@@ -3,11 +3,14 @@
 import { it } from 'vitest';
 import { hydrology } from '../../src/world/terrain/heightfield';
 import { setWorldSeed } from '../../src/world/worldSeed';
+import { streamHeads } from '../../src/world/terrain/streams';
 const fs = (await import(/* @vite-ignore */ 'node:fs' as string)) as { writeFileSync(p: string, d: string): void; mkdirSync(p: string, o: object): void };
 const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
 it('line dump', () => {
   const out = env.LD_OUT ?? 'out/fs/lines';
   fs.mkdirSync(out, { recursive: true });
+  // (LD_BESIDE: streams.ts streamHeads.beside, for a rule's trade.)
+  if (env.LD_BESIDE) streamHeads.beside = env.LD_BESIDE === '1';
   for (const seed of (env.LD_SEEDS ?? '42').split(',')) {
     setWorldSeed(seed);
     const lines = (hydrology.rivers ?? []).map((r) => {
