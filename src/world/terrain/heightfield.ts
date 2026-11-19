@@ -1444,7 +1444,9 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     // the points it was traced on) a low bank is built up, at most STREAM_FILL (not in another channel's water, nor at
     // a mouth on the sea; less what an airfield's blend will raise it by: FIELD_RAISE).
     if (d > wet && !wetOther && out.river === -Infinity && c.level > 0.5 && dryS) {
-      const need = Math.min(c.level + 0.3 + 0.03 * (d - wet), hNatural + STREAM_FILL) - h - blendLift;
+      // (Its bed flat at the bank's foot, rising from its edge: from the water's edge, a gravel bed hundreds of metres wide
+      // rose 3 % across its bars, metres over its water at its edge - its threads trenches in a raised floor.)
+      const need = Math.min(c.level + 0.3 + 0.03 * Math.max(0, d - bed), hNatural + STREAM_FILL) - h - blendLift;
       if (need > 0) h += need * (1 - smooth(bed + STREAM_SMOOTH[0] + 15, bed + STREAM_SMOOTH[1], d)) * open;
     }
     if (d < wet && h < c.level && open >= 1) out.river = Math.max(out.river, c.level);
