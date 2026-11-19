@@ -339,7 +339,7 @@ interface Level {
  * wavelength, swing, curvature cap and room each side read at that distance. High-passed over three wavelengths and
  * scaled into the room half-bend by half-bend.
  */
-function marchLevel(total: number, lam: (sv: number) => number, om: (sv: number) => number, cap: (sv: number) => number, roomL: (sv: number) => number, roomR: (sv: number) => number, dsOf: (sv: number) => number, salt: number, amp?: (sv: number) => number): Level {
+function marchLevel(total: number, lam: (sv: number) => number, om: (sv: number) => number, cap: (sv: number) => number, roomL: (sv: number) => number, roomR: (sv: number) => number, dsOf: (sv: number) => number, salt: number): Level {
   const along: number[] = [0];
   const off: number[] = [0];
   const curv: number[] = [0];
@@ -382,9 +382,7 @@ function marchLevel(total: number, lam: (sv: number) => number, om: (sv: number)
     const j = Math.floor(ph / Math.PI + 0.5);
     const k = Math.floor(ph / Math.PI);
     const rate = base * rateMul(j);
-    // (`amp` scales the swing, never the phase: the bends below keep their places.)
     let w = Math.min(SWING_TOP, w0 * swingMul(k));
-    if (amp) w *= amp(sv);
     // The curvature cap on the swing (not on the step): |dθ/ds| <= w rate (1 + 3 w² / 32) <= cap.
     const c = cap(sv);
     const rMax = base * Math.max(rateMul(k), rateMul(k + 1));
@@ -456,9 +454,9 @@ export interface ThreadLaw {
   Wa: ArrayLike<number>;
   roomL: ArrayLike<number>;
   roomR: ArrayLike<number>;
-  /** A braided bed's main thread (braidAt): its own swing's share (amp2, 1 a single thread's), and how far it wanders
-   * from its belt's line within the bed (wander, m) at the braid's phase (phase, braidWander). Absent: none. */
-  braid?: { amp2: ArrayLike<number>; wander: ArrayLike<number>; phase: ArrayLike<number> };
+  /** A braided bed's main thread (braidAt), added to the thread once laid: the bed's line off the belt's (shift, m),
+   * and how far it wanders about the bed's line (wander, m) at the braid's phase (phase, braidWander). Absent: none. */
+  braid?: { shift: ArrayLike<number>; wander: ArrayLike<number>; phase: ArrayLike<number> };
 }
 
 /**
@@ -513,12 +511,13 @@ export function layThread(axisN: ArrayLike<number>, axisE: ArrayLike<number>, la
   const rL = at(law.roomL);
   const rR = at(law.roomR);
   const yB = at(law.belt);
-  // (A braided bed's main thread wanders its bed as its other threads do: off the belt's line by yT.)
+  // (A braided bed's main thread wanders its bed as its other threads do: off the laid thread by yT - added once the
+  // thread is laid, so its bends and their phase down the line are a single thread's.)
   const br = law.braid;
-  const amp2 = br ? at(br.amp2) : null;
+  const shift = br ? at(br.shift) : null;
   const wander = br ? at(br.wander) : null;
   const wPhase = br ? at(br.phase) : null;
-  const yT = (sv: number): number => (wander && wPhase ? wander(sv) * braidWander(wPhase(sv)) : 0);
+  const yT = (sv: number): number => (shift && wander && wPhase ? shift(sv) + wander(sv) * braidWander(wPhase(sv)) : 0);
   // The axis's own curvature (the valley's bends), smoothed: the levels' curvature budget is what it leaves.
   const m = S.length;
   const kAx = new Float64Array(m);
@@ -556,7 +555,7 @@ export function layThread(axisN: ArrayLike<number>, axisE: ArrayLike<number>, la
   for (let k = 0; k < bend.along.length; k++) {
     const sv = bend.along[k];
     ax.at(sv, o);
-    const y = yB(sv) + bend.off[k] + yT(sv);
+    const y = yB(sv) + bend.off[k];
     // Right of the flow: (-te, tn) in (north, east).
     bn.push(o[0] - o[3] * y);
     be.push(o[1] + o[2] * y);
@@ -599,7 +598,6 @@ export function layThread(axisN: ArrayLike<number>, axisE: ArrayLike<number>, la
     (bs) => rR(vAt(bs)) - yAt(bs),
     (bs) => Math.min(40, Math.max(8, lam2(vAt(bs)) / 12)),
     salt * 3 + 12,
-    amp2 ? (bs) => amp2(vAt(bs)) : undefined,
   );
   const north: number[] = [];
   const east: number[] = [];
@@ -608,10 +606,12 @@ export function layThread(axisN: ArrayLike<number>, axisE: ArrayLike<number>, la
   for (let i = 0; i < thread.along.length; i++) {
     const bs = thread.along[i];
     B.at(bs, o);
-    north.push(o[0] - o[3] * thread.off[i]);
-    east.push(o[1] + o[2] * thread.off[i]);
-    valleyS.push(Math.min(total, Math.max(0, vAt(bs))));
-    off.push(yAt(bs) + thread.off[i]);
+    const v = vAt(bs);
+    const y = thread.off[i] + yT(v);
+    north.push(o[0] - o[3] * y);
+    east.push(o[1] + o[2] * y);
+    valleyS.push(Math.min(total, Math.max(0, v)));
+    off.push(yAt(bs) + y);
   }
   // Its ends on the axis's ends' cross-lines (the march stops within a step of them).
   return { north, east, valleyS, off };

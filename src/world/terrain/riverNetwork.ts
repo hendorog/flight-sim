@@ -1080,11 +1080,12 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
    * floor (beltOffsets: between the offsets that keep the thread's swing and the bed on the floor). `sweep`: how far
    * either side of the belt the water goes (the thread's swing and half its width, or half the bed).
    */
-  const lawAlong = (north: ArrayLike<number>, east: ArrayLike<number>, s: ArrayLike<number>, area: ArrayLike<number>, S: ArrayLike<number>, R: { roomL: Float64Array; roomR: Float64Array; swingL: Float64Array; swingR: Float64Array; fellL: Float64Array; fellR: Float64Array; edgeL: Float64Array; edgeR: Float64Array }, shapes: boolean, salt: number): { law: ThreadLaw; sweep: Float64Array; lam1: Float64Array; floorL: Float64Array; floorR: Float64Array } => {
+  const lawAlong = (north: ArrayLike<number>, east: ArrayLike<number>, s: ArrayLike<number>, area: ArrayLike<number>, S: ArrayLike<number>, R: { roomL: Float64Array; roomR: Float64Array; swingL: Float64Array; swingR: Float64Array; fellL: Float64Array; fellR: Float64Array; edgeL: Float64Array; edgeR: Float64Array }, shapes: boolean, salt: number): { law: ThreadLaw; sweep: Float64Array; lam1: Float64Array; floorL: Float64Array; floorR: Float64Array; bed: Float64Array } => {
     const m = north.length;
     const lam2 = new Float64Array(m);
     const om2 = new Float64Array(m);
     const Wa = new Float64Array(m);
+    const Wa0 = new Float64Array(m);
     const rL = new Float64Array(m);
     const rR = new Float64Array(m);
     const lam1 = new Float64Array(m);
@@ -1106,6 +1107,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       rL[i] = Math.max(0, floorL[i] - 0.5 * w[i]);
       rR[i] = Math.max(0, floorR[i] - 0.5 * w[i]);
       Wa[i] = f.Wa;
+      Wa0[i] = f.Ws;
       lam1[i] = f.lam1;
       lam2[i] = Math.max(LAMBDA_MIN, f.lam2);
       // The room filled from the smallest scale up: the thread keeps its swing (to 0.8 of the room), the belt's bends
@@ -1140,25 +1142,38 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const sw = SWING_REACH * (a1[i] + a2[i]);
       // (Not toward a side whose floor ends falling away under the water - another valley's ground, lower than this
       // water: there the belt goes no further than its course, the low line the levels were read along.)
-      lo[i] = shapes && R.fellL[i] < 0.5 ? Math.max(sw - rL[i], 0.5 * Wa[i] - floorL[i]) : 0;
-      hi[i] = shapes && R.fellR[i] < 0.5 ? Math.min(rR[i] - sw, floorR[i] - 0.5 * Wa[i]) : 0;
+      // (The thread is laid as a single thread's law lays it - its belt's range and its bends' caps from its own active
+      // width W_s: a braided bed's wider bed, its wander or its share changing the belt or the thread would move every
+      // bend below it, the march's phase carried down the line.)
+      lo[i] = shapes && R.fellL[i] < 0.5 ? Math.max(sw - rL[i], 0.5 * Wa0[i] - floorL[i]) : 0;
+      hi[i] = shapes && R.fellR[i] < 0.5 ? Math.min(rR[i] - sw, floorR[i] - 0.5 * Wa0[i]) : 0;
       wave[i] = Math.max(lam1[i], BELT_WAVES * (floorL[i] + floorR[i]));
       sweep[i] = Math.max(a1[i] + a2[i] + 0.5 * w[i], 0.5 * Wa[i]);
     }
     const belt = beltOffsets(s, lo, hi, wave, salt * 3 + 11);
-    const law: ThreadLaw = { belt, lam1, om1, lam2, om2, Wa, roomL: rL, roomR: rR };
+    const law: ThreadLaw = { belt, lam1, om1, lam2, om2, Wa: Wa0, roomL: rL, roomR: rR };
+    // The bed's line: the belt's, a wider bed kept on its floor (a single thread's: the belt's own).
+    const bed = Float64Array.from(belt);
     // A braided bed's main thread (channelForm.ts braidAt): it wanders its bed as the bed's other threads do, off the
-    // belt's line by up to BRAID_SPAN of the way to the bed's edge (less its own half-width), at the braid's phase (one
-    // unit per BRAID_WAVE bed widths); its own swing gives way to that by its share.
+    // bed's line by up to BRAID_SPAN of the way to its edge (less its own half-width and swings), at the braid's phase
+    // (one unit per BRAID_WAVE bed widths) - added to the thread once laid (layThread's yT).
     if (beta.some((b) => b > 0)) {
-      const amp2 = Float64Array.from(beta, (b) => 1 - b);
-      const wander = Float64Array.from(beta, (b, i) => b * BRAID_SPAN * Math.max(0, 0.5 * (Wa[i] - w[i]) - (1 - b) * a2[i]));
+      const shift = new Float64Array(m);
+      const wander = new Float64Array(m);
       const phase = new Float64Array(m);
       phase[0] = braidStart(salt, 0);
-      for (let i = 1; i < m; i++) phase[i] = phase[i - 1] + (s[i] - s[i - 1]) / (BRAID_WAVE * Math.max(0.5 * (Wa[i] + Wa[i - 1]), 4 * w[i]));
-      law.braid = { amp2, wander, phase };
+      for (let i = 0; i < m; i++) {
+        if (shapes && beta[i] > 0) {
+          const F = floorL[i] + floorR[i];
+          bed[i] = Wa[i] >= F ? 0.5 * (floorR[i] - floorL[i]) : Math.max(0.5 * Wa[i] - floorL[i], Math.min(floorR[i] - 0.5 * Wa[i], belt[i]));
+        }
+        shift[i] = bed[i] - belt[i];
+        wander[i] = beta[i] * BRAID_SPAN * Math.max(0, 0.5 * (Math.min(Wa[i], floorL[i] + floorR[i]) - w[i]) - a1[i] - a2[i]);
+        if (i > 0) phase[i] = phase[i - 1] + (s[i] - s[i - 1]) / (BRAID_WAVE * Math.max(0.5 * (Wa[i] + Wa[i - 1]), 4 * w[i]));
+      }
+      law.braid = { shift, wander, phase };
     }
-    return { law, sweep, lam1, floorL, floorR };
+    return { law, sweep, lam1, floorL, floorR, bed };
   };
   /** Each river's floor as its belt shapes it, per axis sample (floorAt): the belt's offset, how far either side of it
    * the water goes, the floor either side of the axis, the bank. */
@@ -1174,7 +1189,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const law = L.law;
     lawAx[li] = { Wa: Float64Array.from(law.Wa), lam2: Float64Array.from(law.lam2), om2: Float64Array.from(law.om2) };
     const bankH = Float64Array.from(a.area, (A, i) => formOf(A, R.S[i], Math.max(FLOOR_MIN, R.roomL[i] + R.roomR[i])).bankH);
-    floorAx[li] = { belt: Float64Array.from(law.belt), sweep: L.sweep, floorL: L.floorL, floorR: L.floorR, bankH, edgeL: R.edgeL, edgeR: R.edgeR };
+    floorAx[li] = { belt: L.bed, sweep: L.sweep, floorL: L.floorL, floorR: L.floorR, bankH, edgeL: R.edgeL, edgeR: R.edgeR };
     formProbe.on?.(li, { north: a.north, east: a.east, s: a.s, area: a.area, level: a.level, S: R.S, roomL: R.roomL, roomR: R.roomR, rL: Float64Array.from(law.roomL), rR: Float64Array.from(law.roomR), Wa: Float64Array.from(law.Wa), lam2: Float64Array.from(law.lam2), om2: Float64Array.from(law.om2), lam1: L.lam1, belt: Float64Array.from(law.belt), fellL: R.fellL, fellR: R.fellR, edgeL: R.edgeL, edgeR: R.edgeR });
     void m;
     const tL0 = performance.now();
