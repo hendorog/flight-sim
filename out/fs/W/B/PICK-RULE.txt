@@ -1,0 +1,22 @@
+Round W braids (exp/round-w-braid): the rule that picks the braided-reach views, written before any sim picture of this
+work was opened. Seeds 1, 42, 777777, 7. Picks are made on the AFTER build by a probe (scripts/probes/braidPick.test.ts),
+and each camera is rendered on before (1d7825d) and after alike; every pick is used, good or bad.
+
+Reach: every 1 km piece of arc of every drawn line (any kind), its state read at its own samples:
+  - braid share b = the mean over the piece of the per-sample braid share the build gives the line (channelForm.ts
+    formOf's pattern share as the ribbon reads it; 0 where the line has none);
+  - water level z and flow direction d = the piece's middle sample's level and the unit chord of the piece.
+Valley class, from the drawn ground (sampleTerrain) at 2500 m either side of the middle, perpendicular to d:
+  rise_L, rise_R = ground there minus z.
+  - mountain valley: min(rise_L, rise_R) >= 150 m;
+  - plains: max(rise_L, rise_R) <= 40 m (and both sides on land: ground > 1 m).
+Picks per seed:
+  - M1, M2: the two mountain-valley pieces with the highest b (ties: larger catchment at the middle first), M2 at least
+    10 km from M1; b must be >= 0.3, else the slot is reported empty;
+  - P1: the plains piece with the highest b (same tie rule), b >= 0.3, else reported empty.
+Cameras (fov 55, ui=0, wx=clear):
+  - plan:    camPos = (n, e, z + 3500), camLook = (n + 1, e, z): straight down over the middle;
+  - oblique: from 2500 m back up the chord (n - 2500 dn, e - 2500 de), at max(z + 1200, ground there + 300), looking at
+             the middle (n, e, z).
+Names: bp<seed>-<M1|M2|P1>-plan, bp<seed>-<M1|M2|P1>-obl.
+Written: 2026-11-20T09:40:03+13:00

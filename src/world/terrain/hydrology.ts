@@ -200,6 +200,17 @@ export interface RiverLine {
   wetR?: Float32Array;
   wetL?: Float32Array;
   depth?: Float32Array;
+  /** ... and on a braided bed its threads at each sample (K, channelForm.ts braidAt: 1 one) and the braid's phases. */
+  braidK?: Float32Array;
+  /** ... the braid share there (channelForm.ts formOf betaLaw, smoothed as K is) ... */
+  braidShare?: Float32Array;
+  braidPh?: Float64Array;
+  braidPs?: Float64Array;
+  /** ... and its rows' directions (channelForm.ts braidRows: the ribbon is drawn on them). */
+  braidTn?: Float32Array;
+  braidTe?: Float32Array;
+  /** ... and which samples are its ribbon's rows (1) where it braids. */
+  braidRow?: Uint8Array;
   /**
    * A stream's pitches and pools (pitchPool.ts): its unit coordinate `sigma` at each sample (unit k's lip at
    * pitchPool.ts lipOf(k), its foot pitchLen(k) on, the next unit's lip at lipOf(k + 1)), and `pitchOn` 1 where its water
@@ -283,6 +294,16 @@ export interface ChannelNear {
   depth?: number;
   bankH?: number;
   bankTan?: number;
+  /** A braided bed's threads where its ribbon draws them (channelForm.ts braidTwin; 0: none, or the main water's own
+   * columns): K, the place across the bed and the main water's middle there (u, um), the bed's half-width, the braid's
+   * phases and the main water's width, m. */
+  braidK?: number;
+  braidU?: number;
+  braidUm?: number;
+  braidHb?: number;
+  braidPh?: number;
+  braidPs?: number;
+  braidW?: number;
   dist: number;
   side: number;
   level: number;

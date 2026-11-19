@@ -22,7 +22,7 @@ import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LAKE_RASTER, LakeMask, RASTER_N
 import { gullyNetOf, setGullyNet } from './gullies';
 import { attachSlopes, buildErosion, floorHalfFor, FLOOR_SMIN, sminUp, CUT_CELL as CUT_CELL_M, CUT_N, erosionGullies, upsample, markCourse, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, slopeSmoothDelta, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
 import { buildNetworkHydrology, floorSet, wallLift, wallStart } from './riverNetwork';
-import { formSection } from './channelForm';
+import { braidAt, braidHit, formSection, threadDepth } from './channelForm';
 import { slopeKey, slopeParams, slopeStats, thresholdSlopes, type FloorLines, type SlopeField } from './hillslopes';
 import { structParams, structureFor } from './structure';
 import { buildFaults } from './faults';
@@ -1450,6 +1450,18 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
       if (need > 0) h += need * (1 - smooth(bed + STREAM_SMOOTH[0] + 15, bed + STREAM_SMOOTH[1], d)) * open;
     }
     if (d < wet && h < c.level && open >= 1) out.river = Math.max(out.river, c.level);
+    // A braided bed's other threads (channelForm.ts braidAt, read in the bed's frame as the ribbon reads them: water.ts
+    // FLOW_BARS): the ground under each cut under the line's water, a trough of the thread's own depth - what the ribbon
+    // draws wet is wet where the sim asks (landing, ditching), and its water shows over the bars close in.
+    if (c.braidK !== undefined && c.braidK > 1 && c.braidHb! > 1) {
+      const inside = braidAt(c.braidU!, c.braidUm!, c.braidHb!, c.braidK, c.braidPh!, c.braidPs!, c.braidW!);
+      if (inside > 0) {
+        const half = braidHit.half;
+        const q = 1 - inside / half;
+        h += (Math.min(h, c.level - threadDepth(2 * half, 0) * (1 - q * q)) - h) * open;
+        if (h < c.level && open >= 1) out.river = Math.max(out.river, c.level);
+      }
+    }
   }
   return h;
 }

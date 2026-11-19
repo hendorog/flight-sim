@@ -48,7 +48,7 @@ describe('running water', () => {
     setWorldSeed(42);
     expect(waterFlows()).toBe(true);
     const river = patch(true);
-    expect(river.key).toContain('-flow2');
+    expect(river.key).toContain('-flow3');
     expect(river.shader.vertexShader).toContain('attribute vec4 aFlow;');
     expect(river.shader.vertexShader).toContain('vFlow = aFlow * vec4(1.0, 6.0, 1.0, 1.0);');
     expect(river.shader.fragmentShader).toContain('varying vec4 vFlow;');
@@ -85,7 +85,7 @@ describe('running water', () => {
       expect(fs).toContain('mix(1.0 - wSeen, 1.0, wIce)');
       expect(fs).toContain('fresnel *= 1.0 - wSpecCut;');
       if (falls) expect(fs).toContain('* (1.0 - fMist * wIce);');
-      expect(key).toMatch(/-ice-?\d+-(flow2|falls2)$/);
+      expect(key).toMatch(/-ice-?\d+-(flow3|falls2)$/);
     }
   });
 

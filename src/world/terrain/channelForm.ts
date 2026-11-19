@@ -11,12 +11,15 @@
 //     high-passed (bounded with no steer), scaled into the room bend by bend, its swing lowered to fit the room and its
 //     curvature capped (no bend tighter than 1.2 active widths).
 //   - formSection: the cross-section about the thread: its wet bed, the bars to the bed's edge, the bank.
-// One water thread on every line: the bed's width follows the law's pattern share (a big gravel river's bed fills most
-// of its floor, the water wandering within it), but no secondary threads are drawn (braids are the owner's open choice).
-// Pure and three.js-free; read only on a seeded world's path (riverNetwork.ts, heightfield.ts carveNetwork).
+//   - braidAt: a braided bed's threads beside its main one (K - 1 of them: the owner, 2026-11-20, 'yes to enabling
+//     braids again'), drawn by the ribbon (water.ts FLOW_BARS, braidGlsl) and cut under the water in the ground
+//     (heightfield.ts carveNetwork, braidTwin: read as the ribbon's triangles read them).
+// The bed's width follows the law's pattern share (a braided bed fills most of its floor, its threads wandering within
+// it). Pure and three.js-free; read only on a seeded world's path (riverNetwork.ts, heightfield.ts carveNetwork).
 
 import { gnoise, hash2i } from './noise';
 import { valueNoise } from './bedrock';
+import { seedSaltX, seedSaltY } from '../worldSeed';
 
 /** From BAR_NEAR m away a seeded world's ribbon draws its bed's gravel bars, all of them from BAR_FAR, and the terrain's
  * paint of them fades out over the same distances (water.ts FLOW_BARS, terrainMaterial.ts): beyond, the terrain's
@@ -121,6 +124,8 @@ export interface Form {
   pi: number;
   sigma: number;
   betaLaw: number;
+  /** Its threads (1: one; a braided bed's more, braidAt). */
+  K: number;
   /** Wet share of the bed (one water thread, a single thread's water: W_s's wet share of W_s, over W_a). */
   phi: number;
   /** Swings (rad) and valley wavelengths (m) of the thread and of the belt's bends (about its line across the floor,
@@ -140,9 +145,10 @@ export interface Form {
 /**
  * The law (DESIGN.md section 2) at catchment A (km²), water gradient S (m/m) and floor width F (m: the room on both
  * sides of the course). W_a here leaves out the heterogeneity term exp(0.45 h), which the caller applies where the
- * channel is. The bed widens from W_s toward the belt B by the fitted pattern share (a steep big gravel river with room:
- * the owner's Rakaia), never past the floor (but a single thread's own bed, which cuts its walls in a V); its water is a
- * single thread's at its catchment, whatever the bed's width.
+ * channel is. The bed widens from W_s toward the belt B by the fitted pattern share (braided: steep for its catchment,
+ * not step-pool, with room - the owner's Rakaia), never past the floor (but a single thread's own bed, which cuts its
+ * walls in a V); its main thread's water is a single thread's at its catchment, whatever the bed's width, and a braided
+ * bed has K threads in all.
  */
 export function formOf(A: number, S: number, F: number): Form {
   const a = Math.max(0.05, A);
@@ -152,10 +158,15 @@ export function formOf(A: number, S: number, F: number): Form {
   const sigma = 0.9 * smooth(0.01, 0.15, s);
   const B = 0.6 * 121 * Math.pow(a, 0.345);
   const rho = F / B;
-  // (The bed's share: the fitted braid share's, on a big river only - the owner's Rakaia (2576 km²) 'has a very wide bed';
-  // the Orari, 'quite similar in size and appearance to our rivers', a single gravel thread that wanders.)
-  const betaLaw = smooth(1, 1.5, pi) * (1 - sigma) * smooth(0.5, 1.5, rho) * smooth(BED_BIG[0], BED_BIG[1], a);
+  // (The braid share from the reach's own state alone: braided over the pattern threshold (pi), unless steep enough to go
+  // step-pool (sigma) or hemmed in (rho: a gorge's floor is narrower than half the belt). It sorts all twelve NZ reaches:
+  // the upper Waimakariri (287 km²), the upper Rakaia and the Rakaia and Rangitata plains 0.8-1; the gorges, the Selwyn,
+  // the Banks Peninsula streams and the torrents 0-0.01. A size gate (BED_BIG, 100-1000 km²) put the upper Waimakariri
+  // at 0.09.)
+  const betaLaw = smooth(1, 1.5, pi) * (1 - sigma) * smooth(0.5, 1.5, rho);
   const Wa = Math.min(Math.pow(Ws, 1 - betaLaw) * Math.pow(B, betaLaw), Math.max(Ws, F));
+  // (Its threads: one, and on a braided bed more with its catchment - the NZ braid index 4.8-8.3 on 1000-2800 km².)
+  const K = 1 + betaLaw * 0.9 * Math.pow(a, 0.25);
   // (One water thread: a single thread's wet share of its own width W_s.)
   const w = (0.8 - 0.4 * smooth(0.7, 1.2, pi)) * Ws;
   const phi = Math.min(1, w / Wa);
@@ -172,11 +183,8 @@ export function formOf(A: number, S: number, F: number): Form {
   const bankTan = Math.tan(((14 + 36 * smooth(0.005, 0.08, s)) * Math.PI) / 180);
   const stepL = Ws * (1.75 + 7.75 * (1 - smooth(0.05, 0.12, s)));
   const stepH = sigma * s * stepL;
-  return { Ws, B, Wa, pi, sigma, betaLaw, phi, om2, lam2, om1, lam1, bankH, bankTan, stepL, stepH };
+  return { Ws, B, Wa, pi, sigma, betaLaw, K, phi, om2, lam2, om1, lam1, bankH, bankTan, stepL, stepH };
 }
-
-/** formOf: a river's bed widens toward its gravel belt from the first catchment (km²) to the second. */
-export const BED_BIG = [100, 1000];
 
 /** The thread's depth at its middle, m: shallow at a crossing, deep in a pool at a bend's apex (kap 0..1). */
 export const threadDepth = (w: number, kap: number): number => (0.15 + w / 20) * (0.7 + 0.6 * kap);
@@ -331,7 +339,7 @@ interface Level {
  * wavelength, swing, curvature cap and room each side read at that distance. High-passed over three wavelengths and
  * scaled into the room half-bend by half-bend.
  */
-function marchLevel(total: number, lam: (sv: number) => number, om: (sv: number) => number, cap: (sv: number) => number, roomL: (sv: number) => number, roomR: (sv: number) => number, dsOf: (sv: number) => number, salt: number): Level {
+function marchLevel(total: number, lam: (sv: number) => number, om: (sv: number) => number, cap: (sv: number) => number, roomL: (sv: number) => number, roomR: (sv: number) => number, dsOf: (sv: number) => number, salt: number, amp?: (sv: number) => number): Level {
   const along: number[] = [0];
   const off: number[] = [0];
   const curv: number[] = [0];
@@ -374,7 +382,9 @@ function marchLevel(total: number, lam: (sv: number) => number, om: (sv: number)
     const j = Math.floor(ph / Math.PI + 0.5);
     const k = Math.floor(ph / Math.PI);
     const rate = base * rateMul(j);
+    // (`amp` scales the swing, never the phase: the bends below keep their places.)
     let w = Math.min(SWING_TOP, w0 * swingMul(k));
+    if (amp) w *= amp(sv);
     // The curvature cap on the swing (not on the step): |dθ/ds| <= w rate (1 + 3 w² / 32) <= cap.
     const c = cap(sv);
     const rMax = base * Math.max(rateMul(k), rateMul(k + 1));
@@ -446,6 +456,9 @@ export interface ThreadLaw {
   Wa: ArrayLike<number>;
   roomL: ArrayLike<number>;
   roomR: ArrayLike<number>;
+  /** A braided bed's main thread (braidAt): its own swing's share (amp2, 1 a single thread's), and how far it wanders
+   * from its belt's line within the bed (wander, m) at the braid's phase (phase, braidWander). Absent: none. */
+  braid?: { amp2: ArrayLike<number>; wander: ArrayLike<number>; phase: ArrayLike<number> };
 }
 
 /**
@@ -500,6 +513,12 @@ export function layThread(axisN: ArrayLike<number>, axisE: ArrayLike<number>, la
   const rL = at(law.roomL);
   const rR = at(law.roomR);
   const yB = at(law.belt);
+  // (A braided bed's main thread wanders its bed as its other threads do: off the belt's line by yT.)
+  const br = law.braid;
+  const amp2 = br ? at(br.amp2) : null;
+  const wander = br ? at(br.wander) : null;
+  const wPhase = br ? at(br.phase) : null;
+  const yT = (sv: number): number => (wander && wPhase ? wander(sv) * braidWander(wPhase(sv)) : 0);
   // The axis's own curvature (the valley's bends), smoothed: the levels' curvature budget is what it leaves.
   const m = S.length;
   const kAx = new Float64Array(m);
@@ -537,7 +556,7 @@ export function layThread(axisN: ArrayLike<number>, axisE: ArrayLike<number>, la
   for (let k = 0; k < bend.along.length; k++) {
     const sv = bend.along[k];
     ax.at(sv, o);
-    const y = yB(sv) + bend.off[k];
+    const y = yB(sv) + bend.off[k] + yT(sv);
     // Right of the flow: (-te, tn) in (north, east).
     bn.push(o[0] - o[3] * y);
     be.push(o[1] + o[2] * y);
@@ -580,6 +599,7 @@ export function layThread(axisN: ArrayLike<number>, axisE: ArrayLike<number>, la
     (bs) => rR(vAt(bs)) - yAt(bs),
     (bs) => Math.min(40, Math.max(8, lam2(vAt(bs)) / 12)),
     salt * 3 + 12,
+    amp2 ? (bs) => amp2(vAt(bs)) : undefined,
   );
   const north: number[] = [];
   const east: number[] = [];
@@ -595,6 +615,340 @@ export function layThread(axisN: ArrayLike<number>, axisE: ArrayLike<number>, la
   }
   // Its ends on the axis's ends' cross-lines (the march stops within a step of them).
   return { north, east, valleyS, off };
+}
+
+// --- Braids (organic-map DESIGN.md section 3; the NZ braided reaches b1, b2, c1, c2 of NZREF-REPORT.md). A braided bed
+// (formOf: K threads) has, beside its main thread (the line, drawn and carved as every line's), K - 1 more: each wanders
+// across the bed over about BRAID_WAVE bed widths, its middle anywhere on it alike (no thread lingers at an edge), so
+// the threads cross and part as they go - a split and a join every few hundred metres; each also strays a little from
+// its own course every BRAID_LENS bed widths (the lens-shaped bars between two threads) and bends on its own (BRAID_WIG).
+// Their widths are a share of the main thread's falling with their rank, each varied along it. Where the bed's share
+// of its threads falls (K toward 1: the braid's ends) a thread draws in to the main one and joins it; where its bed
+// narrows (a junction's blend) the threads draw in with it. One water level across the bed: the threads are the line's
+// own water. Read in the bed's frame: u across it (-1 its right edge... +1 its left: (x - xc) / hb), the braid's phase
+// `ph` along it (per line sample: the integral of ds / (BRAID_WAVE bed widths), from a seeded start) and the bends'
+// phase `ps` (ds / max(BRAID_WIG_MIN, BRAID_WIG main widths)). The ribbon draws them (water.ts FLOW_BARS: braidGlsl, the
+// GLSL twin) and the ground under them is cut under the water (heightfield.ts carveNetwork: braidAt), so what is drawn
+// wet is wet where the sim asks (landing, ditching).
+
+/** A braided bed's threads wander across it over about this many bed widths (the noise's cell). */
+export const BRAID_WAVE = 2.5;
+/** ... strays from its course every BRAID_LENS bed widths or so, by up to about BRAID_LENS_AMP bed widths ... */
+const BRAID_LENS = 0.45;
+const BRAID_LENS_AMP = 0.07;
+/** ... and bends on its own about every BRAID_WIG of the main thread's widths (at least BRAID_WIG_MIN m), by up to
+ * BRAID_WIG_AMP of its own width. */
+export const BRAID_WIG = 25;
+export const BRAID_WIG_MIN = 150;
+const BRAID_WIG_AMP = 0.6;
+/** A thread nearer another before it (the main thread first, then each in turn) than BRAID_JOIN[1] of their mean width
+ * (between their middles) is drawn onto it, all the way within BRAID_JOIN[0]: the two are one channel there - no two
+ * threads run side by side a width or two apart (a doubled channel); where they close in, one joins the other. */
+const BRAID_JOIN = [0.6, 3.5];
+/** Threads beside the main one, at most. */
+export const BRAID_MAX = 7;
+/** A thread's middle keeps within this share of the way from its bed's middle to its edge. */
+export const BRAID_SPAN = 0.85;
+
+const bHash = (i: number, key: number): number => (hash2i(i, key) & 0xffff) / 65536;
+/** A smooth (Catmull-Rom) value noise of unit cells, about -1..1 (its argument kept positive: braid phases start at 64). */
+export function bNoise(t: number, key: number): number {
+  const i = Math.floor(t);
+  const f = t - i;
+  const p0 = 2 * bHash(i - 1, key) - 1;
+  const p1 = 2 * bHash(i, key) - 1;
+  const p2 = 2 * bHash(i + 1, key) - 1;
+  const p3 = 2 * bHash(i + 2, key) - 1;
+  return 0.5 * (2 * p1 + (p2 - p0) * f + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f * f + (3 * p1 - p0 - 3 * p2 + p3) * f * f * f);
+}
+/** bNoise spread evenly over -1..1: an odd quintic fitted to its distribution (10^6 points; flat within 1 %). */
+function bSpread(n: number): number {
+  const n2 = n * n;
+  return Math.max(-1, Math.min(1, n * (1.2194 - n2 * (0.1539 + 0.078 * n2))));
+}
+/** The main thread's wander across its bed (-1..1, layThread's yT) at braid phase ph. */
+export const braidWander = (ph: number): number => bSpread(bNoise(ph, 90));
+/** A line's braid phases start here, a seeded draw on (64, 576) per line: the noise's argument stays positive. */
+export const braidStart = (line: number, which: number): number => 64 + 512 * bHash(line, 70 + which);
+/** braidAt's other output: the half-width of the thread it found, m. */
+export const braidHit = { half: 0 };
+
+/**
+ * How far into the nearest of a braided bed's threads beside its main one a point lies, m (> 0 inside it; its half-width
+ * in braidHit.half): u its place across the bed (-1..1), um the main thread's middle there, hb the bed's half-width (m),
+ * K the bed's threads, ph and ps the braid's phases, w the main thread's width (m). -Infinity: no thread.
+ */
+const braidXs = new Float64Array(BRAID_MAX + 1);
+const braidWs = new Float64Array(BRAID_MAX + 1);
+export function braidAt(u: number, um: number, hb: number, K: number, ph: number, ps: number, w: number): number {
+  let best = -Infinity;
+  braidHit.half = 0;
+  const x = u * hb;
+  braidXs[0] = um * hb;
+  braidWs[0] = w;
+  for (let k = 1; k <= BRAID_MAX; k++) {
+    const p = Math.min(1, K - k);
+    if (p <= 0) break;
+    const uk = BRAID_SPAN * bSpread(bNoise(ph + 31.1 * k, 100 + k));
+    const lens = BRAID_LENS_AMP * 2 * hb * bNoise(ph * (BRAID_WAVE / BRAID_LENS) + 7.7 * k, 150 + k);
+    const wk = w * 0.75 * Math.pow(k + 1, -0.55) * Math.exp(0.3 * bNoise(ph * 3.1 + 3.3 * k, 300 + k)) * (0.3 + 0.7 * p);
+    const wig = BRAID_WIG_AMP * wk * bNoise(ps * (1.6 + 0.4 * bHash(k, 401)) + 11.3 * k, 400 + k);
+    let xk = braidXs[0] + p * (uk * hb + lens + wig - braidXs[0]);
+    // (Drawn onto each thread before it in turn within BRAID_JOIN of their widths: the two are one channel there.)
+    for (let j = 0; j < k; j++) xk = braidXs[j] + (xk - braidXs[j]) * smooth(BRAID_JOIN[0], BRAID_JOIN[1], Math.abs(xk - braidXs[j]) / (0.5 * (wk + braidWs[j])));
+    const lim = Math.max(0, hb - 0.5 * wk - 1);
+    xk = Math.max(-lim, Math.min(lim, xk));
+    braidXs[k] = xk;
+    braidWs[k] = wk;
+    const inside = 0.5 * wk - Math.abs(x - xk);
+    if (inside > best) {
+      best = inside;
+      braidHit.half = 0.5 * wk;
+    }
+  }
+  return best;
+}
+/**
+ * A braided bed's rows (water.ts ribbonRows draws its ribbon on them): each sample's row lies across the line on the
+ * direction from the line's point ROW_TURN bed half-widths behind it to the one as far ahead - a frame as smooth as the
+ * bed is wide, whose rows never cross within it (on each sample's own normal, rows hundreds of metres long crossed where
+ * the thread bent and drew its threads and edges in shards). Returns each row's unit direction (north, east).
+ */
+export function braidRows(north: ArrayLike<number>, east: ArrayLike<number>, s: ArrayLike<number>, hb: ArrayLike<number>): { tn: Float32Array; te: Float32Array } {
+  const m = s.length;
+  const tn = new Float32Array(m);
+  const te = new Float32Array(m);
+  let a = 0;
+  let b = 0;
+  const at = (k: number, sv: number, out: number[]): number => {
+    while (k > 0 && s[k] > sv) k--;
+    while (k < m - 2 && s[k + 1] < sv) k++;
+    const t = Math.min(1, Math.max(0, (sv - s[k]) / Math.max(1e-9, s[k + 1] - s[k])));
+    out[0] = north[k] + (north[k + 1] - north[k]) * t;
+    out[1] = east[k] + (east[k + 1] - east[k]) * t;
+    return k;
+  };
+  const p0 = [0, 0];
+  const p1 = [0, 0];
+  for (let i = 0; i < m; i++) {
+    const d = Math.max(0.5 * ((s[Math.min(m - 1, i + 1)] - s[Math.max(0, i - 1)]) || 1), ROW_TURN * hb[i]);
+    a = at(a, Math.max(0, s[i] - d), p0);
+    b = at(b, Math.min(s[m - 1], s[i] + d), p1);
+    const dn = p1[0] - p0[0];
+    const de = p1[1] - p0[1];
+    const l = Math.hypot(dn, de) || 1;
+    tn[i] = dn / l;
+    te[i] = de / l;
+  }
+  return { tn, te };
+}
+/** braidRows: a row's direction is read ROW_TURN bed half-widths either side. */
+const ROW_TURN = 1;
+/** rowFrame's output: the row j the point lies after, how far on to row j + 1 (t) and its offset right of the line, m. */
+export const rowHit = { j: 0, t: 0, x: 0 };
+/**
+ * Where a point (pn, pe) lies in a braided bed's rows (braidRows: tn, te at each sample; the ribbon's frame): between
+ * rows j and j + 1, found from sample i0 on (the line's nearest), its place between them by its distance along each,
+ * and its offset right of the line there (rowHit). False: not between any two rows within 64 of i0.
+ */
+export function rowFrame(north: ArrayLike<number>, east: ArrayLike<number>, tn: ArrayLike<number>, te: ArrayLike<number>, i0: number, pn: number, pe: number): boolean {
+  const m = north.length;
+  const along = (j: number): number => (pn - north[j]) * tn[j] + (pe - east[j]) * te[j];
+  let j = Math.max(0, Math.min(m - 2, i0));
+  let a0 = along(j);
+  let a1 = along(j + 1);
+  for (let g = 0; g < 64 && !(a0 >= 0 && a1 <= 0); g++) {
+    if (a0 < 0) {
+      if (j === 0) return false;
+      j--;
+      a1 = a0;
+      a0 = along(j);
+    } else {
+      if (j + 2 >= m) return false;
+      j++;
+      a0 = a1;
+      a1 = along(j + 1);
+    }
+  }
+  if (!(a0 >= 0 && a1 <= 0)) return false;
+  const t = a0 - a1 > 1e-9 ? a0 / (a0 - a1) : 0;
+  const ln = north[j] + (north[j + 1] - north[j]) * t;
+  const le = east[j] + (east[j + 1] - east[j]) * t;
+  // (Right of the flow: (-te, tn) in (north, east).)
+  const rn = -(te[j] + (te[j + 1] - te[j]) * t);
+  const re = tn[j] + (tn[j + 1] - tn[j]) * t;
+  const rl = Math.hypot(rn, re) || 1;
+  rowHit.j = j;
+  rowHit.t = t;
+  rowHit.x = ((pn - ln) * rn + (pe - le) * re) / rl;
+  return true;
+}
+
+/** A braided line as its ribbon is drawn (water.ts ribbonRows): its points, its rows' directions (braidRows), its bed's
+ * and water's edges right and left, its threads and phases, per sample; and the samples that are rows (ascending). */
+export interface BraidRibbon {
+  north: ArrayLike<number>;
+  east: ArrayLike<number>;
+  tn: ArrayLike<number>;
+  te: ArrayLike<number>;
+  bedR: ArrayLike<number>;
+  bedL: ArrayLike<number>;
+  wetR: ArrayLike<number>;
+  wetL: ArrayLike<number>;
+  K: ArrayLike<number>;
+  ph: ArrayLike<number>;
+  ps: ArrayLike<number>;
+  rows: Int32Array;
+}
+/** The ribbon's columns across a row (water.ts BED_ACROSS: -3 and 3 the right and left bed edges, -2 and 2 the water's). */
+const TWIN_ACROSS = [-3, -2, -1, 0, 1, 2, 3];
+/** braidTwin's output: what the ribbon's fragment there reads - u, um, the bed's half-width, K, the phases, the main
+ * water's width - and whether it lies in the main water's columns (main). */
+export const twinHit = { u: 0, um: 0, hb: 1, K: 0, ph: 0, ps: 0, w: 0, main: false };
+const twinV = new Float64Array(14 * 2);
+const twinA = new Float64Array(14 * 7);
+/**
+ * The ribbon's own reading of a braided bed at a point (pn, pe): its two rows about it (rowFrame's guess from row r0,
+ * then the quads either side), its vertices and their attributes as ribbonRows builds them, the triangle (as it indexes
+ * them) the point lies in, and the attributes there by its barycentric weights - the GPU's interpolation, so the ground
+ * cut under a thread is cut where the thread is drawn. False: the point is on none of its triangles.
+ */
+export function braidTwin(L: BraidRibbon, r0: number, pn: number, pe: number): boolean {
+  const R = L.rows;
+  for (const dj of [0, -1, 1, -2, 2]) {
+    const q = r0 + dj;
+    if (q < 0 || q + 1 >= R.length) continue;
+    // The quad's 14 vertices (rows q, q + 1; columns across) and their attributes.
+    for (let h = 0; h < 2; h++) {
+      const i = R[q + h];
+      const tl = Math.hypot(L.tn[i], L.te[i]) || 1;
+      const pnn = L.te[i] / tl;
+      const pen = -L.tn[i] / tl;
+      const wR = L.wetR[i];
+      const wL = L.wetL[i];
+      const w = 0.5 * (wR + wL);
+      const mid = 0.5 * (wR - wL);
+      const xc = 0.5 * (L.bedR[i] - L.bedL[i]);
+      const hb = Math.max(1, 0.5 * (L.bedR[i] + L.bedL[i]));
+      for (let c = 0; c < 7; c++) {
+        const a = TWIN_ACROSS[c];
+        const right = a < 0;
+        const wet = right ? wR : wL;
+        const edge = Math.max(wet + 0.3, right ? L.bedR[i] : L.bedL[i]);
+        const ua = Math.abs(a);
+        const x = ua <= 2 ? 0.5 * ua * wet : wet + (ua - 2) * (edge - wet);
+        const off = (right ? -1 : 1) * x;
+        const v = h * 7 + c;
+        twinV[2 * v] = L.north[i] + pnn * off;
+        twinV[2 * v + 1] = L.east[i] + pen * off;
+        const at = 7 * v;
+        twinA[at] = (-off - xc) / hb;
+        twinA[at + 1] = (mid - xc) / hb;
+        twinA[at + 2] = hb;
+        twinA[at + 3] = L.K[i];
+        twinA[at + 4] = L.ph[i];
+        twinA[at + 5] = L.ps[i];
+        twinA[at + 6] = 2 * w;
+      }
+    }
+    // Its triangles as ribbonRows indexes them: (a, c, a + 1) and (a + 1, c, c + 1), a = row q column k, c = row q + 1.
+    for (let k = 0; k < 6; k++) {
+      for (const tri of [[k, 7 + k, k + 1], [k + 1, 7 + k, 7 + k + 1]]) {
+        const [v0, v1, v2] = tri;
+        const n0 = twinV[2 * v0], e0 = twinV[2 * v0 + 1], n1 = twinV[2 * v1], e1 = twinV[2 * v1 + 1], n2 = twinV[2 * v2], e2 = twinV[2 * v2 + 1];
+        const det = (e1 - e2) * (n0 - n2) + (n2 - n1) * (e0 - e2);
+        if (Math.abs(det) < 1e-9) continue;
+        const l0 = ((e1 - e2) * (pn - n2) + (n2 - n1) * (pe - e2)) / det;
+        const l1 = ((e2 - e0) * (pn - n2) + (n0 - n2) * (pe - e2)) / det;
+        const l2 = 1 - l0 - l1;
+        if (l0 < -1e-9 || l1 < -1e-9 || l2 < -1e-9) continue;
+        const f = (o: number): number => l0 * twinA[7 * v0 + o] + l1 * twinA[7 * v1 + o] + l2 * twinA[7 * v2 + o];
+        twinHit.u = f(0);
+        twinHit.um = f(1);
+        twinHit.hb = f(2);
+        twinHit.K = f(3);
+        twinHit.ph = f(4);
+        twinHit.ps = f(5);
+        twinHit.w = f(6);
+        // (The main water's columns, -2..2: the shader draws no other thread there.)
+        twinHit.main = k >= 1 && k <= 4;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** The dry channels on a braided bed's bars (drawn only, a little darker and damper than the bars): BRAID_DAMP per
+ * thread of its own, narrower, wandering as its threads do. */
+const BRAID_DAMP = 1.5;
+
+/**
+ * GLSL twin of braidAt (needs HASH_GLSL's hash2u; the world seed's salt baked in as hash2i adds it in JS):
+ * braidAt(u, um, hb, K, ph, ps, w, out half) and braidDamp(u, hb, K, ph, ps, w) (1 in a dry channel). Call when building
+ * a material (after the seed is set).
+ */
+export function braidGlsl(): string {
+  const f = (v: number): string => v.toFixed(6);
+  return /* glsl */ `
+float bHash(int i, int key) { return float(hash2u(i + ${seedSaltX()}, key + ${seedSaltY()}) & 0xffffu) * (1.0 / 65536.0); }
+float bNoise(float t, int key) {
+  float fi = floor(t);
+  int i = int(fi);
+  float f = t - fi;
+  float p0 = 2.0 * bHash(i - 1, key) - 1.0;
+  float p1 = 2.0 * bHash(i, key) - 1.0;
+  float p2 = 2.0 * bHash(i + 1, key) - 1.0;
+  float p3 = 2.0 * bHash(i + 2, key) - 1.0;
+  return 0.5 * (2.0 * p1 + (p2 - p0) * f + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * f * f + (3.0 * p1 - p0 - 3.0 * p2 + p3) * f * f * f);
+}
+float bSpread(float n) {
+  float n2 = n * n;
+  return clamp(n * (1.2194 - n2 * (0.1539 + 0.078 * n2)), -1.0, 1.0);
+}
+float braidAt(float u, float um, float hb, float K, float ph, float ps, float w, out float half_) {
+  float best = -1e9;
+  half_ = 0.0;
+  float x = u * hb;
+  float xs[${BRAID_MAX + 1}];
+  float ws[${BRAID_MAX + 1}];
+  xs[0] = um * hb;
+  ws[0] = w;
+  for (int k = 1; k <= ${BRAID_MAX}; k++) {
+    float fk = float(k);
+    float p = min(1.0, K - fk);
+    if (p <= 0.0) break;
+    float uk = ${f(BRAID_SPAN)} * bSpread(bNoise(ph + 31.1 * fk, 100 + k));
+    float lens = ${f(BRAID_LENS_AMP * 2)} * hb * bNoise(ph * ${f(BRAID_WAVE / BRAID_LENS)} + 7.7 * fk, 150 + k);
+    float wk = w * 0.75 * pow(fk + 1.0, -0.55) * exp(0.3 * bNoise(ph * 3.1 + 3.3 * fk, 300 + k)) * (0.3 + 0.7 * p);
+    float wig = ${f(BRAID_WIG_AMP)} * wk * bNoise(ps * (1.6 + 0.4 * bHash(k, 401)) + 11.3 * fk, 400 + k);
+    float xk = xs[0] + p * (uk * hb + lens + wig - xs[0]);
+    for (int j = 0; j < k; j++) xk = xs[j] + (xk - xs[j]) * smoothstep(${f(BRAID_JOIN[0])}, ${f(BRAID_JOIN[1])}, abs(xk - xs[j]) / (0.5 * (wk + ws[j])));
+    float lim = max(0.0, hb - 0.5 * wk - 1.0);
+    xk = clamp(xk, -lim, lim);
+    xs[k] = xk;
+    ws[k] = wk;
+    float inside = 0.5 * wk - abs(x - xk);
+    if (inside > best) { best = inside; half_ = 0.5 * wk; }
+  }
+  return best;
+}
+float braidDamp(float u, float hb, float K, float ph, float ps, float w) {
+  float x = u * hb;
+  float d = 0.0;
+  float n = min(${(BRAID_MAX * BRAID_DAMP).toFixed(1)}, (K - 1.0) * ${f(BRAID_DAMP)});
+  for (int k = 1; k <= ${Math.ceil(BRAID_MAX * BRAID_DAMP)}; k++) {
+    float fk = float(k);
+    if (fk > n) break;
+    float uk = ${f(BRAID_SPAN)} * bSpread(bNoise(ph * 1.3 + 17.9 * fk, 600 + k));
+    float wig = 0.25 * w * bNoise(ps * 2.1 + 5.3 * fk, 700 + k);
+    float wk = w * 0.3 * exp(0.4 * bNoise(ph * 4.3 + 2.9 * fk, 800 + k));
+    float xk = clamp(uk * hb + wig, -hb, hb);
+    d = max(d, 1.0 - smoothstep(0.3 * wk, 0.5 * wk, abs(x - xk)));
+  }
+  return d;
+}
+`;
 }
 
 /**

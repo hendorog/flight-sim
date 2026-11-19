@@ -14,7 +14,7 @@ import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear
 import { cellEast, cellNorth, LAKE_RASTER, type Drainage, type DrainLine, type LakeMask } from './drainage';
 import { channelCourse, courseSpline } from './erosion';
 import { bedWidth, breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, REGIME, refineSteep, STREAM_SPACING, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
-import { BED_BIG, beltOffsets, bendOf, fitSwing, formOf, hAt, layThread, sineAmplitude, stepWhite, threadDepth, type ThreadLaw } from './channelForm';
+import { BRAID_SPAN, BRAID_WAVE, BRAID_WIG, BRAID_WIG_MIN, beltOffsets, bendOf, braidRows, braidStart, braidTwin, rowFrame, rowHit, twinHit, type BraidRibbon, fitSwing, formOf, hAt, layThread, sineAmplitude, stepWhite, threadDepth, type ThreadLaw } from './channelForm';
 import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
 import { buildFaults, FaultIndex } from './faults';
 import { pitchPool, type PitchReport } from './pitchPool';
@@ -128,10 +128,24 @@ const JOIN_BLEND = 2;
 const WIDTH_SPREAD = 0.2;
 /** Each wet edge wanders in and out by this share of the water's half-width, read at the bed's own scale (H_CELL single-
  * thread widths): the water's width changes reach by reach within a bed whose width its catchment sets (WIDTH_SPREAD).
- * From the first share on a small line to the second on a big river (channelForm.ts BED_BIG, where a bed widens toward its
- * gravel belt): 0.12 everywhere left the biggest rivers to the coast an even-width canal; 0.25 everywhere loosened the
- * streams' drawn widths from their catchments (drawnGate 0.678 on seed 42). */
+ * From the first share on a line of WET_BIG[0] km² to the second from WET_BIG[1] (once the numbers of the bed's size gate,
+ * channelForm.ts BED_BIG, now gone from the braid share): 0.12 everywhere left the biggest rivers to the coast an
+ * even-width canal; 0.25 everywhere loosened the streams' drawn widths from their catchments (drawnGate 0.678, seed 42). */
 const WET_SPREAD = [0.12, 0.25];
+const WET_BIG = [100, 1000];
+/** A braided bed's ribbon has a row at least every BRAID_ROW m (and no more: water.ts ribbonKeep), m. */
+const BRAID_ROW = 40;
+/** The last of a line's rows (ascending sample indices) at or before sample i. */
+function rowAt(idx: Int32Array, i: number): number {
+  let lo = 0;
+  let hi = idx.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (idx[mid] <= i) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
 /** A reach with no white water draws at most this steepness (water.ts FLOW_FROM: placid below it). */
 const WHITE_FROM = 0.19;
 
@@ -1049,7 +1063,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   /** Each river's room (floor) per axis sample, and per channel sample (filled as the channels are laid). */
   const roomAx: Array<{ roomL: Float64Array; roomR: Float64Array; S: Float64Array; swingL: Float64Array; swingR: Float64Array; fellL: Float64Array; fellR: Float64Array; edgeL: Float64Array; edgeR: Float64Array }> = [];
   /** Every line's room either side about the line where it runs, by arc length (river or stream: the form pass reads it). */
-  const lineRoom: Array<{ s: Float64Array; L: Float32Array; R: Float32Array } | undefined> = [];
+  /** Each line's room either side of it on its floor where it runs (L, R), and where its belt's line lies from it (B,
+   * right +: a braided bed lies about its belt, its main thread wandering in it), by arc length. */
+  const lineRoom: Array<{ s: Float64Array; L: Float32Array; R: Float32Array; B: Float32Array } | undefined> = [];
   const lawAx: Array<{ Wa: Float64Array; lam2: Float64Array; om2: Float64Array }> = [];
   /** Where the law's time goes (probes): the room transects, laying the threads, the rest of the channel loop. */
   const formMs = { room: 0, lay: 0, chan: 0, form: 0, streams: 0 };
@@ -1078,11 +1094,13 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const w = new Float64Array(m);
     const floorL = new Float64Array(m);
     const floorR = new Float64Array(m);
+    const beta = new Float64Array(m);
     for (let i = 0; i < m; i++) {
       floorL[i] = Math.min(R.swingL[i], R.roomL[i]);
       floorR[i] = Math.min(R.swingR[i], R.roomR[i]);
       const F = Math.max(FLOOR_MIN, R.roomL[i] + R.roomR[i]);
       const f = formOf(area[i], S[i], F);
+      beta[i] = f.betaLaw;
       w[i] = f.phi * f.Wa;
       // The thread's centre keeps its water on the floor (the runway's clear zone is not floor: roomAcross).
       rL[i] = Math.max(0, floorL[i] - 0.5 * w[i]);
@@ -1128,7 +1146,19 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       sweep[i] = Math.max(a1[i] + a2[i] + 0.5 * w[i], 0.5 * Wa[i]);
     }
     const belt = beltOffsets(s, lo, hi, wave, salt * 3 + 11);
-    return { law: { belt, lam1, om1, lam2, om2, Wa, roomL: rL, roomR: rR }, sweep, lam1, floorL, floorR };
+    const law: ThreadLaw = { belt, lam1, om1, lam2, om2, Wa, roomL: rL, roomR: rR };
+    // A braided bed's main thread (channelForm.ts braidAt): it wanders its bed as the bed's other threads do, off the
+    // belt's line by up to BRAID_SPAN of the way to the bed's edge (less its own half-width), at the braid's phase (one
+    // unit per BRAID_WAVE bed widths); its own swing gives way to that by its share.
+    if (beta.some((b) => b > 0)) {
+      const amp2 = Float64Array.from(beta, (b) => 1 - b);
+      const wander = Float64Array.from(beta, (b, i) => b * BRAID_SPAN * Math.max(0, 0.5 * (Wa[i] - w[i]) - (1 - b) * a2[i]));
+      const phase = new Float64Array(m);
+      phase[0] = braidStart(salt, 0);
+      for (let i = 1; i < m; i++) phase[i] = phase[i - 1] + (s[i] - s[i - 1]) / (BRAID_WAVE * Math.max(0.5 * (Wa[i] + Wa[i - 1]), 4 * w[i]));
+      law.braid = { amp2, wander, phase };
+    }
+    return { law, sweep, lam1, floorL, floorR };
   };
   /** Each river's floor as its belt shapes it, per axis sample (floorAt): the belt's offset, how far either side of it
    * the water goes, the floor either side of the axis, the bank. */
@@ -1216,7 +1246,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     {
       const roomL = new Float32Array(count);
       const roomR = new Float32Array(count);
+      const beltB = new Float32Array(count);
       const RA = roomAx[li];
+      const FA = floorAx[li];
       for (let k = 0; k < count; k++) {
         const vs = valleyS[k];
         // Its offset from the axis (right: +).
@@ -1228,8 +1260,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         const off = (north[k] - a.north[i] - tn * t) * (-te / tl) + (east[k] - a.east[i] - te * t) * (tn / tl);
         roomR[k] = Math.max(0, sampleAt(a.s, RA.roomR, vs) - off);
         roomL[k] = Math.max(0, sampleAt(a.s, RA.roomL, vs) + off);
+        beltB[k] = sampleAt(a.s, FA.belt, vs) - off;
       }
-      lineRoom[li] = { s: Float64Array.from(s), L: roomL, R: roomR };
+      lineRoom[li] = { s: Float64Array.from(s), L: roomL, R: roomR, B: beltB };
     }
     rivers.push({ north: Float64Array.from(north), east: Float64Array.from(east), level, halfWidth, s, valleyS: Float64Array.from(valleyS) });
     levelProbe.on?.('chan', li, rivers[li]);
@@ -1371,7 +1404,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       for (let i = 0; i < s.length; i++) s[i] -= cut;
       rivers[li] = { north: r.north.slice(i0), east: r.east.slice(i0), level: r.level.slice(i0), halfWidth: r.halfWidth.slice(i0), s, valleyS: r.valleyS.slice(i0) };
       const fc = lineRoom[li]!;
-      lineRoom[li] = { s: fc.s.slice(i0).map((v) => v - cut), L: fc.L.slice(i0), R: fc.R.slice(i0) };
+      lineRoom[li] = { s: fc.s.slice(i0).map((v) => v - cut), L: fc.L.slice(i0), R: fc.R.slice(i0), B: fc.B.slice(i0) };
       channelArea[li] = channelArea[li].slice(i0);
       for (const st of traced.streams) if (st.joins === li) st.joinS = Math.max(0, st.joinS - cut);
       trimmed[li] = cut;
@@ -1451,6 +1484,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         s: Float64Array.from(sNew),
         L: Float32Array.from(vs, (v, i) => Math.max(0, sampleAt(oldS, roomL, v) + offR[i])),
         R: Float32Array.from(vs, (v, i) => Math.max(0, sampleAt(oldS, roomR, v) - offR[i])),
+        B: Float32Array.from(offR, (o) => -o),
       };
     }
     // A stream joining another meets its thread where it joins: its arc there mapped (and the nearest point of the
@@ -1884,8 +1918,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   // point bar inside each bend, a cut bank outside), the water's edges, both ragged by the heterogeneity field h at
   // their own points and the bed kept on its floor; the depth (a pool at a bend's apex, a riffle at a crossing); white
   // water only where a step is higher than the water is deep.
-  const formOfLine: Array<{ bedR: Float32Array; bedL: Float32Array; wetR: Float32Array; wetL: Float32Array; depth: Float32Array; bankH: Float32Array; bankTan: Float32Array }> = [];
-  const formStats = { samples: 0, wideBed: 0, white: 0, ms: formMs };
+  const formOfLine: Array<{ bedR: Float32Array; bedL: Float32Array; wetR: Float32Array; wetL: Float32Array; depth: Float32Array; bankH: Float32Array; bankTan: Float32Array; braid?: { K: Float32Array; share: Float32Array; ph: Float64Array; ps: Float64Array; tn: Float32Array; te: Float32Array; row: Uint8Array; rows: { idx: Int32Array; n: Float64Array; e: Float64Array; tn: Float32Array; te: Float32Array }; twin: BraidRibbon } }> = [];
+  const formStats = { samples: 0, wideBed: 0, braided: 0, white: 0, ms: formMs };
   const tForm0 = performance.now();
   /** Each line's law per sample (catchment for its width, gradient, room each side, bend), then its widths. */
   const lawLine = allLines.map((c, li) => {
@@ -1908,10 +1942,12 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const lr = lineRoom[li];
     let roomL: Float32Array;
     let roomR: Float32Array;
+    let belt: Float32Array | null = null;
     if (lr) {
       const wr = new ArcWalk(lr.s);
       roomL = Float32Array.from(c.s, (sv) => wr.at(lr.L, sv));
       roomR = Float32Array.from(c.s, (sv) => wr.at(lr.R, sv));
+      belt = Float32Array.from(c.s, (sv) => wr.at(lr.B, sv));
     } else {
       const R = roomOfLine(c.north, c.east, c.s, c.level, A, S, false);
       roomL = Float32Array.from(R.roomL);
@@ -1923,7 +1959,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // The law at each sample (the drawn form below reads it).
     const phi = new Float64Array(m);
     const waLaw = new Float64Array(m);
-    const lw = { lam2: new Float32Array(m), bankH: new Float32Array(m), bankTan: new Float32Array(m), stepH: new Float32Array(m), sigma: new Float32Array(m), pi: new Float32Array(m), betaLaw: new Float32Array(m) };
+    const lw = { lam2: new Float32Array(m), bankH: new Float32Array(m), bankTan: new Float32Array(m), stepH: new Float32Array(m), sigma: new Float32Array(m), pi: new Float32Array(m), betaLaw: new Float32Array(m), K: new Float64Array(m) };
     for (let i = 0; i < m; i++) {
       const f = formOf(A[i], S[i], Math.max(FLOOR_MIN, roomL[i] + roomR[i]));
       smoothM[i] = Math.max(12, Math.max(LAMBDA_MIN, f.lam2) / 8);
@@ -1937,6 +1973,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       lw.sigma[i] = f.sigma;
       lw.pi[i] = f.pi;
       lw.betaLaw[i] = f.betaLaw;
+      lw.K[i] = f.K;
     }
     const kap = bendOf(c.north, c.east, smoothM, peakM);
     // The water's half-width the law gives here (drawn: below), and the line's (its catchment's water: never narrower
@@ -1947,10 +1984,13 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const runOf = (i: number): number => FORM_RUN * formWs(A[i]);
     const phiS = smoothArc(c.s, phi, runOf);
     const waS = smoothArc(c.s, waLaw, runOf);
+    // (Its threads, as smooth along it as its bed's width.)
+    const KS = lw.K.some((k) => k > 1) ? smoothArc(c.s, lw.K, runOf) : null;
+    const shareS = KS ? smoothArc(c.s, lw.betaLaw, runOf) : null;
     const loc = Float64Array.from(phiS, (p, i) => 0.5 * p * waS[i]);
     const hw = Float64Array.from(loc);
     for (let i = 1; i < m; i++) hw[i] = Math.max(hw[i], hw[i - 1]);
-    return { A, S, roomL, roomR, kap, hw, loc, phi: phiS, lw };
+    return { A, S, roomL, roomR, belt, kap, hw, loc, phi: phiS, K: KS, share: shareS, lw };
   });
   // Nor below a junction narrower than what joined it there (every line; tributaries' own widths first: until nothing
   // changes).
@@ -2033,21 +2073,22 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         dAx = (mn - pn) * rn + (me - pe) * re;
       }
       // The gravel beyond the water (W_a - w), the bed always W_a wide (its catchment's). A gravel bed several times as
-      // wide as its water (the law's pattern share, BED_WIDE) lies about the thread's smoothed line, the water wandering
-      // within it; a single thread's bed has its gravel on one side: inside its bends - a point bar, a crescent from one
+      // wide as its water (the law's pattern share, BED_WIDE) lies about its belt's line (lineRoom's B; the thread's own
+      // line smoothed over its wavelength where it has none), the water wandering within it (a braided bed's main thread:
+      // channelForm.ts braidAt); a single thread's bed has its gravel on one side: inside its bends - a point bar, a crescent from one
       // crossing to the next, widest at the apex (the bend's own measure, bendOf) - and on a straight reach on alternate
       // sides every ALT_BARS bed widths or so: no strip of even width either side, a lined canal's. (Set from the
       // thread's curvature as a wedge from crossing to apex, the bars made a saw-tooth outline, and even strips either
       // side lined the big rivers to the coast.)
       const spare = Math.max(0, Wa - w);
       const wide = smooth(BED_WIDE[0], BED_WIDE[1], Wa / Math.max(0.5, w));
-      const stay = 0.5 * spare * Math.tanh(dAx / Math.max(0.5, 0.5 * spare));
+      const stay = 0.5 * spare * Math.tanh((L.belt ? L.belt[i] : dAx) / Math.max(0.5, 0.5 * spare));
       const bent = smooth(0.15, 0.6, k);
       const alt = Math.tanh(2.5 * hAt(c.s[i], 1000 * li, ALT_BARS * Math.max(1, Wa), 5));
       const side1 = bent * Math.max(-1, Math.min(1, kap / 0.3)) + (1 - bent) * alt;
       const mid = wide * stay + (1 - wide) * 0.5 * spare * side1;
       const bar = spare;
-      const wetSpread = WET_SPREAD[0] + (WET_SPREAD[1] - WET_SPREAD[0]) * smooth(BED_BIG[0], BED_BIG[1], L.A[i]);
+      const wetSpread = WET_SPREAD[0] + (WET_SPREAD[1] - WET_SPREAD[0]) * smooth(WET_BIG[0], WET_BIG[1], L.A[i]);
       for (const side of [1, -1]) {
         const base = Math.max(0.5 * w, side * mid + 0.5 * (w + bar));
         const en = pn + side * rn * base;
@@ -2108,6 +2149,63 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       f.bedR[i] += (f.wetR[i] + 0.3 - f.bedR[i]) * t;
       f.bedL[i] += (f.wetL[i] + 0.3 - f.bedL[i]) * t;
     }
+  }
+  // A braided bed's threads (channelForm.ts braidAt): K at each sample, and the braid's phases along the line from a
+  // seeded start - one unit per BRAID_WAVE bed widths (ph), and per BRAID_WIG main-thread widths, at least BRAID_WIG_MIN
+  // m (ps).
+  for (let li = 0; li < allLines.length; li++) {
+    const KS = lawLine[li].K;
+    if (!KS) continue;
+    const c = allLines[li];
+    const f = formOfLine[li];
+    const m = c.s.length;
+    const ph = new Float64Array(m);
+    const ps = new Float64Array(m);
+    ph[0] = braidStart(li, 1);
+    ps[0] = braidStart(li, 2);
+    for (let i = 1; i < m; i++) {
+      const ds = c.s[i] - c.s[i - 1];
+      const w = 0.5 * (f.wetR[i] + f.wetL[i] + f.wetR[i - 1] + f.wetL[i - 1]);
+      ph[i] = ph[i - 1] + ds / (BRAID_WAVE * Math.max(0.5 * (f.bedR[i] + f.bedL[i] + f.bedR[i - 1] + f.bedL[i - 1]), 4 * w));
+      ps[i] = ps[i - 1] + ds / Math.max(BRAID_WIG_MIN, BRAID_WIG * w);
+    }
+    // (Its rows lie across its bed's own middle line - each sample's point moved to the bed's middle on its own normal -
+    // not across the main thread, which wanders the bed: rows turning with it crossed and creased the bars.)
+    const midN = new Float64Array(m);
+    const midE = new Float64Array(m);
+    for (let i = 0; i < m; i++) {
+      const i0 = Math.max(0, i - 1);
+      const i1 = Math.min(m - 1, i + 1);
+      const tl = Math.hypot(c.north[i1] - c.north[i0], c.east[i1] - c.east[i0]) || 1;
+      const xc = 0.5 * (f.bedR[i] - f.bedL[i]);
+      midN[i] = c.north[i] - ((c.east[i1] - c.east[i0]) / tl) * xc;
+      midE[i] = c.east[i] + ((c.north[i1] - c.north[i0]) / tl) * xc;
+    }
+    const rows = braidRows(midN, midE, c.s, Float32Array.from(f.bedR, (b, i) => 0.5 * (b + f.bedL[i])));
+    // (Its ribbon's rows, one at least every BRAID_ROW m - the ribbon draws these and no others where it braids, water.ts
+    // ribbonKeep - and the twin reads its threads in the same rows: rowFrame.)
+    const row = new Uint8Array(m);
+    row[0] = 1;
+    row[m - 1] = 1;
+    for (let i = 1, last = 0; i < m - 1; i++) {
+      if (c.s[i + 1] - c.s[last] <= BRAID_ROW) continue;
+      row[i] = 1;
+      last = i;
+    }
+    const idx = Int32Array.from(Array.from(row.keys()).filter((i) => row[i]));
+    const K = Float32Array.from(KS);
+    f.braid = {
+      K,
+      share: Float32Array.from(lawLine[li].share!),
+      ph,
+      ps,
+      tn: rows.tn,
+      te: rows.te,
+      row,
+      rows: { idx, n: Float64Array.from(idx, (i) => c.north[i]), e: Float64Array.from(idx, (i) => c.east[i]), tn: Float32Array.from(idx, (i) => rows.tn[i]), te: Float32Array.from(idx, (i) => rows.te[i]) },
+      twin: { north: c.north, east: c.east, tn: rows.tn, te: rows.te, bedR: f.bedR, bedL: f.bedL, wetR: f.wetR, wetL: f.wetL, K, ph, ps, rows: idx },
+    };
+    formStats.braided += KS.filter((k) => k > 1.5).length;
   }
   formMs.form = performance.now() - tForm0;
   // (The lines' rooms were the form pass's alone.)
@@ -2178,6 +2276,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         o.bed = o.halfWidth;
         const fm = formOfLine[li];
         o.wet = undefined;
+        o.braidK = 0;
         if (fm) {
           // A river's bed, water edge, depth and bank on this side (the law's, channelForm.ts).
           const bd2 = side > 0 ? fm.bedR : fm.bedL;
@@ -2187,6 +2286,18 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
           o.depth = fm.depth[i] + (fm.depth[i + 1] - fm.depth[i]) * t;
           o.bankH = fm.bankH[i] + (fm.bankH[i + 1] - fm.bankH[i]) * t;
           o.bankTan = fm.bankTan[i] + (fm.bankTan[i + 1] - fm.bankTan[i]) * t;
+          // (A braided bed's threads, read as its ribbon reads them where it is drawn: channelForm.ts braidTwin.)
+          const bz = fm.braid;
+          const bw = bz ? bz.rows : null;
+          if (bz && bw && (bz.K[i] > 1 || bz.K[i + 1] > 1) && rowFrame(bw.n, bw.e, bw.tn, bw.te, rowAt(bw.idx, i), pn, pe) && braidTwin(bz.twin, rowHit.j, pn, pe) && !twinHit.main) {
+            o.braidK = twinHit.K;
+            o.braidU = twinHit.u;
+            o.braidUm = twinHit.um;
+            o.braidHb = twinHit.hb;
+            o.braidPh = twinHit.ph;
+            o.braidPs = twinHit.ps;
+            o.braidW = twinHit.w;
+          }
         }
         const br = breachReach[li];
         if (br && (br[i] > 0 || br[i + 1] > 0)) {
@@ -2346,7 +2457,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       ? { north: mainAxis.north, east: mainAxis.east, level: mainAxis.level, floodplain: mainAxis.floodplain, s: mainAxis.s }
       : { north: new Float64Array(0), east: new Float64Array(0), level: new Float64Array(0), floodplain: new Float64Array(0), s: new Float64Array(0) },
     oxbows,
-    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR] } : {}), breach: (r as { breach: Float64Array }).breach, cut: (r as { cut: Float64Array }).cut, area: channelArea[li], ...flows[li], grain: grains[li], ...(pitchOf[li] ? { sigma: pitchOf[li]!.sigma, pitchOn: pitchOf[li]!.on } : {}), bedR: formOfLine[li].bedR, bedL: formOfLine[li].bedL, wetR: formOfLine[li].wetR, wetL: formOfLine[li].wetL, depth: formOfLine[li].depth })),
+    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR] } : {}), breach: (r as { breach: Float64Array }).breach, cut: (r as { cut: Float64Array }).cut, area: channelArea[li], ...flows[li], grain: grains[li], ...(pitchOf[li] ? { sigma: pitchOf[li]!.sigma, pitchOn: pitchOf[li]!.on } : {}), bedR: formOfLine[li].bedR, bedL: formOfLine[li].bedL, wetR: formOfLine[li].wetR, wetL: formOfLine[li].wetL, depth: formOfLine[li].depth, ...(formOfLine[li].braid ? { braidK: formOfLine[li].braid!.K, braidShare: formOfLine[li].braid!.share, braidPh: formOfLine[li].braid!.ph, braidPs: formOfLine[li].braid!.ps, braidTn: formOfLine[li].braid!.tn, braidTe: formOfLine[li].braid!.te, braidRow: formOfLine[li].braid!.row } : {}) })),
     falls,
     faults,
     queryFlow,
