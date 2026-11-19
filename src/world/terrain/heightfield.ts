@@ -1454,6 +1454,10 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     // FLOW_BARS): the ground under each cut under the line's water, a trough of the thread's own depth - what the ribbon
     // draws wet is wet where the sim asks (landing, ditching), and its water shows over the bars close in.
     if (c.braidK !== undefined && c.braidK > 1 && c.braidHb! > 1) {
+      // (Its bars wherever its ribbon draws its bed - which reaches past the bed its nearest point gives where the main
+      // thread wanders it: ground left standing there over the lifted ribbon showed as blocky tongues of grass.)
+      const top = Math.max(BRAID_BAR_LOW, 0.6 * (c.bankH ?? 1));
+      h += (Math.min(h, c.level + BRAID_BAR_LOW + (top - BRAID_BAR_LOW) * Math.min(1, Math.abs(c.braidU!))) - h) * open;
       const inside = braidAt(c.braidU!, c.braidUm!, c.braidHb!, c.braidK, c.braidPh!, c.braidPs!, c.braidW!);
       if (inside > 0) {
         const half = braidHit.half;
@@ -1466,6 +1470,8 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
   return h;
 }
 
+/** A braided bed's bars stand this far over its water at its middle, m, rising to its bank's 0.6 at its edges. */
+const BRAID_BAR_LOW = 0.1;
 /** FIELD_CHANNEL: a stream's banks cut again through an airfield's blend rise at this slope (keepChannels). */
 const FIELD_BANK_SLOPE = 0.35;
 /** ... cutting the ground down to it fully this far beyond its low strip, the cut fading out over twice as far
