@@ -328,6 +328,31 @@ screen gradient of its signed distance. Lines now narrow to a point in perspecti
 Check: `node scripts/probes/taxiway-lines.mjs <outDir>` (eye-height views down taxiway A, wide and zoomed toward 100,
 300 and 600 m, the B1 junction, the apron taxilane, the A2 lead-on and the runway numbers), run before and after.
 
+### Snow: parked aircraft cast several shadows, and pavement lines show doubled — **defect (owner report 2026-11-20), cause not yet found**
+
+Owner report (2026-11-20): "snow showing multiple shadows and duplicate lines".
+
+![Snow-covered airfield: parked aircraft with two or three offset shadows each, doubled lines on the runway and taxiway](issues/2026-11-20-snow-shadows-lines.png)
+
+Seen on the ground in the PC-12, in snow. The airfield was at about 1370 ft, the tower had just cleared the aircraft for
+take-off on runway 15, and the wind was 105° at 6 kt. The build was round-v (fa00467, served on 5205) at seed 42. The
+screenshot has no F8 line.
+
+What the picture shows:
+- **Shadows.** Every parked aircraft casts two or three overlapping shadows, offset sideways from each other and of
+  different darkness. This includes the three AI aircraft at the left and the PC-12. The PC-12's shadow pieces reach
+  well to its right.
+- **Lines.** The runway's lines run as two or three close parallel lines. The taxiway lines at the edge of the apron
+  are doubled the same way.
+- **The parking spot.** The PC-12 stands on a dark, bare rectangle with hard straight edges cut into the snow.
+- **Distant marks.** Rows of small dark marks stand across the snowfield in the distance. They may be edge lights or
+  markers; this is not yet checked.
+
+Close with: reproduce in snow at a field with parked traffic, with the F8 line on. Then compare the same view without
+snow, to tell whether the doubling comes from the snow layer or from the shadows and pavement markings themselves.
+round-v's `pavementGlsl.ts` was merged by hand with main's (6b13626), so render the same view on main as well, to rule
+that merge in or out for the lines.
+
 ## Career
 
 Open items of the air-operator career ([career.md](career.md), on `feat/career` as of 2026-11-01).
