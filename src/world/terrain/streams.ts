@@ -128,7 +128,7 @@ const SEA_DEEP = -30;
 /** Probes may change these; the sim never does. `lowland`: the catchment a stream heads at where the threshold slopes
  * did not build the ground (the model's channel area); `stem`: every channel runs up its main stem to the finest
  * channel head (stemHead). */
-export const streamHeads = { lowland: CHANNEL_AREA, stem: true };
+export const streamHeads = { lowland: CHANNEL_AREA, stem: true, beside: true };
 /** The last traceStreams' routing ground (probes: endsGate's notch reaches). */
 export const streamDebug: { route?: (north: number, east: number) => number; src?: string[]; keep?: boolean; routing?: { area: Float32Array; rdir: Int8Array; G: Float64Array; F: Float64Array } } = {};
 /** The pass building the next stream (streamDebug.src, probes). */
@@ -1087,7 +1087,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
         const ki = Math.floor(k / R);
         const kj = k % R;
         let joined: End | null = null;
-        for (let a = 0; a < 8 && !joined && step > 0; a++) {
+        for (let a = 0; a < 8 && !joined && step > 0 && streamHeads.beside; a++) {
           const q = (ki + DI[a]) * R + kj + DJ[a];
           const c = onCourse[q];
           if (c === 0 || c === ci) continue;

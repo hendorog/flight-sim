@@ -21,6 +21,7 @@
 import { it } from 'vitest';
 import { hydrology, terrainHeight } from '../../src/world/terrain/heightfield';
 import { gullyNet, receiverOf } from '../../src/world/terrain/gullies';
+import { streamHeads } from '../../src/world/terrain/streams';
 import { streamDebug } from '../../src/world/terrain/streams';
 import { setWorldSeed } from '../../src/world/worldSeed';
 const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
@@ -74,10 +75,12 @@ function along(L: Line, step: number, f: (n: number, e: number) => void): void {
   }
 }
 
+// (FC_BESIDE=0: no course joins another beside it, streams.ts streamHeads.beside.)
 it('feed count', () => {
   const OUT = env.FC_OUT;
   if (OUT) fs.mkdirSync(OUT, { recursive: true });
   for (const seed of (env.FC_SEEDS ?? '1,42,777777').split(',').map(Number)) {
+    if (env.FC_BESIDE) streamHeads.beside = env.FC_BESIDE === '1';
     setWorldSeed(seed);
     terrainHeight(0, 0);
     const L = (hydrology.rivers ?? []) as unknown as Line[];

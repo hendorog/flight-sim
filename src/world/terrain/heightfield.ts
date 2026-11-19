@@ -191,6 +191,11 @@ const GULLY_BRANCH = 1.3;
 function erode(east: number, north: number, slopeE: number, slopeN: number, octaves = GULLY_OCTAVES, cap = Infinity, scale = Infinity, fast = false): number {
   gullyFine = 0;
   gullySum = 0;
+  // (And the coarse sum and first octave with it: left from the last call, a flat point's ground took that call's
+  // gullies - the ground depended on what was sampled before it.)
+  gullyCoarse = 0;
+  gully0 = 0;
+  gully0Im = 0;
   const slope = Math.sqrt(slopeE * slopeE + slopeN * slopeN);
   if (slope < 1e-3) return 0;
   let strength = slope / (slope + 0.15);
@@ -623,7 +628,11 @@ function seededNaturalHeight(north: number, east: number, detail = true, eroded 
     }
     fall = Math.sqrt(bE * bE + bN * bN);
     gullyW = keep;
-    if (keep > 0) {
+    // (Where the threshold slopes' ground is all there is and none of their gullies is kept - the slopes' weight 1,
+    // SlopeParams.gully 0 - the streams' octaves add exactly nothing (their share of the coarse gullies is 0 and they
+    // have no finer ones): not worked out.)
+    const noGullies = !small && cut !== null && erosionAt.m > 0 && 1 - erosionAt.m * (1 - slopeGully) === 0;
+    if (keep > 0 && !noGullies) {
       // The gullies follow the eroded ground's fall line; their troughs are held to it (GULLY_FALL, kCap) and the
       // spurs between them stand up as the hillside's relief allows (kFull, as before the floors were held): see SPUR_*.
       const K = amplitude * 0.13 * keep;
