@@ -1298,6 +1298,7 @@ export class LakeMask {
    * pond upstream spilled lower and the river arrives below it) is not a lake but a dry basin the river runs through.
    */
   drainPond(k: number): void {
+    this.changed.push(k);
     const R = this.rasters[k];
     R.pool.fill(-1);
     R.shore.fill(-1);
@@ -1312,6 +1313,7 @@ export class LakeMask {
    * domain's edge (level + LAKE_MARGIN) leave the domain; a pool left too shallow or too small for a lake is dry.
    */
   lowerPond(k: number, level: number): void {
+    this.changed.push(k);
     const R = this.rasters[k];
     const top = level + LAKE_MARGIN;
     this.pools.forEach((pool, id) => {
@@ -1518,6 +1520,14 @@ export class LakeMask {
     this.pools.length = s.pools;
     this.sqStart = s.sqStart;
     this.sqPond = s.sqPond;
+  }
+  /** The pond rasters drained or lowered (drainPond, lowerPond) since this was last emptied: the ground the terrain
+   * draws there (its lake smoothing) changed with them (streams.ts takes the streams' raster afresh there). */
+  readonly changed: number[] = [];
+  /** A pond raster's box: its first raster point (row, column) and its size, points. */
+  rasterBox(k: number): { gi: number; gj: number; rows: number; cols: number } {
+    const R = this.rasters[k];
+    return { gi: R.gi, gj: R.gj, rows: R.rows, cols: R.cols };
   }
   /** The raster points (global indices ri * RASTER_N + rj) of a pool's domain. */
   poolPoints(id: number): number[] {

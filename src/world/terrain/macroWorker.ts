@@ -1,5 +1,6 @@
 // The model worker: works out a seeded world's macro model cells (erosion.ts steadyLattice, about 0.6 s here) and the
-// mountains' threshold hillslopes on the fine grid (hillslopes.ts, about 1 s) once, so the main thread and the terrain
+// mountains' threshold hillslopes on the fine grid (hillslopes.ts, about 1 s) and the ground the streams are routed over
+// on their raster (streams.ts smoothRaster, about 2 s) once, so the main thread and the terrain
 // workers need not (macroCache.ts hands them on). It builds nothing else.
 
 import { setEra } from '../era/eraState';
@@ -17,5 +18,6 @@ self.onmessage = (e: MessageEvent<ModelRequest>) => {
   const moved: ArrayBuffer[] = model ? [model.lattice.buffer as ArrayBuffer] : [];
   if (model?.slopes) moved.push(model.slopes.h.buffer as ArrayBuffer, model.slopes.w.buffer as ArrayBuffer, model.slopes.chan.buffer as ArrayBuffer, model.slopes.floor.buffer as ArrayBuffer, model.slopes.lz.buffer as ArrayBuffer);
   if (model?.slopes?.dir) moved.push(model.slopes.dir.buffer as ArrayBuffer);
+  if (model?.route) moved.push(model.route.buffer as ArrayBuffer);
   (self as unknown as Worker).postMessage(reply, moved);
 };

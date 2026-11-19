@@ -64,10 +64,6 @@ const V_SIDE = 15;
 /** A stream's reaches off a V are laid as a curve through its raster points: this many smoothing passes over its
  * samples (STREAM_SPACING apart; about a 90 m Gaussian). */
 const FLOOR_SMOOTH = 6;
-/** A stream off a V joins its receiver curving downstream into it: at most this far down from where it reached it, m,
- * at an angle of at most JUNCTION_ANGLE (radians) to the receiver's course. */
-const JUNCTION_SHIFT = 400;
-const JUNCTION_ANGLE = Math.PI / 4;
 /** An outlet keeps its lake's level this far past the lake's domain, m. */
 const OUTLET_KEEP = 60;
 /** Highest an outlet's way out may rise over its lake's water, m: where the lake naturally spills (its water stands
@@ -320,10 +316,37 @@ export interface StreamReport {
 }
 
 /**
+ * The ground the streams are routed over, without the rivers' valleys (`smooth`: the terrain without its small-scale
+ * relief, heightfield.ts naturalHeightSmooth), at every point of the 250 m raster but the deep sea's (NaN: the drainage
+ * lattice and every cell round it under SEA_DEEP), as float32 - the same in every thread, whether worked out there or
+ * handed over with the model (macroCache.ts).
+ */
+export function smoothRaster(d: Drainage, smooth: (north: number, east: number) => number): Float32Array {
+  const R = RASTER_N;
+  const out = new Float32Array(R * R);
+  const dn = d.n;
+  for (let i = 0; i < R; i++) {
+    const ci = Math.min(dn - 1, Math.round(i / PER_CELL));
+    for (let j = 0; j < R; j++) {
+      const cj = Math.min(dn - 1, Math.round(j / PER_CELL));
+      let deep = true;
+      for (let a = Math.max(0, ci - 1); a <= Math.min(dn - 1, ci + 1) && deep; a++)
+        for (let b = Math.max(0, cj - 1); b <= Math.min(dn - 1, cj + 1); b++)
+          if (!(d.height[a * dn + b] < SEA_DEEP)) {
+            deep = false;
+            break;
+          }
+      out[i * R + j] = deep ? NaN : smooth(ORIGIN + i * LAKE_RASTER, ORIGIN + j * LAKE_RASTER);
+    }
+  }
+  return out;
+}
+
+/**
  * Trace the streams of a seeded world. `ground` is the terrain they run on (detailed, with the rivers' valleys);
  * `rivers` the river network's channels (their levels final); `riverPools` flags the lake pools a river runs through.
  */
-export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: number, east: number) => number; rivers: ReadonlyArray<ChannelArrays>; riverPools: Uint8Array; minArea?: number; pinned?: (north: number, east: number) => number }): { streams: StreamLine[]; report: StreamReport; headAt: Float64Array } {
+export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: number, east: number) => number; smooth: (north: number, east: number) => number; carve: (h: number, north: number, east: number) => number; raster: Float32Array | null; rivers: ReadonlyArray<ChannelArrays>; riverPools: Uint8Array; minArea?: number; pinned?: (north: number, east: number) => number }): { streams: StreamLine[]; report: StreamReport; headAt: Float64Array } {
   const t0 = performance.now();
   const { d, mask, rivers } = p;
   streamDebug.route = p.route;
@@ -338,25 +361,29 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
   // --- The ground on the raster: without the small-scale relief (the terrain takes it away along a stream,
   // heightfield.ts carveNetwork), for the routing and the water level alike. Sampled at every raster point but the
   // deep sea's (the drainage lattice and every cell round it under SEA_DEEP: the lattice's own height stands for it).
+  // (The ground without the rivers' valleys - the same at every thread - comes worked out with the model, macroCache.ts:
+  // the valleys are cut in here; the ponds drained or lowered since are taken afresh.)
   const tR0 = performance.now();
   const Gr = new Float64Array(R * R);
   {
-    const dn = d.n;
-    for (let i = 0; i < R; i++) {
-      const ci = Math.min(dn - 1, Math.round(i / PER_CELL));
+    const sm = p.raster ?? smoothRaster(d, p.smooth);
+    for (let i = 0; i < R; i++)
       for (let j = 0; j < R; j++) {
-        const cj = Math.min(dn - 1, Math.round(j / PER_CELL));
-        let deep = true;
-        for (let a = Math.max(0, ci - 1); a <= Math.min(dn - 1, ci + 1) && deep; a++) for (let b = Math.max(0, cj - 1); b <= Math.min(dn - 1, cj + 1); b++) if (!(d.height[a * dn + b] < SEA_DEEP)) {
-          deep = false;
-          break;
-        }
-        if (deep) Gr[i * R + j] = d.height[ci * dn + cj];
-        else {
-          Gr[i * R + j] = p.route(ORIGIN + i * LAKE_RASTER, ORIGIN + j * LAKE_RASTER);
+        const k = i * R + j;
+        const v = sm[k];
+        Gr[k] = v !== v ? d.height[Math.min(d.n - 1, Math.round(i / PER_CELL)) * d.n + Math.min(d.n - 1, Math.round(j / PER_CELL))] : p.carve(v, ORIGIN + i * LAKE_RASTER, ORIGIN + j * LAKE_RASTER);
+      }
+    for (const b of new Set(mask.changed)) {
+      const { gi, gj, rows, cols } = mask.rasterBox(b);
+      for (let i = gi; i < gi + rows; i++)
+        for (let j = gj; j < gj + cols; j++) {
+          const k = i * R + j;
+          if (sm[k] !== sm[k]) continue;
+          const n0 = ORIGIN + i * LAKE_RASTER;
+          const e0 = ORIGIN + j * LAKE_RASTER;
+          Gr[k] = p.carve(Math.fround(p.smooth(n0, e0)), n0, e0);
           report.samples++;
         }
-      }
     }
   }
   report.rasterMs = performance.now() - tR0;
@@ -415,84 +442,6 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
   /** The line `line` (river or stream) as arrays. */
   const lineAt = (line: number): ChannelArrays => (line < nR ? rivers[line] : streams[line - nR]);
   /** Build a stream from its traced course and record it. */
-  /**
-   * The junction of a chain stream off an open floor (build): from its last point (pn[last], pe[last]), on its course's
-   * heading there, to the receiver `line` at a sample from `j0` down at most JUNCTION_SHIFT where the way in meets the
-   * receiver at JUNCTION_ANGLE or less, along a cubic curve tangent to both courses. The curve's ground (p.route, every
-   * STREAM_SPACING) never rises FLOOR_RISE over `g0` (the last point's), nor lies under the receiver's water (backing
-   * up, it would stand over the ground). Its inner points (north, east, ground) and the receiver's sample, or
-   * null (none such: the stream joins as it reached it).
-   */
-  const junction = (pn: number[], pe: number[], last: number, line: number, j0: number, g0: number, run: number): { n: number[]; e: number[]; g: number[]; idx: number } | null => {
-    const L = lineAt(line);
-    const cnt = L.s.length;
-    if (cnt < 3) return null;
-    const P0n = pn[last];
-    const P0e = pe[last];
-    let un = last > 0 ? P0n - pn[last - 1] : L.north[j0] - P0n;
-    let ue = last > 0 ? P0e - pe[last - 1] : L.east[j0] - P0e;
-    const ul = Math.hypot(un, ue) || 1;
-    un /= ul;
-    ue /= ul;
-    const dirAt = (j: number): [number, number] => {
-      const a = Math.max(0, Math.min(cnt - 2, j));
-      const b = Math.min(cnt - 1, a + 2);
-      const dn = L.north[b] - L.north[a];
-      const de = L.east[b] - L.east[a];
-      const dl = Math.hypot(dn, de) || 1;
-      return [dn / dl, de / dl];
-    };
-    const cosMax = Math.cos(JUNCTION_ANGLE);
-    const tryAt = (j: number): { n: number[]; e: number[]; g: number[]; idx: number } | null => {
-      const Jn = L.north[j];
-      const Je = L.east[j];
-      const c = Math.hypot(Jn - P0n, Je - P0e);
-      if (c < 1.5 * STREAM_SPACING) return null;
-      const [tn, te] = dirAt(j);
-      const k = 0.6 * c;
-      const steps = Math.max(2, Math.ceil(c / STREAM_SPACING));
-      const n: number[] = [];
-      const e: number[] = [];
-      const g: number[] = [];
-      const mouth = L.level[j];
-      for (let q = 1; q < steps; q++) {
-        const t = q / steps;
-        const h00 = 2 * t * t * t - 3 * t * t + 1;
-        const h10 = t * t * t - 2 * t * t + t;
-        const h01 = -2 * t * t * t + 3 * t * t;
-        const h11 = t * t * t - t * t;
-        const qn = h00 * P0n + h10 * k * un + h01 * Jn + h11 * k * tn;
-        const qe = h00 * P0e + h10 * k * ue + h01 * Je + h11 * k * te;
-        // (Not over the receiver's water before its mouth, nor into a lake.)
-        if (Math.hypot(qn - Jn, qe - Je) > L.halfWidth[j] + STREAM_SPACING && mask.at(qn, qe) > -Infinity) return null;
-        const gq = p.route(qn, qe);
-        report.crossSamples = (report.crossSamples ?? 0) + 1;
-        if (gq > g0 + FLOOR_RISE || gq < mouth) return null;
-        n.push(qn);
-        e.push(qe);
-        g.push(gq);
-      }
-      return { n, e, g, idx: j };
-    };
-    // The first sample down the receiver where the way in meets it at JUNCTION_ANGLE or less.
-    let best = -1;
-    for (let j = j0; j < cnt - 1 && L.s[j] - L.s[j0] <= JUNCTION_SHIFT; j++) {
-      if (mask.at(L.north[j], L.east[j]) > -Infinity) break;
-      const cn = L.north[j] - P0n;
-      const ce = L.east[j] - P0e;
-      const cl = Math.hypot(cn, ce) || 1;
-      const [tn, te] = dirAt(j);
-      if ((cn * tn + ce * te) / cl >= cosMax) {
-        best = j;
-        break;
-      }
-    }
-    if (best >= 0) {
-      const r = tryAt(best);
-      if (r) return r;
-    }
-    return tryAt(j0);
-  };
   const build = (path: number[], endAt: End, first: { north: number; east: number; level: number } | null, pool: number, pathArea: number[], pathVee: number[], at: { n: number[]; e: number[]; g: number[] }): void => {
     const bt0 = performance.now();
     const m = path.length;
@@ -540,24 +489,23 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       // It joins the water it reached (its last reach backs up to it where it came lower).
       const L = lineAt(end.line);
       let j = end.idx;
+      // (At the receiver's sample nearest where it reached it: the raster point it came to is marked by the receiver's
+      // first sample within reach of it, up to RIVER_TOUCH and the receiver's width upstream of it, whose water stands
+      // higher - backed up to that, its last reach stood over its ground.)
       {
-        // A course come off a V joins its receiver as water does there: curving downstream into it (a Y), not square
-        // across it (junction).
-        const last = pn.length - 1;
-        if (last >= (first ? 1 : 0) && last - (first ? 1 : 0) === m - 1 && pathVee[m - 1] === 0) {
-          const jc = junction(pn, pe, last, end.line, j, G(path[m - 1]), run);
-          if (jc) {
-            j = jc.idx;
-            for (let q = 0; q < jc.n.length; q++) {
-              pn.push(jc.n[q]);
-              pe.push(jc.e[q]);
-              lv.push(run);
-              gp.push(jc.g[q]);
-              pa.push(NaN);
-            }
-            report.junctions = (report.junctions ?? 0) + 1;
+        const ln = pn[pn.length - 1];
+        const le = pe[pe.length - 1];
+        const reach = 2 * (RIVER_TOUCH + L.halfWidth[j]);
+        let bd = Math.hypot(L.north[j] - ln, L.east[j] - le);
+        for (let q = j + 1; q < L.s.length && L.s[q] - L.s[end.idx] <= reach; q++) {
+          const dq = Math.hypot(L.north[q] - ln, L.east[q] - le);
+          if (dq < bd) {
+            bd = dq;
+            j = q;
           }
         }
+      }
+      {
         pn.push(L.north[j]);
         pe.push(L.east[j]);
         lv.push(L.level[j]);

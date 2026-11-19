@@ -68,7 +68,7 @@ export function rememberSeededModel(): void {
 /** A copy of the model to store (this thread's build keeps its own arrays). */
 function copyOf(m: SeededModel): SeededModel {
   const s = m.slopes;
-  return { seed: m.seed, key: m.key, lattice: m.lattice.slice(), slopes: s ? { h: s.h.slice(), w: s.w.slice(), chan: s.chan.slice(), floor: s.floor.slice(), lz: s.lz.slice(), sc: s.sc, ...(s.dir ? { dir: s.dir.slice() } : {}) } : null };
+  return { seed: m.seed, key: m.key, lattice: m.lattice.slice(), slopes: s ? { h: s.h.slice(), w: s.w.slice(), chan: s.chan.slice(), floor: s.floor.slice(), lz: s.lz.slice(), sc: s.sc, ...(s.dir ? { dir: s.dir.slice() } : {}) } : null, route: m.route ? m.route.slice() : null };
 }
 
 function computeInWorker(seed: number, era: EraId): Promise<SeededModel | null> {

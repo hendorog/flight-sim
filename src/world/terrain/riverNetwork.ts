@@ -439,7 +439,7 @@ export const formProbe: { on?: (li: number, axis: { north: Float64Array; east: F
  * of `area` km². */
 export const valleyInfluence = (area: number): number => 500 + 1900 * smooth(30, 2000, area);
 /** Build a seeded world's hydrology from its drainage and lakes. */
-export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyDepth?: Float32Array, smoothGround: (north: number, east: number) => number = natural, markFloor?: (axes: Array<{ north: Float64Array; east: Float64Array; half: Float64Array; area: Float64Array }>) => void, pinned?: (north: number, east: number) => number, wallWeight?: (north: number, east: number) => number): Hydrology {
+export function buildNetworkHydrology(natural: (north: number, east: number) => number, d: Drainage, mask: LakeMask, valleyDepth?: Float32Array, smoothGround: (north: number, east: number) => number = natural, markFloor?: (axes: Array<{ north: Float64Array; east: Float64Array; half: Float64Array; area: Float64Array }>) => void, pinned?: (north: number, east: number) => number, wallWeight?: (north: number, east: number) => number, streamRaster?: () => Float32Array | null): Hydrology {
   const lines = d.lines;
   void valleyDepth;
   // --- Courses: each line's is the model's own (erosion.ts channelCourse, over the drainage's tree), the course the
@@ -1347,7 +1347,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   tPhase.push(performance.now());
   const route = (pn: number, pe: number): number => carvedGround(smoothGround(pn, pe), pn, pe);
   const netMs = { refine: 0, shape: 0, pitch: 0, flow: 0, index: 0 };
-  const traced = traceStreams({ d, mask, route, rivers, riverPools, pinned });
+  const traced = traceStreams({ d, mask, route, smooth: smoothGround, carve: carvedGround, raster: streamRaster?.() ?? null, rivers, riverPools, pinned });
   // A river whose head is in no lake begins where its water does: where the first stream (a feeder, streams.ts
   // feedHeads) or lattice tributary joins it, when that is within FEED_JOIN of the head - no trickle runs on above it.
   {
@@ -1406,8 +1406,10 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         len = t.north.length;
         untangle(t.north, t.east, t.valleyS);
       }
-      // (It keeps the points its shape needs, and its course's samples: the course's levels.)
+      // (It keeps the points its shape needs, and its course's samples: the course's levels. A tight bend thinned to
+      // fewer points may fold over itself: cut out again.)
       thinThread(t, st.s, THIN_EPS, STREAM_SPACING);
+      untangle(t.north, t.east, t.valleyS);
       const n = t.north.length;
       if (n < 2) continue;
       // Its samples at the thread's places along the course.
@@ -2548,17 +2550,35 @@ function thinThread(t: { north: number[]; east: number[]; valleyS: number[] }, c
   for (let i = 0; i < n; i++) if (keep[i]) (t.north[j] = t.north[i], t.east[j] = t.east[i], t.valleyS[j] = t.valleyS[i], j++);
   t.north.length = t.east.length = t.valleyS.length = j;
 }
+/** untangle's grid holds at most this many cells. */
+const UNTANGLE_CELLS = 1 << 20;
 /**
  * Cut every loop where the polyline crosses itself (in place): the points between the two crossing segments go, and
- * the crossing point joins them. Segments are found through a 200 m grid, so a long channel costs little.
+ * the crossing point joins them. Segments are found through a grid of cells at most 200 m (as long as the longest
+ * segment), so a long channel costs little.
  */
 function untangle(n: number[], e: number[], vs: number[]): void {
-  const CELL = 200;
   for (let pass = 0; pass < 8; pass++) {
     // Segments by the cell of their midpoint: a dense grid over the line's extent (a head per cell, a chain through
     // the segments). The crossing kept is the furthest one along (whatever order the candidates come in).
     const m = n.length - 1;
     if (m < 2) return;
+    // (Two segments that cross have midpoints no further apart than the longer one: with cells at least that long every
+    // crossing is among the nine cells about a segment, and the cells as small as that - at most 200 m, the grid at
+    // most UNTANGLE_CELLS - leave fewer segments to look at.)
+    let seg = 0;
+    let bn0 = Infinity;
+    let bn1 = -Infinity;
+    let be0 = Infinity;
+    let be1 = -Infinity;
+    for (let i = 0; i < m; i++) {
+      seg = Math.max(seg, Math.hypot(n[i + 1] - n[i], e[i + 1] - e[i]));
+      bn0 = Math.min(bn0, n[i]);
+      bn1 = Math.max(bn1, n[i]);
+      be0 = Math.min(be0, e[i]);
+      be1 = Math.max(be1, e[i]);
+    }
+    const CELL = Math.min(200, Math.max(seg, 25, Math.sqrt(((bn1 - bn0 + 400) * (be1 - be0 + 400)) / UNTANGLE_CELLS)));
     const cn = new Int32Array(m);
     const ce = new Int32Array(m);
     let n0 = Infinity;

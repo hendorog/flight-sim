@@ -16,9 +16,9 @@ import { macroCacheBegin, macroCachedAt, macroCachedGradAt, macroCacheEnd, macro
 import { clamp, type Vec3 } from '../../core/math';
 import type { SurfaceType } from '../../core/types';
 import { AIRPORT, onHomeAirport } from '../../core/world';
-import { breachWall } from './streams';
+import { breachWall, smoothRaster } from './streams';
 import { CHANNEL_BANK, LAKE_ZONE, RIVER_INFLUENCE, buildHydrology, buildLakes, buildLegacyHydrology, lakeRadius, type ChannelNear, type Hydrology, type Lake, type OxbowHit, type RiverHit, type ValleyHit, type ValleyNear } from './hydrology';
-import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LakeMask, ShoreSmooth, type Drainage } from './drainage';
+import { buildDrainage, DOMAIN_HALF, DRAIN_CELL, LAKE_RASTER, LakeMask, RASTER_N, ShoreSmooth, type Drainage } from './drainage';
 import { gullyNetOf, setGullyNet } from './gullies';
 import { attachSlopes, buildErosion, floorHalfFor, FLOOR_SMIN, sminUp, CUT_CELL as CUT_CELL_M, CUT_N, erosionGullies, upsample, markCourse, macroOffset, macroOffsetGrad, modelInputs, modelKey, sampleErosion, sampleErosionGrad, slopeSmoothDelta, steadyLattice, type ErosionField, type ErosionGrad, type ErosionSample, type ModelInputs, type ModelSample } from './erosion';
 import { buildNetworkHydrology, floorSet, wallLift, wallStart } from './riverNetwork';
@@ -881,9 +881,17 @@ export interface SeededModel {
   lattice: Float32Array;
   /** The mountains' threshold hillslopes on the fine grid (hillslopes.ts), worked out from the cells. */
   slopes?: SlopeField | null;
+  /** The ground the streams are routed over, without the rivers' valleys, on the streams' 250 m raster (streams.ts
+   * smoothRaster), worked out once the slopes are. */
+  route?: Float32Array | null;
 }
+/** How many raster points a handed-over streams' raster is checked at against the ground worked out afresh (a stale
+ * cache entry - the ground's code changed under the same model key - is worked out again). */
+const ROUTE_CHECKS = 24;
 /** The model cells handed over for the next build (macroCache.ts, a terrain worker's setup), if any. */
 let providedModel: SeededModel | null = null;
+/** The streams' raster of the current seeded build (SeededModel.route). */
+let streamRaster: Float32Array | null = null;
 /** The model cells the last seeded build used (to hand on to the terrain workers and the cache); null at seed 0. */
 let lastModel: SeededModel | null = null;
 /** How long the last seeded build spent in the model, ms (0 when it was handed over). */
@@ -1002,9 +1010,23 @@ function buildWater(): void {
         attachSlopes(eroded, slopes);
         // (The slopes' own routing, with its catchment: the streams follow it, gullies.ts.)
         setGullyNet(gullyNetOf(slopes));
-        lastModel = { seed: worldSeed(), key, lattice: T, slopes };
+        // The ground the streams are routed over, on their raster (handed over with the model where it is still the
+        // ground worked out here: checked at a few points), and from here the ponds drained or lowered are taken afresh.
+        const t2 = performance.now();
+        const given2 = handed && handed.route && handed.route.length === RASTER_N * RASTER_N ? handed.route : null;
+        let fresh = !!given2;
+        for (let c = 0; c < ROUTE_CHECKS && given2; c++) {
+          const k = Math.floor(((c + 0.5) / ROUTE_CHECKS) * given2.length);
+          const v = given2[k];
+          if (v !== v) continue;
+          if (Math.fround(naturalHeightSmooth(-DOMAIN_HALF + Math.floor(k / RASTER_N) * LAKE_RASTER, -DOMAIN_HALF + (k % RASTER_N) * LAKE_RASTER)) !== v) fresh = false;
+        }
+        streamRaster = fresh && given2 ? given2 : smoothRaster(drainage, naturalHeightSmooth);
+        mask.changed.length = 0;
+        if (!fresh) modelMs += performance.now() - t2;
+        lastModel = { seed: worldSeed(), key, lattice: T, slopes, route: streamRaster };
         if (modelOnly) throw MODEL_DONE;
-      }, slopePinned, slopeWall);
+      }, slopePinned, slopeWall, () => streamRaster);
     } catch (e) {
       if (e === MODEL_DONE) return;
       throw e;
