@@ -20,3 +20,4 @@ Cameras (fov 55, ui=0, wx=clear):
              the middle (n, e, z).
 Names: bp<seed>-<M1|M2|P1>-plan, bp<seed>-<M1|M2|P1>-obl.
 Written: 2026-11-20T09:40:03+13:00
+# close views: added after the pick rule (advisor), derived mechanically from each seed's M1 oblique: 700 m back up its chord, 300 m over its water. 2026-11-20T11:40:14+13:00

@@ -6,7 +6,7 @@ B=/home/roger/github/fs-exp/round-w-braid/out/fs/W/B; SP=/tmp/claude-1000/-home-
 T=$1; N=$2; Q=$3; O=$B/pics/$T; mkdir -p $O
 exec 9>$SP/shot5321.lock; flock 9
 for try in 1 2 3; do
-  while [ $(awk '{print int($1)}' /proc/loadavg) -gt 20 ]; do sleep 20; done
+  while [ $(awk '{print int($1)}' /proc/loadavg) -gt 26 ]; do sleep 20; done
   if ss -ltn "sport = :5321" | grep -q LISTEN; then echo "$N $T: port 5321 busy, stopped"; exit 1; fi
   l0=$(cut -d' ' -f1 /proc/loadavg); t0=$(date +%s)
   V2_CACHE=$SP/vite-5321-$T V2_ROOT=$SP/trees/$T V2_PORT=5321 timeout 600 node /home/roger/github/fs-exp/round-v/out/fs/tools/shot.mjs "index.html?$Q&ui=0&resume=0&wx=clear" $O/$N.png --wait 9000 --timeout 300000 > $O/$N.txt 2>&1

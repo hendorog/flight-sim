@@ -1,0 +1,4 @@
+bp1-M1-low seed=1&camPos=-4068,117111,628&camLook=-4519,116576,328&fov=55
+bp42-M1-low seed=42&camPos=-134419,97283,749&camLook=-135119,97303,449&fov=55
+bp777777-M1-low seed=777777&camPos=40306,-61843,1015&camLook=39746,-62264,715&fov=55
+bp7-M1-low seed=7&camPos=65834,-44451,574&camLook=65320,-44926,274&fov=55

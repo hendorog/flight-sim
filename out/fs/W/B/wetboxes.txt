@@ -1,0 +1,4 @@
+seed 1: water before 3.20 km², after 4.81 km² (+51 %); after water inside the before bed 2.00, outside it 2.81 km²; new water (dry before) 2.87 km², of which outside the before bed 2.06 km²; water lost 1.25 km²
+seed 42: water before 2.13 km², after 3.56 km² (+67 %); after water inside the before bed 1.59, outside it 1.97 km²; new water (dry before) 2.54 km², of which outside the before bed 1.97 km²; water lost 1.11 km²
+seed 777777: water before 2.61 km², after 4.37 km² (+68 %); after water inside the before bed 1.99, outside it 2.38 km²; new water (dry before) 3.18 km², of which outside the before bed 2.37 km²; water lost 1.42 km²
+seed 7: water before 2.75 km², after 4.48 km² (+63 %); after water inside the before bed 2.12, outside it 2.35 km²; new water (dry before) 3.22 km², of which outside the before bed 2.35 km²; water lost 1.49 km²

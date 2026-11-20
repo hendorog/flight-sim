@@ -1,0 +1,16 @@
+seed 1 rivers, no braid on the line: 258 km; moved >10 m 4, >50 m 1
+seed 1 rivers, unbraided reaches of braided lines: 2282 km; moved >10 m 1035, >50 m 393
+seed 1 rivers, braided reaches: 3186 km; moved >10 m 2388, >50 m 404
+seed 1 streams: 14442 km; moved >10 m 6100, >50 m 686
+seed 42 rivers, no braid on the line: 385 km; moved >10 m 8, >50 m 1
+seed 42 rivers, unbraided reaches of braided lines: 2498 km; moved >10 m 1155, >50 m 408
+seed 42 rivers, braided reaches: 2677 km; moved >10 m 1970, >50 m 277
+seed 42 streams: 15263 km; moved >10 m 3944, >50 m 386
+seed 777777 rivers, no braid on the line: 378 km; moved >10 m 10, >50 m 1
+seed 777777 rivers, unbraided reaches of braided lines: 2594 km; moved >10 m 1272, >50 m 541
+seed 777777 rivers, braided reaches: 3211 km; moved >10 m 2425, >50 m 421
+seed 777777 streams: 15233 km; moved >10 m 8128, >50 m 766
+seed 7 rivers, no braid on the line: 257 km; moved >10 m 9, >50 m 1
+seed 7 rivers, unbraided reaches of braided lines: 2307 km; moved >10 m 1297, >50 m 565
+seed 7 rivers, braided reaches: 3708 km; moved >10 m 2753, >50 m 428
+seed 7 streams: 17546 km; moved >10 m 9781, >50 m 880

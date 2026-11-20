@@ -1,0 +1,12 @@
+BP seed 1 M1: line 57 at -4519,116576 level 328 A 245 km2 share 1.00
+BP seed 1 M2: line 100 at -63604,-15069 level 156 A 154 km2 share 1.00
+BP seed 1 P1: line 220 at 58714,119214 level 418 A 148 km2 share 0.99
+BP seed 42 M1: line 21 at -135119,97303 level 449 A 143 km2 share 1.00
+BP seed 42 M2: line 132 at -61504,76422 level 63 A 114 km2 share 0.99
+BP seed 42 P1: line 251 at -61065,-32297 level 258 A 72 km2 share 0.95
+BP seed 777777 M1: line 27 at 39746,-62264 level 715 A 230 km2 share 1.00
+BP seed 777777 M2: line 56 at -43831,46439 level 543 A 217 km2 share 1.00
+BP seed 777777 P1: line 296 at 4819,-104395 level 182 A 67 km2 share 0.98
+BP seed 7 M1: line 110 at 65320,-44926 level 274 A 196 km2 share 1.00
+BP seed 7 M2: line 108 at 84651,-5661 level 255 A 205 km2 share 1.00
+BP seed 7 P1: line 343 at 110463,-21342 level 294 A 435 km2 share 0.99
