@@ -1,0 +1,12 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+RW seed 1: river axis samples 52688; belt off its course 45985 (87 %); with a floor beyond its bed 51780; kept off a side falling away 8118; floor read past its bank by its slope 52573; form samples 2079572, wide gravel bed 222711, braided 228106, white 1375083; junction blends 6118; pitch units 861961, shaped 861961, samples put in 335093; ended where they first reach their receiver's bed 3747 lines (232.1 km cut); mouths ramped down to their receiver 922 (37.8 km)
+RW seed 42: river axis samples 50524; belt off its course 44206 (87 %); with a floor beyond its bed 49872; kept off a side falling away 8112; floor read past its bank by its slope 50383; form samples 2144533, wide gravel bed 190312, braided 192660, white 1359626; junction blends 6238; pitch units 868364, shaped 868364, samples put in 326879; ended where they first reach their receiver's bed 3714 lines (226.5 km cut); mouths ramped down to their receiver 903 (37.5 km)
+RW seed 777777: river axis samples 56782; belt off its course 49645 (87 %); with a floor beyond its bed 55570; kept off a side falling away 8953; floor read past its bank by its slope 56445; form samples 2202393, wide gravel bed 220122, braided 226145, white 1477513; junction blends 6526; pitch units 932699, shaped 932699, samples put in 357314; ended where they first reach their receiver's bed 3924 lines (239.7 km cut); mouths ramped down to their receiver 970 (42.3 km)
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  10:05:38
+   Duration  145.92s (tests 99%)
+

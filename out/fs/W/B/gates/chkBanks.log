@@ -1,0 +1,18 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+seed 1: in reach 149870 m (10 m steps). hw+3 point lies (both sides): in water 2518, on bar 8456, past bed 19000, no form 0
+  held (water over both sides) >3/>5/>10, 10 m steps: at hw+3 6/0/0; at bed edge+3 6/0/0; flagged >3 at hw+3 by where its points lie: {"wet":0,"bar":1,"past":11,"noform":0}
+  banks (lower side over the water) >2.5/>4 m, m: at hw+3 1810/50; at bed edge+3 2770/50; flagged >2.5 at hw+3 by where: {"wet":0,"bar":18,"past":344,"noform":0}
+seed 42: in reach 187260 m (10 m steps). hw+3 point lies (both sides): in water 1397, on bar 9772, past bed 26283, no form 0
+  held (water over both sides) >3/>5/>10, 10 m steps: at hw+3 29/11/0; at bed edge+3 24/2/0; flagged >3 at hw+3 by where its points lie: {"wet":26,"bar":10,"past":22,"noform":0}
+  banks (lower side over the water) >2.5/>4 m, m: at hw+3 2060/280; at bed edge+3 8990/270; flagged >2.5 at hw+3 by where: {"wet":0,"bar":24,"past":388,"noform":0}
+seed 777777: in reach 223150 m (10 m steps). hw+3 point lies (both sides): in water 412, on bar 14800, past bed 29418, no form 0
+  held (water over both sides) >3/>5/>10, 10 m steps: at hw+3 27/10/0; at bed edge+3 26/10/0; flagged >3 at hw+3 by where its points lie: {"wet":2,"bar":5,"past":47,"noform":0}
+  banks (lower side over the water) >2.5/>4 m, m: at hw+3 19390/600; at bed edge+3 44300/840; flagged >2.5 at hw+3 by where: {"wet":0,"bar":42,"past":3836,"noform":0}
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  10:04:04
+   Duration  119.06s (tests 99%, import 1%)
+

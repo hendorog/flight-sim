@@ -1,0 +1,37 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+WN seed 42 TOTAL perched: river water > 10 m over its centre ground 0.45 km, > 30 m 0.00 km; river water hidden under the drawn ground at its centre (anywhere) 0.05 km, worst line 94 water 191.4 under the drawn ground 190.3 at its centre at 115568,-3577
+WN seed 42 TOTAL step: across every line, steps over 50 m 8, over 100 m 0 (25 m samples)
+WN seed 42 TOTAL face: within 700 m of rivers, over 40 deg 11.8 km2 (sampled), of it made by the carve 3.9 km2
+WN seed 42 TOTAL hidden: every line in every field's reach 160014 m, hidden 1948 m; by field KWSH 1308/22364, KELM 464/30634, KTHR 0/14322, KASH 0/20043, KIVY 0/21488, KSND 0/19179, KNRC 176/23587, KOKF 0/8397
+WN seed 42 TOTAL poolcut: 304 falls; pool water under the ground 60 m beside it (lower side) p50 17.1 p90 51.4 max 65.5 m; over 5 m 256
+WN seed 42 TOTAL cross: self-crossings 0
+WN seed 42 TOTAL stepup: junction step-ups > 0.5 / 2 / 5 m 31 / 1 / 0 (in lakes and out)
+WN seed 42 TOTAL slot: water in a box slot (both walls 15 m past the banks over it) > 20 / > 40 m, km: rivers 0.00 / 0.00, streams 0.10 / 0.00
+WN seed 42 perched #1: line 412 water 2.0 over its centre ground -11.3: 13.3 m at -84754,-103189 | w42-perched1 seed=42&camPos=-85815,-102128,602&camLook=-84754,-103189,2
+WN seed 42 perched #2: line 254 water 44.1 over its centre ground 33.0: 11.1 m at 57864,-20199 | w42-perched2 seed=42&camPos=56803,-19138,644&camLook=57864,-20199,44
+WN seed 42 perched #3: line 151 water 12.2 over its centre ground 1.9: 10.3 m at -10628,67462 | w42-perched3 seed=42&camPos=-9128,67462,612&camLook=-10628,67462,12
+WN seed 42 step #1: 57 m between 650 and 675 m from line 1649 (kind 1, water 722.1): 1082.6 -> 1139.9 at -35785,19821 | w42-step1 seed=42&camPos=-35785,18321,1683&camLook=-35785,19821,1083
+WN seed 42 step #2: 55 m between 325 and 350 m from line 2671 (kind 1, water 234.4): 258.2 -> 313.1 at -95024,29879 | w42-step2 seed=42&camPos=-95024,31379,858&camLook=-95024,29879,258
+WN seed 42 step #3: 54 m between 25 and 50 m from line 3377 (kind 1, water 257.4): 277.1 -> 331.5 at 70854,102220 | w42-step3 seed=42&camPos=69793,101159,877&camLook=70854,102220,277
+WN seed 42 face #1: a 173 m face over 40 deg at 375-525 m from river 31 (water 290.1), not in the shaped ground before the carve at 40587,153227 | w42-face1 seed=42&camPos=39087,153227,1176&camLook=40587,153227,576
+WN seed 42 face #2: a 162 m face over 40 deg at 375-500 m from river 25 (water 861.5), not in the shaped ground before the carve at -152632,16562 | w42-face2 seed=42&camPos=-153693,15501,1702&camLook=-152632,16562,1102
+WN seed 42 face #3: a 144 m face over 40 deg at 225-350 m from river 24 (water 547.6), not in the shaped ground before the carve at -149751,-135671 | w42-face3 seed=42&camPos=-149751,-134171,1358&camLook=-149751,-135671,758
+WN seed 42 hidden #1: line 6159 (kind 1) hidden 712 m by KWSH, worst off its channel at 19750,35354 | w42-hidden1 seed=42&camPos=18689,36415,729&camLook=19750,35354,129
+WN seed 42 hidden #2: line 6160 (kind 1) hidden 596 m by KWSH, worst off its channel at 20196,36000 | w42-hidden2 seed=42&camPos=20196,37500,730&camLook=20196,36000,130
+WN seed 42 hidden #3: line 6395 (kind 1) hidden 464 m by KELM, worst off its channel at 9844,46094 | w42-hidden3 seed=42&camPos=11344,46094,647&camLook=9844,46094,47
+WN seed 42 poolcut #1: fault fall on line 3143 (kind 1), drop 10 m: its pool's water 65.5 m under the ground 60 m beside it on both sides at -86384,20247 | w42-poolcut1 seed=42&camPos=-87884,20247,1041&camLook=-86384,20247,441
+WN seed 42 poolcut #2: fault fall on line 4996 (kind 1), drop 14 m: its pool's water 65.1 m under the ground 60 m beside it on both sides at -97250,10098 | w42-poolcut2 seed=42&camPos=-97250,8598,1012&camLook=-97250,10098,412
+WN seed 42 poolcut #3: fault fall on line 1122 (kind 1), drop 13 m: its pool's water 64.4 m under the ground 60 m beside it on both sides at -12750,-10492 | w42-poolcut3 seed=42&camPos=-12750,-8992,1298&camLook=-12750,-10492,698
+WN seed 42 cross: none
+WN seed 42 stepup #1: line 2913 (kind 1) into 393 (kind 0): joining 276.0, receiver 279.6, step up 3.56 m at -87030,16587 | w42-stepup1 seed=42&camPos=-88530,16587,880&camLook=-87030,16587,280
+WN seed 42 stepup #2: line 2936 (kind 1) into 333 (kind 0): joining 163.2, receiver 164.6, step up 1.44 m at -130060,7937 | w42-stepup2 seed=42&camPos=-128999,6876,765&camLook=-130060,7937,165
+WN seed 42 stepup #3: line 424 (kind 1) into 129 (kind 0): joining 231.2, receiver 232.7, step up 1.43 m at 136240,-1016 | w42-stepup3 seed=42&camPos=134740,-1016,833&camLook=136240,-1016,233
+WN seed 42 slot #1: line 3670 (kind 1) water 406.0 in a slot 24 m deep (walls 430 / 430 at 16 m) at 16186,16040 | w42-slot1 seed=42&camPos=14686,16040,1006&camLook=16186,16040,406
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  09:59:35
+   Duration  149.40s (tests 99%)
+

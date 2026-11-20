@@ -1,0 +1,37 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+BS2 seed 1: line km 23280; braided (K >= 1.5) km: rivers 2967, streams 3
+BS2 seed 1 all K >= 1.5: transects 3110; braid index p10/50/90 1.00/2.00/3.00 mean 2.01; wetted share 0.07/0.13/0.34; bar share p50 0.87; bed m 61/183/341; bed/floor(+10 m) 0.08/0.29/0.55
+BS2 seed 1 share >= 0.6: transects 1809; braid index p10/50/90 1.00/2.00/3.00 mean 2.37; wetted share 0.06/0.10/0.17; bar share p50 0.90; bed m 146/245/375; bed/floor(+10 m) 0.22/0.41/0.60
+BS2 seed 1 share >= 0.6, A >= 1000 km2: transects 25; braid index p10/50/90 2.00/4.00/5.00 mean 3.84; wetted share 0.13/0.19/0.32; bar share p50 0.81; bed m 374/579/928; bed/floor(+10 m) 0.14/0.24/0.51
+BS2 seed 1 share >= 0.6, A 100-1000 km2: transects 863; braid index p10/50/90 2.00/3.00/4.00 mean 2.71; wetted share 0.07/0.11/0.18; bar share p50 0.89; bed m 172/285/411; bed/floor(+10 m) 0.23/0.43/0.62
+BS2 seed 1 share >= 0.6, A < 100 km2: transects 921; braid index p10/50/90 1.00/2.00/3.00 mean 2.01; wetted share 0.06/0.09/0.14; bar share p50 0.91; bed m 131/218/305; bed/floor(+10 m) 0.22/0.40/0.56
+BS2 seed 1 share < 0.6: transects 1301; braid index p10/50/90 1.00/1.00/2.00 mean 1.52; wetted share 0.14/0.25/0.48; bar share p50 0.75; bed m 39/95/191; bed/floor(+10 m) 0.04/0.15/0.29
+BS2 seed 42: line km 24032; braided (K >= 1.5) km: rivers 2453, streams 7
+BS2 seed 42 all K >= 1.5: transects 2573; braid index p10/50/90 1.00/2.00/3.00 mean 2.03; wetted share 0.07/0.13/0.34; bar share p50 0.87; bed m 56/181/331; bed/floor(+10 m) 0.08/0.29/0.54
+BS2 seed 42 share >= 0.6: transects 1527; braid index p10/50/90 1.00/2.00/4.00 mean 2.40; wetted share 0.06/0.10/0.16; bar share p50 0.90; bed m 146/248/360; bed/floor(+10 m) 0.21/0.40/0.59
+BS2 seed 42 share >= 0.6, A >= 1000 km2: transects 12; braid index p10/50/90 2.00/4.00/6.00 mean 3.92; wetted share 0.13/0.17/0.27; bar share p50 0.83; bed m 326/567/706; bed/floor(+10 m) 0.09/0.19/0.40
+BS2 seed 42 share >= 0.6, A 100-1000 km2: transects 727; braid index p10/50/90 2.00/3.00/4.00 mean 2.75; wetted share 0.07/0.11/0.18; bar share p50 0.89; bed m 169/277/400; bed/floor(+10 m) 0.22/0.42/0.62
+BS2 seed 42 share >= 0.6, A < 100 km2: transects 788; braid index p10/50/90 1.00/2.00/3.00 mean 2.05; wetted share 0.06/0.09/0.14; bar share p50 0.91; bed m 130/223/305; bed/floor(+10 m) 0.21/0.38/0.58
+BS2 seed 42 share < 0.6: transects 1046; braid index p10/50/90 1.00/1.00/2.00 mean 1.48; wetted share 0.14/0.24/0.50; bar share p50 0.76; bed m 34/88/173; bed/floor(+10 m) 0.04/0.15/0.30
+BS2 seed 777777: line km 24743; braided (K >= 1.5) km: rivers 2903, streams 3
+BS2 seed 777777 all K >= 1.5: transects 3085; braid index p10/50/90 1.00/2.00/3.00 mean 1.98; wetted share 0.07/0.14/0.36; bar share p50 0.86; bed m 54/183/341; bed/floor(+10 m) 0.07/0.29/0.56
+BS2 seed 777777 share >= 0.6: transects 1785; braid index p10/50/90 1.00/2.00/3.00 mean 2.37; wetted share 0.06/0.10/0.16; bar share p50 0.90; bed m 145/251/373; bed/floor(+10 m) 0.22/0.41/0.60
+BS2 seed 777777 share >= 0.6, A >= 1000 km2: transects 21; braid index p10/50/90 2.00/4.00/6.00 mean 3.95; wetted share 0.09/0.15/0.24; bar share p50 0.85; bed m 380/648/938; bed/floor(+10 m) 0.15/0.22/0.51
+BS2 seed 777777 share >= 0.6, A 100-1000 km2: transects 820; braid index p10/50/90 2.00/3.00/4.00 mean 2.67; wetted share 0.07/0.11/0.18; bar share p50 0.89; bed m 178/286/406; bed/floor(+10 m) 0.23/0.43/0.62
+BS2 seed 777777 share >= 0.6, A < 100 km2: transects 944; braid index p10/50/90 1.00/2.00/3.00 mean 2.07; wetted share 0.06/0.09/0.14; bar share p50 0.91; bed m 130/226/312; bed/floor(+10 m) 0.22/0.41/0.58
+BS2 seed 777777 share < 0.6: transects 1300; braid index p10/50/90 1.00/1.00/2.00 mean 1.46; wetted share 0.14/0.25/0.51; bar share p50 0.75; bed m 35/91/188; bed/floor(+10 m) 0.04/0.14/0.29
+BS2 seed 7: line km 27493; braided (K >= 1.5) km: rivers 3470, streams 4
+BS2 seed 7 all K >= 1.5: transects 3602; braid index p10/50/90 1.00/2.00/3.00 mean 2.06; wetted share 0.07/0.13/0.33; bar share p50 0.87; bed m 64/195/348; bed/floor(+10 m) 0.09/0.31/0.56
+BS2 seed 7 share >= 0.6: transects 2275; braid index p10/50/90 1.00/2.00/3.00 mean 2.38; wetted share 0.06/0.10/0.16; bar share p50 0.90; bed m 149/247/373; bed/floor(+10 m) 0.22/0.41/0.60
+BS2 seed 7 share >= 0.6, A >= 1000 km2: transects 21; braid index p10/50/90 2.00/4.00/5.00 mean 3.90; wetted share 0.13/0.18/0.29; bar share p50 0.82; bed m 481/709/1021; bed/floor(+10 m) 0.16/0.30/0.46
+BS2 seed 7 share >= 0.6, A 100-1000 km2: transects 1094; braid index p10/50/90 2.00/3.00/4.00 mean 2.68; wetted share 0.07/0.11/0.18; bar share p50 0.89; bed m 166/278/411; bed/floor(+10 m) 0.22/0.42/0.62
+BS2 seed 7 share >= 0.6, A < 100 km2: transects 1160; braid index p10/50/90 1.00/2.00/3.00 mean 2.06; wetted share 0.06/0.09/0.13; bar share p50 0.91; bed m 137/224/314; bed/floor(+10 m) 0.23/0.41/0.58
+BS2 seed 7 share < 0.6: transects 1327; braid index p10/50/90 1.00/1.00/2.00 mean 1.50; wetted share 0.14/0.24/0.46; bar share p50 0.76; bed m 39/94/184; bed/floor(+10 m) 0.05/0.15/0.29
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  12:02:41
+   Duration  268.57s (tests 99%)
+

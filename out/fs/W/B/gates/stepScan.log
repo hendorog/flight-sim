@@ -1,0 +1,12 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+seed 1: 3624302 samples; steps over 25 m in 25 m 9035, over 50 m 6, over 100 m 0; worst 87 m at -26000,-17250, 67 m at -26000,-17150, 63 m at -36000,82350, 60 m at -36000,82375, 56 m at -36000,82325, 54 m at -36000,82400
+seed 42: 3624302 samples; steps over 25 m in 25 m 9876, over 50 m 5, over 100 m 0; worst 54 m at -10000,-16425, 53 m at -10000,-16400, 52 m at -10000,-16375, 51 m at -52000,48900, 51 m at -36000,19575
+seed 777777: 3624302 samples; steps over 25 m in 25 m 9674, over 50 m 23, over 100 m 0; worst 85 m at -1850,16000, 68 m at 0,16000, 67 m at 0,16025, 66 m at -1825,16000, 63 m at 25,16000, 59 m at 0,16000
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  09:59:07
+   Duration  162.31s (tests 99%)
+

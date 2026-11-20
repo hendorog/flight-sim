@@ -1,0 +1,24 @@
+start 09:57:30 jobs 6 load 3.50
+lakeStats exit 0 09:59:07
+drawnGate exit 0 09:59:14
+chkWetArea exit 0 09:59:35
+endsGate exit 0 10:00:26
+outletLoops exit 0 10:00:39
+selfCross exit 0 10:01:47
+stepScan exit 0 10:01:50
+worstN:s42 exit 0 10:02:04
+worstN:s1 exit 0 10:02:29
+worstN:s777777 exit 0 10:02:59
+headFeed exit 0 10:04:04
+feedCount exit 0 10:04:27
+chkPitch exit 0 10:05:37
+chkBanks exit 0 10:06:03
+chkFields exit 0 10:06:52
+ruleFiresW exit 0 10:08:04
+braidStats exit 0 10:10:29
+wallsGate:s1 exit 0 10:11:26
+braidGpu exit 0 10:11:57
+wallsGate:s42 exit 0 10:13:07
+wallsGate:s777777 exit 0 10:13:49
+lowLine exit 0 10:16:16
+SLIM-DONE 10:19:18

@@ -1,0 +1,36 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+PART2 seed 42: walked at 20 m; samples drawn 2345070, hidden (ground over the water) 186, under a lake 38446
+  drawn km: river 6408.88 stream 17045.48 chain 18.33
+  bank > 10 m (km): river 0.09 stream 5.23 chain 0.00; > 30 m: river 0.00 stream 0.00 chain 0.00
+  valley > 10 m (km): river 16.76 stream 439.19 chain 0.51; > 30 m: river 1.60 stream 106.22 chain 0.31
+  cross > 10 m (km): river 0.00 stream 311.88 chain 0.23; > 30 m: river 0.00 stream 33.99 chain 0.09
+  raised reaches (bank or valley) > 10 m: 3145 (river 171, stream 2971, chain 3); > 30 m: 773; >= 100 m long: 1849; cross reaches 5335
+  raised reaches by cause: {"bench":2507,"lowerLineBeside":434,"aboveNatural":139,"overGround":37,"lakeBeside":9,"bankLow":18,"lakeHeld":1}
+   109.2 m valley/bench len 234 at -8168,5498 flag -8210,5883 (388 m) line 1346 stream A 3.44 lvl 385.5 grad 0.033 gC 384.9 natC 387.6 top 277.5 natF 295.5 others 
+   91.8 m valley/bench len 39 at -148160,84502 flag -148083,84122 (387 m) line 2848 stream A 3.52 lvl 1225 grad 0.045 gC 1224.5 natC 1230.7 top 1136.5 natF 1136.5 others 
+   90.7 m valley/bench len 339 at -146445,-149056 flag -146729,-149320 (387 m) line 5661 stream A 3.74 lvl 880.5 grad 0.029 gC 879.5 natC 881 top 791.7 natF 791.7 others 
+   82.4 m valley/bench len 232 at -141503,-147955 flag -141115,-147971 (388 m) line 3686 stream A 2.81 lvl 974.1 grad 0.001 gC 973.7 natC 979.3 top 891.7 natF 895.7 others 3606
+   81.2 m valley/lowerLineBeside len 301 at -149840,3095 flag -149569,3374 (389 m) line 2697 stream A 6.76 lvl 447.6 grad 0 gC 446.7 natC 446.6 top 366.4 natF 374.7 others 2579
+   79.3 m valley/aboveNatural len 192 at 50174,150188 flag 49997,150533 (388 m) line 3527 stream A 3.8 lvl 894 grad 0.027 gC 891 natC 889.5 top 814.7 natF 813.7 others 3457
+   76 m valley/bench len 381 at 99569,149423 flag 99320,149126 (388 m) line 1546 stream A 3.75 lvl 856.9 grad 0 gC 856.4 natC 858.3 top 780.9 natF 780.9 others 
+   74.3 m valley/lowerLineBeside len 287 at -148052,83198 flag -147776,82924 (389 m) line 2866 stream A 7.23 lvl 928.8 grad 0.004 gC 922.8 natC 923.8 top 853.7 natF 856.8 others 2830
+   74.1 m valley/bench len 220 at 99001,102928 flag 99387,102964 (387 m) line 6421 stream A 2.41 lvl 682 grad 0.033 gC 681.7 natC 683.2 top 610 natF 610 others 
+   73 m valley/bench len 83 at 146751,-33896 flag 147138,-33898 (387 m) line 3075 stream A 2.15 lvl 650 grad 0.049 gC 649.7 natC 653.9 top 576.9 natF 576.9 others 
+   72 m valley/aboveNatural len 303 at -149077,41077 flag -149353,40801 (390 m) line 5395 stream A 15.58 lvl 675.4 grad 0 gC 669.4 natC 670.6 top 603.5 natF 605.1 others 4986
+   69.8 m valley/lowerLineBeside len 410 at 98990,149006 flag 98746,148738 (363 m) line 1562 stream A 3.81 lvl 723.5 grad 0.011 gC 723.1 natC 725.6 top 653.7 natF 655.8 others 1541,1586
+   68.8 m valley/bench len 376 at 149733,-32016 flag 150028,-32268 (388 m) line 2891 stream A 4.48 lvl 569.3 grad 0 gC 566.7 natC 567.7 top 500.5 natF 499.4 others 2806
+   68.4 m valley/bench len 335 at 75490,5733 flag 75740,5436 (388 m) line 1212 stream A 2.92 lvl 924.1 grad 0.004 gC 923.5 natC 923.2 top 855.7 natF 855.7 others 
+   68.4 m valley/bench len 69 at -147678,-119464 flag -147540,-119827 (389 m) line 5140 stream A 6.55 lvl 249.8 grad 0.009 gC 249.3 natC 249.6 top 181.5 natF 181.5 others 
+   67.8 m valley/bench len 123 at -62000,-62828 flag -62387,-62814 (387 m) line 6270 stream A 1.88 lvl 210.2 grad 0.031 gC 209.9 natC 211.8 top 143.9 natF 143.9 others 
+   66.8 m valley/bench len 167 at 104824,148000 flag 104824,147613 (387 m) line 2379 stream A 2.87 lvl 787 grad 0.044 gC 786.6 natC 789.2 top 723.6 natF 724 others 
+   66.8 m valley/bench len 231 at -149076,-140743 flag -149042,-140357 (388 m) line 3472 stream A 3.31 lvl 1288.2 grad 0.024 gC 1287.8 natC 1289.5 top 1221.3 natF 1221.5 others 3392
+   66.8 m valley/bench len 259 at 106863,-26137 flag 107163,-26383 (388 m) line 3018 stream A 2.49 lvl 528.8 grad 0.017 gC 528.4 natC 531.2 top 462.1 natF 462.1 others 
+   66.3 m valley/bench len 140 at -147897,82853 flag -147659,82547 (388 m) line 2942 stream A 6.16 lvl 859.7 grad 0.032 gC 858.8 natC 858.6 top 803.3 natF 803.3 others 
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  10:01:47
+   Duration  679.81s (tests 100%)
+

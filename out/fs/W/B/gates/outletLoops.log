@@ -1,0 +1,13 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+seed 1: outlets 16; loops 0; cycles through lakes and ponds 0
+seed 42: outlets 17; loops 0; cycles through lakes and ponds 0
+seed 777777: outlets 20; loops 0; cycles through lakes and ponds 0
+seed 7: outlets 15; loops 0; cycles through lakes and ponds 0
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  09:57:31
+   Duration  188.11s (tests 99%)
+

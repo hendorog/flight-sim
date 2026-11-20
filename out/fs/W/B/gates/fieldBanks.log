@@ -1,0 +1,36 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+seed 1: streams in a field's reach 133660 m; water hidden 0 m; lower bank at hw+3 over the water > 2.5 m 2170 m, > 4 m 50 m; lower ground at hw+12 over it > 4 m 1660 m, > 7 m 0 m
+  line 3039 by KDNW: in reach 9420 m, bank > 4 m 50 m, gully > 7 m 0 m, worst hw+12 6.9 m at -2186,22924 s 350
+  line 3059 by KDNW: in reach 1080 m, bank > 4 m 0 m, gully > 7 m 0 m, worst hw+12 7.0 m at -2418,22677 s 110
+  line 4965 by KIVY: in reach 1910 m, bank > 4 m 0 m, gully > 7 m 0 m, worst hw+12 5.6 m at 26518,37012 s 1500
+  line 2948 by KBRM: in reach 2960 m, bank > 4 m 0 m, gully > 7 m 0 m, worst hw+12 4.7 m at 29050,9390 s 1830
+  line 4490 by KIVY: in reach 2350 m, bank > 4 m 0 m, gully > 7 m 0 m, worst hw+12 4.1 m at 19171,33741 s 4440
+  line 3087 by KDNW: in reach 4350 m, bank > 4 m 0 m, gully > 7 m 0 m, worst hw+12 3.8 m at -529,19222 s 4280
+  line 3603 by KNRH: in reach 6670 m, bank > 4 m 0 m, gully > 7 m 0 m, worst hw+12 3.7 m at 6837,33968 s 6620
+  line 5455 by KMRH: in reach 7240 m, bank > 4 m 0 m, gully > 7 m 0 m, worst hw+12 3.6 m at 34388,26591 s 2270
+seed 42: streams in a field's reach 159230 m; water hidden 180 m; lower bank at hw+3 over the water > 2.5 m 1960 m, > 4 m 280 m; lower ground at hw+12 over it > 4 m 3960 m, > 7 m 290 m
+  line 3670 by KNRC: in reach 2490 m, bank > 4 m 210 m, gully > 7 m 170 m, worst hw+12 26.3 m at 16163,16054 s 700
+  line 3622 by KNRC: in reach 4380 m, bank > 4 m 20 m, gully > 7 m 110 m, worst hw+12 7.3 m at 14470,18916 s 3870
+  line 4862 by KELM: in reach 2580 m, bank > 4 m 20 m, gully > 7 m 0 m, worst hw+12 4.0 m at 4750,41294 s 840
+  line 1 by KASH: in reach 3180 m, bank > 4 m 0 m, gully > 7 m 10 m, worst hw+12 7.3 m at 46373,-1448 s 154410
+  line 6174 by KOKF: in reach 3530 m, bank > 4 m 10 m, gully > 7 m 0 m, worst hw+12 5.1 m at 31934,33264 s 280
+  line 3697 by KNRC: in reach 1860 m, bank > 4 m 10 m, gully > 7 m 0 m, worst hw+12 5.0 m at 16106,17034 s 450
+  line 3584 by KNRC: in reach 5510 m, bank > 4 m 10 m, gully > 7 m 0 m, worst hw+12 4.8 m at 14983,15911 s 2610
+  line 3707 by KNRC: in reach 2500 m, bank > 4 m 0 m, gully > 7 m 0 m, worst hw+12 6.8 m at 13327,15109 s 490
+seed 777777: streams in a field's reach 154480 m; water hidden 0 m; lower bank at hw+3 over the water > 2.5 m 16450 m, > 4 m 430 m; lower ground at hw+12 over it > 4 m 33390 m, > 7 m 9370 m
+  line 1045 by KPMH: in reach 2700 m, bank > 4 m 0 m, gully > 7 m 2310 m, worst hw+12 11.4 m at 34326,-1000 s 430
+  line 1031 by KTHR: in reach 2670 m, bank > 4 m 30 m, gully > 7 m 1300 m, worst hw+12 11.9 m at -11734,999 s 1260
+  line 728 by KMRH: in reach 2750 m, bank > 4 m 80 m, gully > 7 m 900 m, worst hw+12 10.1 m at 8000,39260 s 6690
+  line 1553 by KFRM: in reach 2890 m, bank > 4 m 0 m, gully > 7 m 890 m, worst hw+12 11.4 m at 19772,26750 s 530
+  line 4945 by KLNG: in reach 3160 m, bank > 4 m 180 m, gully > 7 m 650 m, worst hw+12 8.5 m at 42998,-14248 s 3890
+  line 1763 by KRDM: in reach 3140 m, bank > 4 m 0 m, gully > 7 m 520 m, worst hw+12 11.1 m at -36000,10980 s 740
+  line 1796 by KRDM: in reach 1130 m, bank > 4 m 0 m, gully > 7 m 490 m, worst hw+12 11.8 m at -41104,15000 s 2530
+  line 1510 by KFRM: in reach 1930 m, bank > 4 m 0 m, gully > 7 m 410 m, worst hw+12 11.6 m at 18918,29000 s 420
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  10:16:16
+   Duration  134.83s (tests 99%)
+

@@ -1,0 +1,36 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+WN seed 777777 TOTAL perched: river water > 10 m over its centre ground 3.90 km, > 30 m 0.00 km; river water hidden under the drawn ground at its centre (anywhere) 0.20 km, worst line 113 water 190.6 under the drawn ground 189.4 at its centre at 66107,4965; line 95 water 273.5 under the drawn ground 270.4 at its centre at -102511,-48037; line 24 water 200.9 under the drawn ground 197.7 at its centre at -24271,-51884
+WN seed 777777 TOTAL step: across every line, steps over 50 m 92, over 100 m 2 (25 m samples)
+WN seed 777777 TOTAL face: within 700 m of rivers, over 40 deg 12.9 km2 (sampled), of it made by the carve 6.1 km2
+WN seed 777777 TOTAL hidden: every line in every field's reach 154749 m, hidden 404 m; by field KPMF 0/14608, KHLT 223/8073, KFRM 0/24563, KPMH 0/11669, KRDM 0/28666, KMRH 0/22689, KTHR 0/22478, KLNG 180/22004
+WN seed 777777 TOTAL poolcut: 214 falls; pool water under the ground 60 m beside it (lower side) p50 17.8 p90 50.5 max 68.4 m; over 5 m 179
+WN seed 777777 TOTAL cross: self-crossings 0
+WN seed 777777 TOTAL stepup: junction step-ups > 0.5 / 2 / 5 m 37 / 2 / 2 (in lakes and out)
+WN seed 777777 TOTAL slot: water in a box slot (both walls 15 m past the banks over it) > 20 / > 40 m, km: rivers 0.00 / 0.00, streams 0.00 / 0.00
+WN seed 777777 perched #1: line 2 water 314.5 over its centre ground 299.5: 14.9 m at 36312,-158077 | w777777-perched1 seed=777777&camPos=35251,-159138,914&camLook=36312,-158077,314
+WN seed 777777 perched #2: line 381 water 28.0 over its centre ground 13.4: 14.5 m at 67831,27888 | w777777-perched2 seed=777777&camPos=66770,26827,628&camLook=67831,27888,28
+WN seed 777777 perched #3: line 5 water 207.2 over its centre ground 193.2: 13.9 m at 148827,-135113 | w777777-perched3 seed=777777&camPos=149888,-134052,807&camLook=148827,-135113,207
+WN seed 777777 step #1: 112 m between 525 and 550 m from line 0 (kind 0, water 220.5): 826.4 -> 714.2 at -174,15376 | w777777-step1 seed=777777&camPos=-174,16876,1314&camLook=-174,15376,714
+WN seed 777777 step #2: 70 m between 375 and 400 m from line 0 (kind 0, water 219.5): 352.1 -> 422.2 at 3387,20286 | w777777-step2 seed=777777&camPos=4887,20286,952&camLook=3387,20286,352
+WN seed 777777 step #3: 54 m between 25 and 50 m from line 5065 (kind 1, water 142.5): 153.8 -> 207.7 at -48485,76375 | w777777-step3 seed=777777&camPos=-46985,76375,754&camLook=-48485,76375,154
+WN seed 777777 face #1: a 1028 m face over 40 deg from 200 m to 700 m from river 0, not in the shaped ground before the carve at 163,16270 | w777777-face1 seed=777777&camPos=1224,17331,1854&camLook=163,16270,1254
+WN seed 777777 face #2: a 513 m face over 40 deg from 400 m to 700 m from river 0, not in the shaped ground before the carve at 3643,20403 | w777777-face2 seed=777777&camPos=5143,20403,1357&camLook=3643,20403,757
+WN seed 777777 face #3: a 437 m face over 40 deg from 325 m to 700 m from river 0, not in the shaped ground before the carve at 11150,21725 | w777777-face3 seed=777777&camPos=12210,20664,1276&camLook=11150,21725,676
+WN seed 777777 hidden #1: line 6646 (kind 1) hidden 223 m by KHLT, worst off its channel at 41923,7000 | w777777-hidden1 seed=777777&camPos=40423,7000,1050&camLook=41923,7000,450
+WN seed 777777 hidden #2: line 4683 (kind 1) hidden 180 m by KLNG, worst off its channel at 46452,-12232 | w777777-hidden2 seed=777777&camPos=44952,-12232,1235&camLook=46452,-12232,635
+WN seed 777777 poolcut #1: fault fall on line 5113 (kind 1), drop 10 m: its pool's water 68.4 m under the ground 60 m beside it on both sides at 107204,17750 | w777777-poolcut1 seed=777777&camPos=108704,17750,1155&camLook=107204,17750,555
+WN seed 777777 poolcut #2: fault fall on line 1744 (kind 1), drop 15 m: its pool's water 65.6 m under the ground 60 m beside it on both sides at -46679,-13001 | w777777-poolcut2 seed=777777&camPos=-48179,-13001,1130&camLook=-46679,-13001,530
+WN seed 777777 poolcut #3: fault fall on line 2675 (kind 1), drop 13 m: its pool's water 62.3 m under the ground 60 m beside it on both sides at 71507,-117001 | w777777-poolcut3 seed=777777&camPos=70007,-117001,1455&camLook=71507,-117001,855
+WN seed 777777 cross: none
+WN seed 777777 stepup #1: line 434 (kind 1) into 73 (kind 0): joining 274.4, receiver 281.7, step up 7.37 m at -114192,-51016 | w777777-stepup1 seed=777777&camPos=-113131,-49955,882&camLook=-114192,-51016,282
+WN seed 777777 stepup #2: line 429 (kind 1) into 112 (kind 0): joining 212.7, receiver 219.7, step up 7.07 m at -49047,-74535 | w777777-stepup2 seed=777777&camPos=-50547,-74535,820&camLook=-49047,-74535,220
+WN seed 777777 stepup #3: line 1074 (kind 1) into 120 (kind 0): joining 833.4, receiver 835.0, step up 1.62 m at -98974,54559 | w777777-stepup3 seed=777777&camPos=-97913,53498,1435&camLook=-98974,54559,835
+WN seed 777777 slot: none
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  10:00:27
+   Duration  152.49s (tests 99%)
+

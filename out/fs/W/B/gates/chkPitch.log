@@ -1,0 +1,12 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+seed 1: pitch units shaped 861961 of 861961 found (100.0 %), samples inserted 335093; pitchOn km 12732 of which segment gradient < 1 %: 386 km; stream segments 1680254 p50 8.0 m p90 16.0 m max 119.7 m; all lines 23280 km
+seed 42: pitch units shaped 868364 of 868364 found (100.0 %), samples inserted 326879; pitchOn km 12765 of which segment gradient < 1 %: 438 km; stream segments 1765390 p50 8.0 m p90 16.0 m max 130.6 m; all lines 24032 km
+seed 777777: pitch units shaped 932699 of 932699 found (100.0 %), samples inserted 357314; pitchOn km 13635 of which segment gradient < 1 %: 395 km; stream segments 1778044 p50 8.0 m p90 16.0 m max 153.8 m; all lines 24743 km
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  10:03:00
+   Duration  156.89s (tests 99%)
+

@@ -1,0 +1,13 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+seed 1: lines 6366 outlets 13 cycles 0
+seed 42: lines 6538 outlets 17 cycles 0
+seed 777777: lines 6758 outlets 18 cycles 0
+seed 7: lines 7787 outlets 15 cycles 0
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  10:16:16
+   Duration  181.18s (tests 99%)
+

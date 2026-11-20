@@ -1,0 +1,21 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+seed 1: trace 5066 ms; rivers 405 (head in a lake 14); dry heads with no feeder at all 16, head hw < 2 m 7; first junction from the head (stub) p50/p75/p90/p95 0/0/17/30 m, at 0-50 m 363/375; river hw below / feeder hw at the first junction p5/p50/p95 1.00/1.00/1.35
+  samples 1986 levelSamples 297403 phases 792,4993 net 83,17684,11654,366
+  streams 5961 16255 km; sinks 0 stuck 0 (report sinks 0 hollows 0); ends {"channel":5821,"sea":98,"edge":7,"lake":35}; stream samples over ground >2 m 2912 >5 m 784 >10 m 127 of 563124; feeders' >2 m 0 >5 m 0 (on 0 feeders) >10 m 0 of 0
+  feed {"trims":218,"trimKm":40.367,"trimP50":66,"trimMax":1385}
+seed 42: trace 3126 ms; rivers 420 (head in a lake 15); dry heads with no feeder at all 8, head hw < 2 m 7; first junction from the head (stub) p50/p75/p90/p95 0/0/18/80 m, at 0-50 m 375/397; river hw below / feeder hw at the first junction p5/p50/p95 1.00/1.00/1.30
+  samples 0 levelSamples 303507 phases 419,3085 net 119,10728,6798,241
+  streams 6118 17171 km; sinks 0 stuck 0 (report sinks 0 hollows 0); ends {"channel":5978,"lake":17,"sea":122,"edge":1}; stream samples over ground >2 m 2958 >5 m 831 >10 m 153 of 591160; feeders' >2 m 0 >5 m 0 (on 0 feeders) >10 m 0 of 0
+  feed {"trims":206,"trimKm":41.66,"trimP50":89,"trimMax":1464}
+seed 777777: trace 3330 ms; rivers 429 (head in a lake 13); dry heads with no feeder at all 7, head hw < 2 m 5; first junction from the head (stub) p50/p75/p90/p95 0/0/17/28 m, at 0-50 m 396/409; river hw below / feeder hw at the first junction p5/p50/p95 1.00/1.00/1.63
+  samples 0 levelSamples 316105 phases 550,3281 net 33,12171,6981,232
+  streams 6329 17132 km; sinks 0 stuck 0 (report sinks 0 hollows 0); ends {"channel":6200,"edge":5,"lake":31,"sea":93}; stream samples over ground >2 m 2841 >5 m 802 >10 m 136 of 595772; feeders' >2 m 0 >5 m 0 (on 0 feeders) >10 m 0 of 0
+  feed {"trims":238,"trimKm":56.521,"trimP50":84,"trimMax":1484}
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  10:02:05
+   Duration  118.38s (tests 99%, import 1%)
+

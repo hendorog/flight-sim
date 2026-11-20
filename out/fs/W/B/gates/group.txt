@@ -1,0 +1,8 @@
+1 river on a bench off its valley low line             161 r    14.7 km   13>30 |   169 r    19.7 km   23>30 |   156 r    21.6 km   22>30
+2 stream/chain on a floor beside a lower floor        2517 r   415.3 km  594>30 |  2400 r   393.7 km  549>30 |  2625 r   428.1 km  624>30
+3 tributary beside its receiver before the junction    359 r    71.9 km  134>30 |   372 r    65.4 km  105>30 |   393 r    77.3 km  120>30
+4 water >10 m over its own centre ground                30 r    11.3 km   22>30 |    37 r    14.3 km   21>30 |    36 r    10.0 km   30>30
+5 level over the natural ground at its centre          147 r    39.9 km   98>30 |   139 r    32.5 km   75>30 |   184 r    47.2 km  122>30
+6 lake level                                            14 r     6.1 km    0>30 |    10 r     2.1 km    0>30 |    14 r     4.3 km    3>30
+7 bank low (other)                                      19 r     0.7 km    0>30 |    18 r     0.7 km    0>30 |    21 r     0.8 km    0>30
+8 sea                                                    3 r     0.2 km    0>30 |     0 r     0.0 km    0>30 |     0 r     0.0 km    0>30
