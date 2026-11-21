@@ -672,7 +672,7 @@ if (vFlow.x > ${FLOW_FROM.toFixed(2)} || vFlow.z > 0.001) {
   float fClear = (1.0 - smoothstep(2.0, 9.0, fW)) * smoothstep(0.3, 0.65, fSt) * (1.0 - 0.3 * fPool);
   vec3 fTrans = exp(-2.0 * depth * mix(1.0, 0.3, fClear) * mix(atten, ${P.seaAtten}, fClear));
   wTrans = dot(fTrans, vec3(0.25, 0.5, 0.25)) * (1.0 - 0.45 * fRun * (1.0 - fClear) * (1.0 - 0.7 * fPool));
-  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.07, 0.09, 0.075), 0.5 * fRun * (1.0 - fClear) * (1.0 - fPool));
+  diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.07, 0.09, 0.075), vec3(0.082, 0.132, 0.150), smoothstep(1.0, 2.0, vBraid.x)), 0.5 * fRun * (1.0 - fClear) * (1.0 - fPool));
   // Between the stones the water runs fast, dark and smooth; a pool is dark with its depth.
   diffuseColor.rgb *= (1.0 - 0.5 * fRockP) * (1.0 - 0.12 * fPool);
   wTrans *= 1.0 - 0.3 * fRockP * (1.0 - fClear);
@@ -793,7 +793,7 @@ const FLOW_LIFT = `{
   vec3 lw = (modelMatrix * vec4(position, 1.0)).xyz;
   float camD = distance(lw, cameraPosition);
   float lift = clamp((camD - 300.0) * 0.003, 0.0, 15.0);
-  float bClear = step(1.001, vBraid.x) * smoothstep(-0.02, -0.22, aDepth) * smoothstep(100.0, 240.0, camD) * 0.85;
+  float bClear = step(1.001, vBraid.x) * smoothstep(0.02, -0.10, aDepth) * smoothstep(28.0, 75.0, camD) * 1.05;
   transformed.y += max(lift, bClear);
 }
 `;
@@ -810,44 +810,38 @@ const BRAID_VERTEX = `{
 }
 `;
 /** Cool greywacke shingle albedos (linear, B > G > R so blue sky + aerial scatter keep them crisp cool silver-grey,
- * never lilac/mauve): dry bar crowns, mid shingle, damp gravel/swales, and sparse stabilized silt/scrub islands. */
-const BAR_ALBEDO = 'vec3(0.195, 0.220, 0.230)';
-const BAR_CROWN_ALBEDO = 'vec3(0.268, 0.296, 0.308)';
-const BAR_DAMP_ALBEDO = 'vec3(0.095, 0.114, 0.125)';
-const BAR_ISLAND_ALBEDO = 'vec3(0.088, 0.096, 0.062)';
+ * never lilac/mauve): dry bar crowns, mid shingle, narrow wet waterline rim, and sparse stabilized silt/scrub islands. */
+const BAR_ALBEDO = 'vec3(0.180, 0.202, 0.212)';
+const BAR_CROWN_ALBEDO = 'vec3(0.232, 0.256, 0.268)';
+const BAR_DAMP_ALBEDO = 'vec3(0.098, 0.116, 0.128)';
+const BAR_ISLAND_ALBEDO = 'vec3(0.088, 0.096, 0.064)';
 /** Milky glacial blue-grey water body colour on braided rivers (linear albedo, replacing dark olive lowland water). */
-const BRAID_WATER_BODY = 'vec3(0.072, 0.124, 0.144)';
-/** A braided bed's gravel is damp this far beside its threads, m. */
-const BRAID_DAMP_M = 7;
-/** A braided bed's primary secondary threads are drawn this deep, m, and its fine anastomosing web shallower. */
-const BRAID_DEPTH = 0.28;
-const BRAID_FINE_DEPTH = 0.16;
-/** A seeded world's ribbon spans its bed (ribbonRows: vDepth -1 at the bed's edge, 0 at the water's): from
- * BAR_NEAR m away it draws the gravel bars beyond its water itself (from 100..240 m on braided beds so 300 m AGL views
- * stay seamless with zero plain-terrain foreground patches). A braided bed's primary threads (channelForm.ts braidAt)
- * are its water at every distance - close in where the ground is cut under them - while its bars carry a physical-metre
- * multi-scale anastomosing web of diamond shingle bars, fine wet sub-threads, damp swales and flow-streaked grain. */
+const BRAID_WATER_BODY = 'vec3(0.064, 0.118, 0.142)';
+/** Crisp wet capillary gravel rim right beside active water threads, m (no wide blurry smudges across dry bars). */
+const BRAID_DAMP_M = 1.2;
+/** A seeded world's ribbon spans its bed (ribbonRows: vDepth -1 at the bed's edge, 0 at the water's): on braided beds
+ * it draws the shingle bars and coherent stream network from 28..75 m onward (staying at true ground/water height only
+ * right under wheels/floats on touchdown). Every secondary branch, cross-bar chute, almond-bar split and anabranch is
+ * evaluated identically by braidAt with analytical box-filter anti-aliasing and parabolic physical water depth so each
+ * minor stream reads as a crisp, continuous, flowing stream at every altitude. */
 const FLOW_BARS = `{
   float bBraid = smoothstep(1.0, 2.0, vBraid.x);
   float bW = 0.0;
-  float bFineW = 0.0;
-  float bDamp = 0.0;
-  float bCrown = 0.5;
-  float bIsl = 0.0;
+  float bIn = -1e9;
+  float bHalf = 0.0;
+  float bPx = 0.1;
+  float bMargin = 0.0;
   if (vBraid.x > 1.0 && vDepth < 0.0) {
-    float bHalf;
-    float bIn = braidAt(vBraidU.x, vBraidU.y, vBraid.w, vBraid.x, vBraid.y, vBraid.z, 2.0 * vRiverInfo.z, bHalf);
-    float bFw = max(fwidth(vBraidU.x) * vBraid.w, 0.05);
-    bW = smoothstep(-0.5 * bFw, 0.5 * bFw, bIn);
-    float bWebDamp;
-    braidWeb(vRiverInfo.y, vBraidU.x, vBraidU.y, vBraid.w, vBraid.x, bFineW, bCrown, bWebDamp, bIsl);
-    // (Damp gravel: the anastomosing swales, dry channels, and a few metres beside every active thread.)
+    bIn = braidAt(vBraidU.x, vBraidU.y, vBraid.w, vBraid.x, vBraid.y, vBraid.z, 2.0 * vRiverInfo.z, bHalf);
+    bPx = max(length(vec2(dFdx(vBraidU.x), dFdy(vBraidU.x))) * vBraid.w, 0.05);
+    if (bHalf > 0.0) {
+      float dCenter = bHalf - bIn;
+      bW = clamp((min(dCenter + 0.5 * bPx, bHalf) - max(dCenter - 0.5 * bPx, -bHalf)) / bPx, 0.0, 1.0);
+    }
     float bMain = abs(vBraidU.x - vBraidU.y) * vBraid.w - vRiverInfo.z;
-    float bMargin = 1.0 - smoothstep(0.0, ${BRAID_DAMP_M.toFixed(1)}, min(-bIn, bMain));
-    bDamp = clamp(max(max(bWebDamp, braidDamp(vBraidU.x, vBraid.w, vBraid.x, vBraid.y, vBraid.z, 2.0 * vRiverInfo.z) * 0.45), bMargin * 0.85), 0.0, 1.0);
-    bFineW *= (1.0 - bW);
+    bMargin = 1.0 - smoothstep(0.0, ${BRAID_DAMP_M.toFixed(1)}, min(bHalf > 0.0 ? max(0.0, -bIn) : 1e9, max(0.0, bMain)));
   }
-  float bFar = vBraid.x > 1.0 ? smoothstep(100.0, 240.0, wDist) : smoothstep(${BAR_NEAR.toFixed(1)}, ${BAR_FAR.toFixed(1)}, wDist);
+  float bFar = vBraid.x > 1.0 ? smoothstep(28.0, 75.0, wDist) : smoothstep(${BAR_NEAR.toFixed(1)}, ${BAR_FAR.toFixed(1)}, wDist);
   // (On a braided bed, start the gravel bar right at vDepth = 0 so no transparent dark fringe borders the main thread.)
   float bBar = vBraid.x > 1.0 ? (1.0 - smoothstep(-0.04, 0.04, vDepth)) : (1.0 - smoothstep(-0.12, -0.02, vDepth));
   // (A braided bed's edge is sharp with gentle organic scalloping; where K tapers toward 1 at a confluence it feathers
@@ -855,42 +849,48 @@ const FLOW_BARS = `{
   if (vBraid.x > 1.0) {
     float bEdgeN = (texture(tNoise, vWaterPos.xz * (1.0 / 47.0) + 0.17).r - 0.5) * min(5.0, 0.035 * vBraid.w);
     float bEdge = vBraid.w * (1.0 - abs(vBraidU.x)) + bEdgeN;
-    float bEw = max(fwidth(vBraidU.x) * vBraid.w, 0.6);
-    float bFeather = max(1.8 * bEw, mix(14.0, 2.0, bBraid));
+    float bEw = max(bPx, 0.6);
+    float bFeather = max(1.6 * bEw, mix(36.0, 2.5, bBraid));
     bBar *= smoothstep(0.0, bFeather, bEdge);
   } else bBar *= 1.0 - smoothstep(0.85, 1.0, -vDepth);
   vec3 bCol = vec3(0.0);
   if (bBar > 0.0) {
-    // Multi-scale cool greywacke shingle texture: coarse tonal patches, fine shingle grain, and physical-metre flow streaks.
+    // Multi-scale cool greywacke shingle texture: 43 m bar sorting, 11 m gravel patches, longitudinal bar-scroll sorting,
+    // and close-up 2.6 m / 0.72 m cobble/pebble clasts filtered cleanly out before they alias.
     vec4 bN1 = texture(tNoise, vWaterPos.xz * (1.0 / 43.0) + 0.23);
     vec4 bN2 = texture(tNoise, vWaterPos.xz * (1.0 / 11.0) + 0.61);
-    float bStreak = vBraid.x > 1.0 ? texture(tNoise, vec2(vRiverInfo.y * (1.0 / 180.0), (vBraidU.x * vBraid.w) * (1.0 / 18.0))).g : 0.5;
-    float bGrain = (0.88 + 0.15 * bN1.g + 0.12 * bN2.r) * (0.91 + 0.18 * bStreak);
-    // (Darker by the water: a single thread's bar over its inner fifth; a braided bed's dry diamond crowns bright,
-    // damp swales and margins dark cool slate, sparse elevated bar cores tinted pioneer scrub/silt.)
+    float bNearC = 1.0 - smoothstep(0.35, 1.6, footprint);
+    float bNearF = 1.0 - smoothstep(0.08, 0.42, footprint);
+    float bCob = bNearC > 0.0 ? (texture(tNoise, vWaterPos.xz * (1.0 / 2.6) + 0.41).r - 0.5) * bNearC : 0.0;
+    float bPeb = bNearF > 0.0 ? (texture(tNoise, vWaterPos.xz * (1.0 / 0.72) + 0.83).g - 0.5) * bNearF : 0.0;
+    float bStreak = vBraid.x > 1.0
+      ? 0.6 * texture(tNoise, vec2(vRiverInfo.y * (1.0 / 160.0), (vBraidU.x * vBraid.w + 9.0 * (bN1.r - 0.5)) * (1.0 / 14.0))).g
+      + 0.4 * texture(tNoise, vec2(vRiverInfo.y * (1.0 / 65.0), (vBraidU.x * vBraid.w) * (1.0 / 6.5))).b
+      : 0.5;
+    float bGrain = (0.87 + 0.14 * bN1.g + 0.12 * bN2.r + 0.15 * bCob + 0.12 * bPeb) * (0.90 + 0.20 * bStreak);
+    float bCrown = vBraid.x > 1.0 ? smoothstep(4.0, 32.0, min(bHalf > 0.0 ? max(0.0, -bIn) : 60.0, max(0.0, abs(vBraidU.x - vBraidU.y) * vBraid.w - vRiverInfo.z))) * (0.65 + 0.35 * bN1.r) : 0.0;
+    float bIsl = vBraid.x > 1.0 ? smoothstep(38.0, 75.0, bHalf > 0.0 ? -bIn : 80.0) * smoothstep(0.76, 0.92, bN1.b) * smoothstep(100.0, 220.0, vBraid.w) * (1.0 - smoothstep(0.85, 0.98, abs(vBraidU.x))) : 0.0;
     float bWetEdge = vBraid.x > 1.0 ? 0.0 : smoothstep(-0.2, -0.05, vDepth);
     vec3 bDry = mix(${BAR_ALBEDO}, ${BAR_CROWN_ALBEDO}, bCrown * bBraid);
-    vec3 bAlb = mix(bDry, ${BAR_DAMP_ALBEDO}, clamp(0.62 * bDamp + 0.35 * bWetEdge, 0.0, 1.0));
-    bAlb = mix(bAlb, ${BAR_ISLAND_ALBEDO} * (0.8 + 0.4 * bN2.b), bIsl * 0.85);
+    vec3 bAlb = mix(bDry, ${BAR_DAMP_ALBEDO}, clamp(0.45 * bMargin + 0.35 * bWetEdge, 0.0, 1.0));
+    bAlb = mix(bAlb, ${BAR_ISLAND_ALBEDO} * (0.85 + 0.3 * bN2.b), bIsl * 0.75);
     bAlb *= bGrain;
     vec3 bIrr = (reflectedLight.directDiffuse + reflectedLight.indirectDiffuse) / max(diffuseColor.rgb * RECIPROCAL_PI, vec3(1e-5));
     bCol = bAlb * bIrr * RECIPROCAL_PI;
     float bK = bBar * bFar * (1.0 - bW);
     gl_FragColor = gl_FragColor * (1.0 - bK) + vec4(bCol, 1.0) * bK;
   }
-  // Fine shader-only anastomosing wet threads (drawn on the gravel bed, faded in with the ribbon bars so close-up
-  // ditching physics stay governed by the primary CPU+GPU threads).
-  if (bFineW > 0.001 && bBar > 0.0) {
-    float bTrF = exp(-${(2 * BRAID_FINE_DEPTH).toFixed(2)} * dot(atten, vec3(0.25, 0.5, 0.25)));
-    vec4 bWatF = vec4(totalDiffuse * (1.0 - bTrF) * (1.0 - fresnel) + wSpec * 0.65, 1.0 - (1.0 - fresnel) * bTrF);
-    vec3 bRgbF = bWatF.rgb + bCol * (1.0 - bWatF.a);
-    float bKf = bFineW * bBar * bFar;
-    gl_FragColor = gl_FragColor * (1.0 - bKf) + vec4(bRgbF, 1.0) * bKf;
-  }
   if (bW > 0.0) {
-    // (A primary thread's water: glacial blue-grey water over the gravel - the bar's own far away, the cut ground close in.)
-    float bTr = exp(-${(2 * BRAID_DEPTH).toFixed(2)} * dot(atten, vec3(0.25, 0.5, 0.25)));
-    vec4 bWat = vec4(totalDiffuse * (1.0 - bTr) * (1.0 - fresnel) + wSpec, 1.0 - (1.0 - fresnel) * bTr);
+    // Parabolic channel depth (deeper slate-blue in major branches, slightly shallower silvery glacial blue-grey in
+    // minor chutes/anabranches, yet turbid with glacial rock flour so every stream is coherent opaque water, never a
+    // translucent grey stain).
+    float bQ = clamp(1.0 - max(bIn, 0.0) / max(bHalf, 0.2), 0.0, 1.0);
+    float bDepth = (0.34 + 0.12 * bHalf) * (1.0 - 0.68 * bQ * bQ);
+    float bTr = exp(-3.4 * bDepth * dot(atten, vec3(0.25, 0.5, 0.25)));
+    // Subtle shallow-chute riffle aeration on brisk shallow minor threads so close-up detail matches the main stream.
+    float bRiff = (1.0 - smoothstep(1.5, 4.5, bHalf)) * smoothstep(0.22, 0.55, vFlow.x) * (1.0 - 0.6 * bQ) * smoothstep(0.48, 0.74, texture(tNoise, vec2(vBraidU.x * vBraid.w * 0.18, vRiverInfo.y * 0.045)).r);
+    vec3 bDiff = mix(totalDiffuse, (reflectedLight.directDiffuse + reflectedLight.indirectDiffuse) / max(diffuseColor.rgb * RECIPROCAL_PI, vec3(1e-5)) * vec3(0.46, 0.50, 0.51) * RECIPROCAL_PI, 0.35 * bRiff);
+    vec4 bWat = vec4(bDiff * (1.0 - bTr) * (1.0 - fresnel) + wSpec * (1.0 - 0.5 * bRiff), 1.0 - (1.0 - fresnel) * bTr);
     bWat = mix(bWat, vec4(bWat.rgb + bCol * (1.0 - bWat.a), 1.0), bFar * bBar);
     gl_FragColor = gl_FragColor * (1.0 - bW) + bWat * bW;
   }

@@ -1441,9 +1441,17 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     const banks = smin(h, c.level + formSection(d, wet, bed, c.depth ?? 1, c.bankH ?? 1, c.bankTan ?? 0.5, h - c.level), Math.min(3, 0.5 + 0.3 * wet));
     h += ((d > wet ? Math.max(Math.min(h, keep), banks) : banks) - h) * open;
     // Its banks hold its water: where the ground beside it lies under the water (a hillside it crosses, a dip between
-    // the points it was traced on) a low bank is built up, at most STREAM_FILL (not in another channel's water, nor at
+    // the points it was traced on) a low bank is built up, at most STREAM_FILL (not in another channel's water, nor on a
+    // braided river's gravel bed where a minor stream's levee would poke a dark mound through the shingle ribbon, nor at
     // a mouth on the sea; less what an airfield's blend will raise it by: FIELD_RAISE).
-    if (d > wet && !wetOther && out.river === -Infinity && c.level > 0.5 && dryS) {
+    let onBraid = false;
+    if (c.kind === 1) {
+      for (let q = 0; q < nc; q++) {
+        const o = channelNear[q];
+        if (o.line !== c.line && o.braidK !== undefined && o.braidK > 1.05 && o.braidHb! > 30) { onBraid = true; break; }
+      }
+    }
+    if (d > wet && !wetOther && !onBraid && out.river === -Infinity && c.level > 0.5 && dryS) {
       // (Its bed flat at the bank's foot, rising from its edge: from the water's edge, a gravel bed hundreds of metres wide
       // rose 3 % across its bars, metres over its water at its edge - its threads trenches in a raised floor.)
       const need = Math.min(c.level + 0.3 + 0.03 * Math.max(0, d - bed), hNatural + STREAM_FILL) - h - blendLift;
@@ -1459,12 +1467,13 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
   for (let j = 0; j < nc; j++) {
     const c = channelNear[j];
     if (c.braidK === undefined || !(c.braidK > 1) || !(c.braidHb! > 1)) continue;
-    // (Not within BRAID_SHIELD m of another line's water standing higher - a stream crossing the bed to its mouth keeps
-    // the banks that hold its water.)
+    // (Not within BRAID_SHIELD m of another river's water standing higher; minor streams well inside a wide braided bed
+    // already grade down to the shingle and do not raise levees over it.)
     let shielded = false;
+    const deepInBed = c.braidHb! > 35 && (1 - Math.abs(c.braidU!)) * c.braidHb! > 10;
     for (let q = 0; q < nc && !shielded; q++) {
       const o = channelNear[q];
-      if (o.line !== c.line && o.level > c.level + 0.3 && o.dist < (o.wet ?? o.halfWidth) + BRAID_SHIELD) shielded = true;
+      if (o.line !== c.line && !(deepInBed && o.kind === 1) && o.level > c.level + 0.3 && o.dist < (o.wet ?? o.halfWidth) + BRAID_SHIELD) shielded = true;
     }
     if (shielded) continue;
     const top = Math.max(BRAID_BAR_LOW, 0.6 * (c.bankH ?? 1));

@@ -2098,7 +2098,11 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       // side lined the big rivers to the coast.)
       const spare = Math.max(0, Wa - w);
       const wide = smooth(BED_WIDE[0], BED_WIDE[1], Wa / Math.max(0.5, w));
-      const stay = 0.5 * spare * Math.tanh((L.belt ? L.belt[i] : dAx) / Math.max(0.5, 0.5 * spare));
+      const rawBelt = L.belt ? L.belt[i] : dAx;
+      const stayTanh = 0.5 * spare * Math.tanh(rawBelt / Math.max(0.5, 0.5 * spare));
+      const stayLin = Math.max(-0.5 * spare, Math.min(0.5 * spare, rawBelt));
+      const bStay = L.K ? smooth(1.02, 1.5, L.K[i]) : 0;
+      const stay = stayTanh + (stayLin - stayTanh) * bStay;
       const bent = smooth(0.15, 0.6, k);
       const alt = Math.tanh(2.5 * hAt(c.s[i], 1000 * li, ALT_BARS * Math.max(1, Wa), 5));
       const side1 = bent * Math.max(-1, Math.min(1, kap / 0.3)) + (1 - bent) * alt;
@@ -2137,11 +2141,43 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       if (lw.betaLaw[i] > 0.2) formStats.wideBed++;
       if (white > 0) formStats.white++;
     }
-    // The bed's edges smoothed along the line at the bed's own scale (half its width on single-thread reaches, wider
-    // on braided beds so side-valley floor jumps round out instead of forming blocky wedges); never inside the water.
+    // The bed's edges smoothed along the line at the bed's own scale (half its width); never inside the water.
     for (const [bd, we] of [[out.bedR, out.wetR], [out.bedL, out.wetL]] as const) {
-      const sm = smoothArc(c.s, bd, (i) => (L.K && L.K[i] > 1.05 ? 1.1 : BED_SMOOTH) * (bd[i] + (bd === out.bedR ? out.bedL[i] : out.bedR[i])));
+      const sm = smoothArc(c.s, bd, (i) => BED_SMOOTH * (bd[i] + (bd === out.bedR ? out.bedL[i] : out.bedR[i])));
       for (let i = 0; i < m; i++) bd[i] = Math.max(we[i] + 0.3, sm[i]);
+    }
+    // On braided beds, smooth the bed's middle line and half-width in WORLD space (rather than smoothing bedR/bedL
+    // relative to the meandering main thread, which otherwise transfers the main thread's short meander wiggles onto
+    // every secondary/minor thread and outer gravel bank).
+    if (L.K && L.K.some((kv) => kv > 1.05)) {
+      const rawMidN = new Float64Array(m);
+      const rawMidE = new Float64Array(m);
+      const rawHb = new Float64Array(m);
+      for (let i = 0; i < m; i++) {
+        const i0 = Math.max(0, i - 1);
+        const i1 = Math.min(m - 1, i + 1);
+        const tl = Math.hypot(c.north[i1] - c.north[i0], c.east[i1] - c.east[i0]) || 1;
+        const xc = 0.5 * (out.bedR[i] - out.bedL[i]);
+        rawMidN[i] = c.north[i] - ((c.east[i1] - c.east[i0]) / tl) * xc;
+        rawMidE[i] = c.east[i] + ((c.north[i1] - c.north[i0]) / tl) * xc;
+        rawHb[i] = 0.5 * (out.bedR[i] + out.bedL[i]);
+      }
+      const runW = (i: number): number => 2.4 * rawHb[i];
+      const smMidN = smoothArc(c.s, rawMidN, runW);
+      const smMidE = smoothArc(c.s, rawMidE, runW);
+      const smHb = smoothArc(c.s, rawHb, runW);
+      const bDir = braidRows(smMidN, smMidE, c.s, Float32Array.from(smHb));
+      for (let i = 0; i < m; i++) {
+        const bW = smooth(1.02, 1.5, L.K[i]);
+        if (!(bW > 0)) continue;
+        const xcSm = (smMidN[i] - c.north[i]) * -bDir.te[i] + (smMidE[i] - c.east[i]) * bDir.tn[i];
+        const rMax = Math.max(L.roomR[i], out.wetR[i] + 0.5);
+        const lMax = Math.max(L.roomL[i], out.wetL[i] + 0.5);
+        const tR = Math.max(out.wetR[i] + 0.5, Math.min(rMax, xcSm + smHb[i]));
+        const tL = Math.max(out.wetL[i] + 0.5, Math.min(lMax, -xcSm + smHb[i]));
+        out.bedR[i] += (tR - out.bedR[i]) * bW;
+        out.bedL[i] += (tL - out.bedL[i]) * bW;
+      }
     }
     formOfLine[li] = out;
   }
@@ -2179,18 +2215,8 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const c = allLines[li];
     const f = formOfLine[li];
     const m = c.s.length;
-    const ph = new Float64Array(m);
-    const ps = new Float64Array(m);
-    ph[0] = braidStart(li, 1);
-    ps[0] = braidStart(li, 2);
-    for (let i = 1; i < m; i++) {
-      const ds = c.s[i] - c.s[i - 1];
-      const w = 0.5 * (f.wetR[i] + f.wetL[i] + f.wetR[i - 1] + f.wetL[i - 1]);
-      ph[i] = ph[i - 1] + ds / (BRAID_WAVE * Math.max(0.5 * (f.bedR[i] + f.bedL[i] + f.bedR[i - 1] + f.bedL[i - 1]), 4 * w));
-      ps[i] = ps[i - 1] + ds / Math.max(BRAID_WIG_MIN, BRAID_WIG * w);
-    }
-    // (Its rows lie across its bed's own middle line - each sample's point moved to the bed's middle on its own normal -
-    // not across the main thread, which wanders the bed: rows turning with it crossed and creased the bars.)
+    // (Its rows lie across its bed's own middle line - smoothed in world space above - and the braid's phases ph, ps
+    // advance along that smooth valley-bed line rather than along the meandering main thread.)
     const midN = new Float64Array(m);
     const midE = new Float64Array(m);
     for (let i = 0; i < m; i++) {
@@ -2201,7 +2227,24 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       midN[i] = c.north[i] - ((c.east[i1] - c.east[i0]) / tl) * xc;
       midE[i] = c.east[i] + ((c.north[i1] - c.north[i0]) / tl) * xc;
     }
-    const rows = braidRows(midN, midE, c.s, Float32Array.from(f.bedR, (b, i) => 0.5 * (b + f.bedL[i])));
+    const hbArr = Float32Array.from(f.bedR, (b, i) => 0.5 * (b + f.bedL[i]));
+    const rows0 = braidRows(midN, midE, c.s, hbArr);
+    for (let i = 0; i < m; i++) {
+      const xc = 0.5 * (f.bedR[i] - f.bedL[i]);
+      midN[i] = c.north[i] - rows0.te[i] * xc;
+      midE[i] = c.east[i] + rows0.tn[i] * xc;
+    }
+    const rows = braidRows(midN, midE, c.s, hbArr);
+    const ph = new Float64Array(m);
+    const ps = new Float64Array(m);
+    ph[0] = braidStart(li, 1);
+    ps[0] = braidStart(li, 2);
+    for (let i = 1; i < m; i++) {
+      const dsBed = Math.hypot(midN[i] - midN[i - 1], midE[i] - midE[i - 1]);
+      const w = 0.5 * (f.wetR[i] + f.wetL[i] + f.wetR[i - 1] + f.wetL[i - 1]);
+      ph[i] = ph[i - 1] + dsBed / (BRAID_WAVE * Math.max(0.5 * (f.bedR[i] + f.bedL[i] + f.bedR[i - 1] + f.bedL[i - 1]), 4 * w));
+      ps[i] = ps[i - 1] + dsBed / Math.max(BRAID_WIG_MIN, BRAID_WIG * w);
+    }
     // (Its ribbon's rows, one at least every BRAID_ROW m - the ribbon draws these and no others where it braids, water.ts
     // ribbonKeep - and the twin reads its threads in the same rows: rowFrame.)
     const row = new Uint8Array(m);
