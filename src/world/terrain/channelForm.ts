@@ -166,7 +166,7 @@ export function formOf(A: number, S: number, F: number): Form {
   const betaLaw = smooth(1, 1.5, pi) * (1 - sigma) * smooth(0.5, 1.5, rho);
   const Wa = Math.min(Math.pow(Ws, 1 - betaLaw) * Math.pow(B, betaLaw), Math.max(Ws, F));
   // (Its threads: one, and on a braided bed more with its catchment - the NZ braid index 4.8-8.3 on 1000-2800 km².)
-  const K = 1 + betaLaw * 0.9 * Math.pow(a, 0.25);
+  const K = 1 + betaLaw * 1.35 * Math.pow(a, 0.26);
   // (One water thread: a single thread's wet share of its own width W_s.)
   const w = (0.8 - 0.4 * smooth(0.7, 1.2, pi)) * Ws;
   const phi = Math.min(1, w / Wa);
@@ -632,10 +632,10 @@ export function layThread(axisN: ArrayLike<number>, axisE: ArrayLike<number>, la
 // wet is wet where the sim asks (landing, ditching).
 
 /** A braided bed's threads wander across it over about this many bed widths (the noise's cell). */
-export const BRAID_WAVE = 1.8;
+export const BRAID_WAVE = 1.45;
 /** ... strays from its course every BRAID_LENS bed widths or so, by up to about BRAID_LENS_AMP bed widths ... */
-const BRAID_LENS = 0.45;
-const BRAID_LENS_AMP = 0.07;
+const BRAID_LENS = 0.4;
+const BRAID_LENS_AMP = 0.1;
 /** ... and bends on its own about every BRAID_WIG of the main thread's widths (at least BRAID_WIG_MIN m), by up to
  * BRAID_WIG_AMP of its own width. */
 export const BRAID_WIG = 25;
@@ -644,15 +644,16 @@ const BRAID_WIG_AMP = 0.6;
 /** A thread nearer another before it (the main thread first, then each in turn) than BRAID_JOIN[1] of their mean width
  * (between their middles) is drawn onto it, all the way within BRAID_JOIN[0]: the two are one channel there - no two
  * threads run side by side a width or two apart (a doubled channel); where they close in, one joins the other. */
-const BRAID_JOIN = [0.6, 3.5];
-/** Thread k's width is the main one's times BRAID_W (k + 1)^-0.55, varied along it by exp(BRAID_W_SPREAD n), n read
+const BRAID_JOIN = [0.45, 2.3];
+/** Thread k's width is the main one's times BRAID_W (k + 1)^-0.45, varied along it by exp(BRAID_W_SPREAD n), n read
  * about every fifth of a phase unit (a thread pinches and swells within a few hundred metres). */
-const BRAID_W = 0.9;
-const BRAID_W_SPREAD = 0.5;
+const BRAID_W = 0.85;
+const BRAID_W_EXP = -0.45;
+const BRAID_W_SPREAD = 0.45;
 /** Threads beside the main one, at most. */
-export const BRAID_MAX = 7;
+export const BRAID_MAX = 10;
 /** A thread's middle keeps within this share of the way from its bed's middle to its edge. */
-export const BRAID_SPAN = 0.85;
+export const BRAID_SPAN = 0.86;
 
 const bHash = (i: number, key: number): number => (hash2i(i, key) & 0xffff) / 65536;
 /** A smooth (Catmull-Rom) value noise of unit cells, about -1..1 (its argument kept positive: braid phases start at 64). */
@@ -695,7 +696,7 @@ export function braidAt(u: number, um: number, hb: number, K: number, ph: number
     if (p <= 0) break;
     const uk = BRAID_SPAN * bSpread(bNoise(ph + 31.1 * k, 100 + k));
     const lens = BRAID_LENS_AMP * 2 * hb * bNoise(ph * (BRAID_WAVE / BRAID_LENS) + 7.7 * k, 150 + k);
-    const wk = w * BRAID_W * Math.pow(k + 1, -0.55) * Math.exp(BRAID_W_SPREAD * bNoise(ph * 5.3 + 3.3 * k, 300 + k)) * (0.3 + 0.7 * p);
+    const wk = w * BRAID_W * Math.pow(k + 1, BRAID_W_EXP) * Math.exp(BRAID_W_SPREAD * bNoise(ph * 5.3 + 3.3 * k, 300 + k)) * (0.3 + 0.7 * p);
     const wig = BRAID_WIG_AMP * wk * bNoise(ps * (1.6 + 0.4 * bHash(k, 401)) + 11.3 * k, 400 + k);
     let xk = braidXs[0] + p * (uk * hb + lens + wig - braidXs[0]);
     // (Drawn onto each thread before it in turn within BRAID_JOIN of their widths: the two are one channel there.)
@@ -746,8 +747,8 @@ export function braidRows(north: ArrayLike<number>, east: ArrayLike<number>, s: 
   }
   return { tn, te };
 }
-/** braidRows: a row's direction is read ROW_TURN bed half-widths either side. */
-const ROW_TURN = 1;
+/** braidRows: a row's direction is read ROW_TURN bed half-widths either side (smooth around bends, no chevrons). */
+const ROW_TURN = 1.8;
 /** rowFrame's output: the row j the point lies after, how far on to row j + 1 (t) and its offset right of the line, m. */
 export const rowHit = { j: 0, t: 0, x: 0 };
 /**
@@ -804,13 +805,15 @@ export interface BraidRibbon {
   ps: ArrayLike<number>;
   rows: Int32Array;
 }
-/** The ribbon's columns across a row (water.ts BED_ACROSS: -3 and 3 the right and left bed edges, -2 and 2 the water's). */
-const TWIN_ACROSS = [-3, -2, -1, 0, 1, 2, 3];
+/** The braided ribbon's columns across a row (water.ts: -3 and 3 the right and left bed edges, -2 and 2 the main
+ * water's, with two extra columns across each gravel bar so linear interpolation across wide bars never kinks threads). */
+export const BRAID_ACROSS = [-3, -2.667, -2.333, -2, -1, 0, 1, 2, 2.333, 2.667, 3];
+const TWIN_COLS = BRAID_ACROSS.length;
 /** braidTwin's output: what the ribbon's fragment there reads - u, um, the bed's half-width, K, the phases, the main
  * water's width - and whether it lies in the main water's columns (main). */
 export const twinHit = { u: 0, um: 0, hb: 1, K: 0, ph: 0, ps: 0, w: 0, main: false };
-const twinV = new Float64Array(14 * 2);
-const twinA = new Float64Array(14 * 7);
+const twinV = new Float64Array(2 * TWIN_COLS * 2);
+const twinA = new Float64Array(2 * TWIN_COLS * 7);
 /**
  * The ribbon's own reading of a braided bed at a point (pn, pe): its two rows about it (rowFrame's guess from row r0,
  * then the quads either side), its vertices and their attributes as ribbonRows builds them, the triangle (as it indexes
@@ -819,10 +822,14 @@ const twinA = new Float64Array(14 * 7);
  */
 export function braidTwin(L: BraidRibbon, r0: number, pn: number, pe: number): boolean {
   const R = L.rows;
-  for (const dj of [0, -1, 1, -2, 2]) {
+  for (const dj of [0, -1, 1, -2, 2, -3, 3, -4, 4]) {
     const q = r0 + dj;
     if (q < 0 || q + 1 >= R.length) continue;
-    // The quad's 14 vertices (rows q, q + 1; columns across) and their attributes.
+    const i0 = R[q];
+    const i1 = R[q + 1];
+    const reach = Math.max(L.bedR[i0], L.bedL[i0], L.bedR[i1], L.bedL[i1], L.wetR[i0] + 1, L.wetL[i0] + 1, L.wetR[i1] + 1, L.wetL[i1] + 1) + 2;
+    if (pn < Math.min(L.north[i0], L.north[i1]) - reach || pn > Math.max(L.north[i0], L.north[i1]) + reach || pe < Math.min(L.east[i0], L.east[i1]) - reach || pe > Math.max(L.east[i0], L.east[i1]) + reach) continue;
+    // The quad's 2 * TWIN_COLS vertices (rows q, q + 1; columns across) and their attributes.
     for (let h = 0; h < 2; h++) {
       const i = R[q + h];
       const tl = Math.hypot(L.tn[i], L.te[i]) || 1;
@@ -834,15 +841,15 @@ export function braidTwin(L: BraidRibbon, r0: number, pn: number, pe: number): b
       const mid = 0.5 * (wR - wL);
       const xc = 0.5 * (L.bedR[i] - L.bedL[i]);
       const hb = Math.max(1, 0.5 * (L.bedR[i] + L.bedL[i]));
-      for (let c = 0; c < 7; c++) {
-        const a = TWIN_ACROSS[c];
+      for (let c = 0; c < TWIN_COLS; c++) {
+        const a = BRAID_ACROSS[c];
         const right = a < 0;
         const wet = right ? wR : wL;
         const edge = Math.max(wet + 0.3, right ? L.bedR[i] : L.bedL[i]);
         const ua = Math.abs(a);
         const x = ua <= 2 ? 0.5 * ua * wet : wet + (ua - 2) * (edge - wet);
         const off = (right ? -1 : 1) * x;
-        const v = h * 7 + c;
+        const v = h * TWIN_COLS + c;
         twinV[2 * v] = L.north[i] + pnn * off;
         twinV[2 * v + 1] = L.east[i] + pen * off;
         const at = 7 * v;
@@ -856,8 +863,8 @@ export function braidTwin(L: BraidRibbon, r0: number, pn: number, pe: number): b
       }
     }
     // Its triangles as ribbonRows indexes them: (a, c, a + 1) and (a + 1, c, c + 1), a = row q column k, c = row q + 1.
-    for (let k = 0; k < 6; k++) {
-      for (const tri of [[k, 7 + k, k + 1], [k + 1, 7 + k, 7 + k + 1]]) {
+    for (let k = 0; k < TWIN_COLS - 1; k++) {
+      for (const tri of [[k, TWIN_COLS + k, k + 1], [k + 1, TWIN_COLS + k, TWIN_COLS + k + 1]]) {
         const [v0, v1, v2] = tri;
         const n0 = twinV[2 * v0], e0 = twinV[2 * v0 + 1], n1 = twinV[2 * v1], e1 = twinV[2 * v1 + 1], n2 = twinV[2 * v2], e2 = twinV[2 * v2 + 1];
         const det = (e1 - e2) * (n0 - n2) + (n2 - n1) * (e0 - e2);
@@ -875,7 +882,7 @@ export function braidTwin(L: BraidRibbon, r0: number, pn: number, pe: number): b
         twinHit.ps = f(5);
         twinHit.w = f(6);
         // (The main water's columns, -2..2: the shader draws no other thread there.)
-        twinHit.main = k >= 1 && k <= 4;
+        twinHit.main = k >= 3 && k <= 6;
         return true;
       }
     }
@@ -889,13 +896,18 @@ const BRAID_DAMP = 1.5;
 
 /**
  * GLSL twin of braidAt (needs HASH_GLSL's hash2u; the world seed's salt baked in as hash2i adds it in JS):
- * braidAt(u, um, hb, K, ph, ps, w, out half) and braidDamp(u, hb, K, ph, ps, w) (1 in a dry channel). Call when building
- * a material (after the seed is set).
+ * braidAt(u, um, hb, K, ph, ps, w, out half), braidDamp(...), and braidWeb(...) (shader-only multi-scale anastomosing
+ * diamond-bar network, fine wet sub-threads, damp scour channels, and bar crowns). Call when building a material.
  */
 export function braidGlsl(): string {
   const f = (v: number): string => v.toFixed(6);
   return /* glsl */ `
 float bHash(int i, int key) { return float(hash2u(i + ${seedSaltX()}, key + ${seedSaltY()}) & 0xffffu) * (1.0 / 65536.0); }
+vec2 bHash2(ivec2 p, int salt) {
+  uint h1 = hash2u(p.x + ${seedSaltX()} + salt * 37, p.y + ${seedSaltY()} + salt * 91);
+  uint h2 = hash2u(p.x * 3 + 17 + ${seedSaltX()}, p.y * 5 + salt * 131 + ${seedSaltY()});
+  return vec2(float(h1 & 0xffffu), float(h2 & 0xffffu)) * (1.0 / 65536.0);
+}
 float bNoise(float t, int key) {
   float fi = floor(t);
   int i = int(fi);
@@ -924,7 +936,7 @@ float braidAt(float u, float um, float hb, float K, float ph, float ps, float w,
     if (p <= 0.0) break;
     float uk = ${f(BRAID_SPAN)} * bSpread(bNoise(ph + 31.1 * fk, 100 + k));
     float lens = ${f(BRAID_LENS_AMP * 2)} * hb * bNoise(ph * ${f(BRAID_WAVE / BRAID_LENS)} + 7.7 * fk, 150 + k);
-    float wk = w * ${f(BRAID_W)} * pow(fk + 1.0, -0.55) * exp(${f(BRAID_W_SPREAD)} * bNoise(ph * 5.3 + 3.3 * fk, 300 + k)) * (0.3 + 0.7 * p);
+    float wk = w * ${f(BRAID_W)} * pow(fk + 1.0, ${f(BRAID_W_EXP)}) * exp(${f(BRAID_W_SPREAD)} * bNoise(ph * 5.3 + 3.3 * fk, 300 + k)) * (0.3 + 0.7 * p);
     float wig = ${f(BRAID_WIG_AMP)} * wk * bNoise(ps * (1.6 + 0.4 * bHash(k, 401)) + 11.3 * fk, 400 + k);
     float xk = xs[0] + p * (uk * hb + lens + wig - xs[0]);
     for (int j = 0; j < k; j++) xk = xs[j] + (xk - xs[j]) * smoothstep(${f(BRAID_JOIN[0])}, ${f(BRAID_JOIN[1])}, abs(xk - xs[j]) / (0.5 * (wk + ws[j])));
@@ -936,6 +948,73 @@ float braidAt(float u, float um, float hb, float K, float ph, float ps, float w,
     if (inside > best) { best = inside; half_ = 0.5 * wk; }
   }
   return best;
+}
+// Flow-stretched Voronoi (F2 - F1): streamlined diamond gravel bars separated by an anastomosing web of channels.
+vec3 bVoronoi(vec2 p, int salt) {
+  ivec2 ip = ivec2(floor(p));
+  vec2 fp = fract(p);
+  float f1 = 8.0;
+  float f2 = 8.0;
+  float cid = 0.0;
+  for (int j = -1; j <= 1; j++) {
+    for (int i = -1; i <= 1; i++) {
+      ivec2 g = ivec2(i, j);
+      vec2 o = bHash2(ip + g, salt);
+      vec2 r = vec2(g) + 0.12 + 0.76 * o - fp;
+      float d = dot(r, r);
+      if (d < f1) {
+        f2 = f1;
+        f1 = d;
+        cid = o.x;
+      } else if (d < f2) {
+        f2 = d;
+      }
+    }
+  }
+  float d1 = sqrt(f1);
+  float d2 = sqrt(f2);
+  return vec3(d2 - d1, d1, cid);
+}
+// Multi-scale anastomosing braid web (shader-only) in physical metres (sFlow along river, xBed across bed):
+// avoids accordion stretching/kinks where bed width changes, scales channel count naturally with width, and clusters
+// active glacial blue-grey webs into braided corridors between broad pale dry shingle flats (like the NZ Rakaia).
+void braidWeb(float sFlow, float u, float um, float hb, float K, out float fineWet, out float barCrown, out float webDamp, out float vegIsland) {
+  float bOn = smoothstep(1.05, 2.2, K);
+  float inBed = 1.0 - smoothstep(0.84, 0.985, abs(u));
+  float xBed = u * hb;
+  float xMain = um * hb;
+  // Physical-metre domain warp so diamond bars curve smoothly without stretching when hb changes.
+  float wy1 = 0.42 * bNoise(sFlow * (1.0 / 210.0) + xBed * (1.0 / 190.0), 511) + 0.18 * bNoise(sFlow * (1.0 / 95.0) - xBed * (1.0 / 110.0), 513);
+  float wx1 = 0.22 * bNoise(sFlow * (1.0 / 260.0) - xBed * (1.0 / 170.0), 517);
+  vec2 p1 = vec2(sFlow * (1.0 / 240.0) + wx1, xBed * (1.0 / 48.0) + wy1);
+  vec3 v1 = bVoronoi(p1, 11);
+  // Second, finer anastomosing octave (~22 m x 115 m diamond bars) for dense branching sub-threads.
+  float wy2 = 0.34 * bNoise(sFlow * (1.0 / 115.0) + xBed * (1.0 / 90.0), 521) + 0.14 * bNoise(sFlow * (1.0 / 55.0) - xBed * (1.0 / 60.0), 523);
+  vec2 p2 = vec2(sFlow * (1.0 / 115.0) + 0.18 * wy1, xBed * (1.0 / 22.0) + wy2);
+  vec3 v2 = bVoronoi(p2, 29);
+  // Slow braided-corridor activity field: concentrates active webs in corridors while leaving broad bright dry flats.
+  float nearMain = exp(-abs(xBed - xMain) / max(55.0, 0.42 * hb));
+  float corrN = 0.5 + 0.5 * bNoise(sFlow * (1.0 / 520.0) + xBed * (1.0 / 155.0), 551);
+  float corr = clamp(0.28 + 0.58 * corrN + 0.38 * nearMain, 0.0, 1.0);
+  float act1 = clamp(corr * (0.65 + 0.55 * (0.5 + 0.5 * bNoise(sFlow * (1.0 / 310.0) + v1.z * 19.7, 531))), 0.0, 1.0);
+  float act2 = clamp(corr * (0.55 + 0.65 * (0.5 + 0.5 * bNoise(sFlow * (1.0 / 170.0) + v2.z * 23.3, 537))), 0.0, 1.0);
+  float fw1 = max(fwidth(v1.x), 0.014);
+  float fw2 = max(fwidth(v2.x), 0.018);
+  float thr1 = mix(0.0, 0.14, smoothstep(0.32, 0.85, act1)) * bOn * inBed;
+  float thr2 = mix(0.0, 0.085, smoothstep(0.45, 0.90, act2)) * bOn * inBed;
+  float wet1 = (1.0 - smoothstep(thr1 - fw1, thr1 + fw1, v1.x)) * smoothstep(0.35, 0.65, act1);
+  float wet2 = (1.0 - smoothstep(thr2 - fw2, thr2 + fw2, v2.x)) * smoothstep(0.48, 0.82, act2) * (1.0 - 0.75 * smoothstep(0.35, 0.70, v1.x));
+  fineWet = clamp(max(wet1, wet2 * 0.88), 0.0, 1.0) * bOn * inBed;
+  // Crisp damp margins beside active wet channels, and only faint dry scour scars on broad dry flats (no zebra striping).
+  float activeDamp = max((1.0 - smoothstep(thr1, thr1 + 0.10, v1.x)) * smoothstep(0.30, 0.65, act1), (1.0 - smoothstep(thr2, thr2 + 0.09, v2.x)) * smoothstep(0.42, 0.80, act2) * 0.7);
+  float faintScar = max(1.0 - smoothstep(0.0, 0.07, v1.x), (1.0 - smoothstep(0.0, 0.055, v2.x)) * 0.6) * 0.22;
+  webDamp = clamp(max(activeDamp * 0.78, faintScar), 0.0, 1.0) * bOn;
+  // Broad bright pale-silver dry bar flats (higher where corridor activity is lower).
+  float dryFlat = mix(0.85, 0.35, corr);
+  barCrown = clamp(max(dryFlat, smoothstep(0.04, 0.40, v1.x) * (0.76 + 0.24 * v1.z)), 0.0, 1.0);
+  // Sparse older vegetated/silty bar islands on wide beds, well off active channels.
+  float islN = 0.5 + 0.5 * bNoise(sFlow * (1.0 / 480.0) + v1.z * 11.3, 547);
+  vegIsland = smoothstep(0.50, 0.78, v1.x) * smoothstep(0.76, 0.94, islN) * smoothstep(90.0, 210.0, hb) * (1.0 - fineWet) * bOn * inBed;
 }
 float braidDamp(float u, float hb, float K, float ph, float ps, float w) {
   float x = u * hb;

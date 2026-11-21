@@ -368,6 +368,7 @@ export function buildTile(req: TileRequest): TileData {
       sample.river = river[v];
       sample.airportBlend = airport[v];
       sample.riverDist = riverDist[v];
+      if (hydrology.queryFlow) sample.riverHalfWidth = riverWidth[v];
       sample.approach = approach[v];
       if (fineShape) shapeField.at(n0 + j * sp, e0 + i * sp, shape);
       else {

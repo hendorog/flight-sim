@@ -935,8 +935,9 @@ ${flowText(`    // (A small stream's gravel bed and bank are a thin thread among
     float smallBed = mix(${ROCK_SMALL.toFixed(2)}, 1.0, smoothstep(${ROCK_HW[0].toFixed(1)}, ${ROCK_HW[1].toFixed(1)}, vRiver.y));
     tRiverBed *= smallBed;
     tRiverBank *= smallBed;
-    // (Far away the ribbon draws the bed's bars, its rows finer than these triangles: water.ts FLOW_BARS.)
-    float tBarFar = 1.0 - smoothstep(${BAR_NEAR.toFixed(1)}, ${BAR_FAR.toFixed(1)}, tDist);
+    // (Far away the ribbon draws the bed's bars, its rows finer than these triangles: water.ts FLOW_BARS. Keep the
+    // terrain gravel painted until FLOW_LIFT has cleared the carved bar height so green paddock never pokes through.)
+    float tBarFar = 1.0 - smoothstep(${(BAR_NEAR + 200).toFixed(1)}, ${(BAR_FAR + 200).toFixed(1)}, tDist);
     tRiverBed *= tBarFar;
     tRiverBank *= tBarFar;
 `)}    float strip = 1.0 - smoothstep(${riverStrip().toFixed(1)}, ${(riverStrip() + 16).toFixed(1)}, rEdge + 5.0 * sC.g + 3.0 * sD.a);
@@ -1257,9 +1258,9 @@ if (tRiverBank > 0.001) {
   Mat g = layerTop(${LAYER.gravel}, tXZ, tDist);
   vec3 mud = mix(${P.mud}, ${P.mudLight} * g.albedo, smoothstep(0.6, 0.8, nD.b + 0.3 * g.height));
   mud = mix(mud, ${P.riverBed}, tRiverBed);
-${flowText(`  // A seeded world's river bed is wider than its water (channelForm.ts): pale gravel bars round the thread, the water
-  // over the same gravel.
-  mud = mix(mud, mix(vec3(0.105, 0.1, 0.09), vec3(0.135, 0.13, 0.118), smoothstep(0.3, 0.7, nD.b + 0.3 * g.height)) * g.albedo, tRiverBed);
+${flowText(`  // A seeded world's river bed is wider than its water (channelForm.ts): cool greywacke gravel bars matching the
+  // ribbon's palette (water.ts FLOW_BARS), darker toward damp channels.
+  mud = mix(mud, mix(vec3(0.115, 0.132, 0.140), vec3(0.185, 0.208, 0.218), smoothstep(0.3, 0.7, nD.b + 0.3 * g.height)) * g.albedo, tRiverBed);
 `)}  acc.albedo = mix(acc.albedo, mud, tRiverBank);
   acc.slope = mix(acc.slope, g.slope * 0.5, tRiverBank);
   acc.rough = mix(acc.rough, 0.45, tRiverBank);

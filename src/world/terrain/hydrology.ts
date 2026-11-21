@@ -215,6 +215,9 @@ export interface RiverLine {
   braidTe?: Float32Array;
   /** ... and which samples are its ribbon's rows (1) where it braids. */
   braidRow?: Uint8Array;
+  /** On a stream joining a braided river, 1 at samples well inside the receiver's gravel bed (ribbon suppressed there,
+   * as inLake suppresses a stream's ribbon inside a lake). */
+  inBraid?: Uint8Array;
   /**
    * A stream's pitches and pools (pitchPool.ts): its unit coordinate `sigma` at each sample (unit k's lip at
    * pitchPool.ts lipOf(k), its foot pitchLen(k) on, the next unit's lip at lipOf(k + 1)), and `pitchOn` 1 where its water

@@ -20,7 +20,7 @@ import { REGIME } from './streams';
 import { channelStonesGlsl, GRAIN_TOP, grainToUnit, STONE_ACROSS, STONE_ALONG, STONE_FILL } from './channelStones';
 import { BEDROCK_GLSL, GALLERY_ROCK_THIN } from './bedrock';
 import { hash2i } from './noise';
-import { BAR_FAR, BAR_NEAR, braidGlsl } from './channelForm';
+import { BAR_FAR, BAR_NEAR, BRAID_ACROSS, braidGlsl } from './channelForm';
 import { GALLERY_FLOOR, RIPARIAN_GLSL, RIPARIAN_TREE_HEIGHT } from './riparian';
 import type { WaterData } from './tileBuilder';
 import { era, isPresent } from '../era/eraState';
@@ -786,10 +786,15 @@ float fMist = 0.0;
 `;
 
 /** A seeded world's ribbon is lifted over the coarse terrain from 300 m away, 3 mm a metre (to 15 m): a thread narrower than a coarse tile's triangles, its bars a metre over its water, stays one thread
- * instead of breaking into pools where a triangle's corners stand on the bars. */
+ * instead of breaking into pools where a triangle's corners stand on the bars. On a braided bed's bar vertices (aDepth < 0),
+ * a gentle clearance lift rises as the ribbon's bars fade in (BAR_NEAR..BAR_FAR) so the +0.1..0.6 m carved terrain bars
+ * never poke through the ribbon as saw-tooth wedges. */
 const FLOW_LIFT = `{
   vec3 lw = (modelMatrix * vec4(position, 1.0)).xyz;
-  transformed.y += clamp((distance(lw, cameraPosition) - 300.0) * 0.003, 0.0, 15.0);
+  float camD = distance(lw, cameraPosition);
+  float lift = clamp((camD - 300.0) * 0.003, 0.0, 15.0);
+  float bClear = step(1.001, vBraid.x) * smoothstep(-0.02, -0.22, aDepth) * smoothstep(100.0, 240.0, camD) * 0.85;
+  transformed.y += max(lift, bClear);
 }
 `;
 /** A braided bed's K and half-width (m) are carried as shares of these (aBraidK). */
@@ -804,55 +809,86 @@ const BRAID_VERTEX = `{
   vBraidU = aBraidU;
 }
 `;
-/** The bars' albedo (linear): pale grey greywacke gravel (the NZ braided beds, b1-c2), and how much darker a dry channel. */
-const BAR_ALBEDO = 'vec3(0.2, 0.196, 0.18)';
-const BAR_DAMP = 0.18;
+/** Cool greywacke shingle albedos (linear, B > G > R so blue sky + aerial scatter keep them crisp cool silver-grey,
+ * never lilac/mauve): dry bar crowns, mid shingle, damp gravel/swales, and sparse stabilized silt/scrub islands. */
+const BAR_ALBEDO = 'vec3(0.195, 0.220, 0.230)';
+const BAR_CROWN_ALBEDO = 'vec3(0.268, 0.296, 0.308)';
+const BAR_DAMP_ALBEDO = 'vec3(0.095, 0.114, 0.125)';
+const BAR_ISLAND_ALBEDO = 'vec3(0.088, 0.096, 0.062)';
+/** Milky glacial blue-grey water body colour on braided rivers (linear albedo, replacing dark olive lowland water). */
+const BRAID_WATER_BODY = 'vec3(0.072, 0.124, 0.144)';
 /** A braided bed's gravel is damp this far beside its threads, m. */
-const BRAID_DAMP_M = 6;
-/** A braided bed's other threads are drawn this deep, m (the light reaching their gravel and back). */
-const BRAID_DEPTH = 0.15;
+const BRAID_DAMP_M = 7;
+/** A braided bed's primary secondary threads are drawn this deep, m, and its fine anastomosing web shallower. */
+const BRAID_DEPTH = 0.28;
+const BRAID_FINE_DEPTH = 0.16;
 /** A seeded world's ribbon spans its bed (ribbonRows: vDepth -1 at the bed's edge, 0 at the water's): from
- * BAR_NEAR m away it draws the gravel bars beyond its water itself, all of them from BAR_FAR - the terrain's own
- * paint of them (terrainMaterial.ts, faded out over the same distances) comes in triangles coarser than the bars,
- * a saw-tooth outline; the ribbon's rows follow the line sample by sample. Lit as the terrain is (the irradiance the
- * water's own body colour received), its edge soft over the outer tenth of the bar. A braided bed's other threads
- * (channelForm.ts braidAt) are its water too, at every distance - close in where the ground is cut under them
- * (heightfield.ts carveNetwork), the bars hiding the rest - and its bars carry dry channels a little darker. */
+ * BAR_NEAR m away it draws the gravel bars beyond its water itself (from 100..240 m on braided beds so 300 m AGL views
+ * stay seamless with zero plain-terrain foreground patches). A braided bed's primary threads (channelForm.ts braidAt)
+ * are its water at every distance - close in where the ground is cut under them - while its bars carry a physical-metre
+ * multi-scale anastomosing web of diamond shingle bars, fine wet sub-threads, damp swales and flow-streaked grain. */
 const FLOW_BARS = `{
+  float bBraid = smoothstep(1.0, 2.0, vBraid.x);
   float bW = 0.0;
+  float bFineW = 0.0;
   float bDamp = 0.0;
+  float bCrown = 0.5;
+  float bIsl = 0.0;
   if (vBraid.x > 1.0 && vDepth < 0.0) {
     float bHalf;
     float bIn = braidAt(vBraidU.x, vBraidU.y, vBraid.w, vBraid.x, vBraid.y, vBraid.z, 2.0 * vRiverInfo.z, bHalf);
     float bFw = max(fwidth(vBraidU.x) * vBraid.w, 0.05);
     bW = smoothstep(-0.5 * bFw, 0.5 * bFw, bIn);
-    // (Damp gravel: the dry channels, and a few metres beside every thread, the main one's too.)
+    float bWebDamp;
+    braidWeb(vRiverInfo.y, vBraidU.x, vBraidU.y, vBraid.w, vBraid.x, bFineW, bCrown, bWebDamp, bIsl);
+    // (Damp gravel: the anastomosing swales, dry channels, and a few metres beside every active thread.)
     float bMain = abs(vBraidU.x - vBraidU.y) * vBraid.w - vRiverInfo.z;
-    bDamp = max(braidDamp(vBraidU.x, vBraid.w, vBraid.x, vBraid.y, vBraid.z, 2.0 * vRiverInfo.z), 1.0 - smoothstep(0.0, ${BRAID_DAMP_M.toFixed(1)}, min(-bIn, bMain))) * (1.0 - bW);
+    float bMargin = 1.0 - smoothstep(0.0, ${BRAID_DAMP_M.toFixed(1)}, min(-bIn, bMain));
+    bDamp = clamp(max(max(bWebDamp, braidDamp(vBraidU.x, vBraid.w, vBraid.x, vBraid.y, vBraid.z, 2.0 * vRiverInfo.z) * 0.45), bMargin * 0.85), 0.0, 1.0);
+    bFineW *= (1.0 - bW);
   }
-  float bFar = smoothstep(${BAR_NEAR.toFixed(1)}, ${BAR_FAR.toFixed(1)}, wDist);
-  float bBar = 1.0 - smoothstep(-0.12, -0.02, vDepth);
-  // (A braided bed's edge is sharp - the NZ beds' gravel meets the scrub within a few metres - its bars to within a pixel
-  // of it; another bed's softens over its outer tenth.)
+  float bFar = vBraid.x > 1.0 ? smoothstep(100.0, 240.0, wDist) : smoothstep(${BAR_NEAR.toFixed(1)}, ${BAR_FAR.toFixed(1)}, wDist);
+  // (On a braided bed, start the gravel bar right at vDepth = 0 so no transparent dark fringe borders the main thread.)
+  float bBar = vBraid.x > 1.0 ? (1.0 - smoothstep(-0.04, 0.04, vDepth)) : (1.0 - smoothstep(-0.12, -0.02, vDepth));
+  // (A braided bed's edge is sharp with gentle organic scalloping; where K tapers toward 1 at a confluence it feathers
+  // smoothly so overlapping braided ribbons blend cleanly.)
   if (vBraid.x > 1.0) {
-    float bEdge = vBraid.w * (1.0 - abs(vBraidU.x));
-    float bEw = max(fwidth(vBraidU.x) * vBraid.w, 0.5);
-    bBar *= smoothstep(0.0, 1.5 * bEw, bEdge);
+    float bEdgeN = (texture(tNoise, vWaterPos.xz * (1.0 / 47.0) + 0.17).r - 0.5) * min(5.0, 0.035 * vBraid.w);
+    float bEdge = vBraid.w * (1.0 - abs(vBraidU.x)) + bEdgeN;
+    float bEw = max(fwidth(vBraidU.x) * vBraid.w, 0.6);
+    float bFeather = max(1.8 * bEw, mix(14.0, 2.0, bBraid));
+    bBar *= smoothstep(0.0, bFeather, bEdge);
   } else bBar *= 1.0 - smoothstep(0.85, 1.0, -vDepth);
   vec3 bCol = vec3(0.0);
   if (bBar > 0.0) {
-    vec4 bN = texture(tNoise, vWaterPos.xz * (1.0 / 37.0) + 0.23);
-    // (Darker by the water: a single thread's bar over its inner fifth, a braided bed's by bDamp.)
+    // Multi-scale cool greywacke shingle texture: coarse tonal patches, fine shingle grain, and physical-metre flow streaks.
+    vec4 bN1 = texture(tNoise, vWaterPos.xz * (1.0 / 43.0) + 0.23);
+    vec4 bN2 = texture(tNoise, vWaterPos.xz * (1.0 / 11.0) + 0.61);
+    float bStreak = vBraid.x > 1.0 ? texture(tNoise, vec2(vRiverInfo.y * (1.0 / 180.0), (vBraidU.x * vBraid.w) * (1.0 / 18.0))).g : 0.5;
+    float bGrain = (0.88 + 0.15 * bN1.g + 0.12 * bN2.r) * (0.91 + 0.18 * bStreak);
+    // (Darker by the water: a single thread's bar over its inner fifth; a braided bed's dry diamond crowns bright,
+    // damp swales and margins dark cool slate, sparse elevated bar cores tinted pioneer scrub/silt.)
     float bWetEdge = vBraid.x > 1.0 ? 0.0 : smoothstep(-0.2, -0.05, vDepth);
-    vec3 bAlb = ${BAR_ALBEDO} * (0.82 + 0.36 * bN.g) * (1.0 - 0.25 * bWetEdge) * (1.0 - ${BAR_DAMP.toFixed(2)} * bDamp);
+    vec3 bDry = mix(${BAR_ALBEDO}, ${BAR_CROWN_ALBEDO}, bCrown * bBraid);
+    vec3 bAlb = mix(bDry, ${BAR_DAMP_ALBEDO}, clamp(0.62 * bDamp + 0.35 * bWetEdge, 0.0, 1.0));
+    bAlb = mix(bAlb, ${BAR_ISLAND_ALBEDO} * (0.8 + 0.4 * bN2.b), bIsl * 0.85);
+    bAlb *= bGrain;
     vec3 bIrr = (reflectedLight.directDiffuse + reflectedLight.indirectDiffuse) / max(diffuseColor.rgb * RECIPROCAL_PI, vec3(1e-5));
     bCol = bAlb * bIrr * RECIPROCAL_PI;
     float bK = bBar * bFar * (1.0 - bW);
     gl_FragColor = gl_FragColor * (1.0 - bK) + vec4(bCol, 1.0) * bK;
   }
+  // Fine shader-only anastomosing wet threads (drawn on the gravel bed, faded in with the ribbon bars so close-up
+  // ditching physics stay governed by the primary CPU+GPU threads).
+  if (bFineW > 0.001 && bBar > 0.0) {
+    float bTrF = exp(-${(2 * BRAID_FINE_DEPTH).toFixed(2)} * dot(atten, vec3(0.25, 0.5, 0.25)));
+    vec4 bWatF = vec4(totalDiffuse * (1.0 - bTrF) * (1.0 - fresnel) + wSpec * 0.65, 1.0 - (1.0 - fresnel) * bTrF);
+    vec3 bRgbF = bWatF.rgb + bCol * (1.0 - bWatF.a);
+    float bKf = bFineW * bBar * bFar;
+    gl_FragColor = gl_FragColor * (1.0 - bKf) + vec4(bRgbF, 1.0) * bKf;
+  }
   if (bW > 0.0) {
-    // (A thread's water: a few decimetres of the river's turbid water over the gravel - the bar's own, far away, where
-    // the ribbon is the bed; close in, the ground cut under it.)
+    // (A primary thread's water: glacial blue-grey water over the gravel - the bar's own far away, the cut ground close in.)
     float bTr = exp(-${(2 * BRAID_DEPTH).toFixed(2)} * dot(atten, vec3(0.25, 0.5, 0.25)));
     vec4 bWat = vec4(totalDiffuse * (1.0 - bTr) * (1.0 - fresnel) + wSpec, 1.0 - (1.0 - fresnel) * bTr);
     bWat = mix(bWat, vec4(bWat.rgb + bCol * (1.0 - bWat.a), 1.0), bFar * bBar);
@@ -861,15 +897,20 @@ const FLOW_BARS = `{
 }
 `;
 /** ... and its water's optical density a multiple of the palette's river (channelForm.ts: its thread is decimetres deep). */
-const FLOW_TURBID = 2.5;
+const FLOW_TURBID = 3.0;
 /** Splice the running water into a river (or falls) material's shader; `ice`: the ice code follows. */
 function withFlow(shader: { vertexShader: string; fragmentShader: string }, falls: boolean, ice: boolean): void {
   shader.vertexShader = shader.vertexShader
     .replace('attribute float aDepth;\n', `attribute float aDepth;\n${FLOW_VERTEX_HEAD(falls)}`)
     .replace('vec3 transformed = position;\n', `vec3 transformed = position;\n${falls ? `vFall = aFall;\n${FALLS_BILLBOARD}` : `vFlow = aFlow * vec4(1.0, ${FLOW_SPEED_MAX.toFixed(1)}, 1.0, 1.0);\nvPitch = aPitch;\n${BRAID_VERTEX}${FLOW_LIFT}`}`);
   // (A seeded world's water is as turbid as its glacial and silt-laden rivers: opaque within a few decimetres, its
-  // thread reading as water over the gravel it runs among, not as more of the bed.)
-  if (!falls) shader.fragmentShader = shader.fragmentShader.replace(/vec3 atten = (vec3\([^)]*\));\n/, `vec3 atten = ${FLOW_TURBID.toFixed(1)} * $1;\n`).replace('gl_FragColor = vec4(wColor * wEdge, (1.0 - wSeen) * wEdge);\n', `gl_FragColor = vec4(wColor * wEdge, (1.0 - wSeen) * wEdge);\n${FLOW_BARS}`);
+  // thread reading as cool glacial blue-grey water over braided gravel, not dark olive.)
+  if (!falls) {
+    shader.fragmentShader = shader.fragmentShader
+      .replace(/vec3 atten = (vec3\([^)]*\));\n/, `vec3 atten = ${FLOW_TURBID.toFixed(1)} * $1;\n`)
+      .replace('diffuseColor.rgb = body;\n', `body = mix(body, ${BRAID_WATER_BODY}, smoothstep(1.0, 2.0, vBraid.x));\ndiffuseColor.rgb = body;\n`)
+      .replace('gl_FragColor = vec4(wColor * wEdge, (1.0 - wSeen) * wEdge);\n', `gl_FragColor = vec4(wColor * wEdge, (1.0 - wSeen) * wEdge);\n${FLOW_BARS}`);
+  }
   shader.fragmentShader = shader.fragmentShader
     .replace('varying float vDepth;\n', `varying float vDepth;\n${falls ? 'varying vec4 vFall;\n' : 'varying vec4 vFlow;\nvarying vec2 vPitch;\nvarying vec4 vBraid;\nvarying vec2 vBraidU;\n'}`)
     // (After the hashes: the stone lattice uses hash2u.)
@@ -878,8 +919,8 @@ function withFlow(shader: { vertexShader: string; fragmentShader: string }, fall
     .replace('wTrans *= 1.0 - foam;\n', `${falls ? fallsFragment() : flowFragment()}wTrans *= 1.0 - foam;\n`)
     // White water is no mirror.
     .replace('vec3 wDirect = reflectedLight.directSpecular;\n', 'vec3 wDirect = reflectedLight.directSpecular * (1.0 - wSpecCut);\nfresnel *= 1.0 - wSpecCut;\n');
-  // The bank's trees in the mirror thin out as placement.ts thins them along bare rock.
-  if (!falls) shader.fragmentShader = shader.fragmentShader.replace('  float bank = max(herb, tree);\n', '  tree *= wTreeKeep;\n  float bank = max(herb, tree);\n');
+  // The bank's trees in the mirror thin out as placement.ts thins them along bare rock, and vanish across open braided beds.
+  if (!falls) shader.fragmentShader = shader.fragmentShader.replace('  float bank = max(herb, tree);\n', '  tree *= wTreeKeep;\n  float bank = max(herb, tree);\n  bank *= 1.0 - smoothstep(1.0, 2.0, vBraid.x);\n');
   // Frozen spray is no snowdrift: it goes with the ice.
   if (falls && ice) shader.fragmentShader = shader.fragmentShader.replace('float wEdge = smoothstep(-0.05, 0.25, vDepth);\n', 'float wEdge = smoothstep(-0.05, 0.25, vDepth) * (1.0 - fMist * wIce);\n');
 }
@@ -996,7 +1037,7 @@ interface RiverBuffers {
 const riverBuffers = (): RiverBuffers => ({ pos: [], depth: [], info: [], tan: [], idx: [], flow: [], pitch: [], braid: [], braidU: [] });
 
 /** A line as the ribbon reads it (a seeded network's lines also carry their kind and flow). */
-type RibbonLine = { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; depth?: Float32Array; wetR?: Float32Array; wetL?: Float32Array; bedR?: Float32Array; bedL?: Float32Array; braidK?: Float32Array; braidPh?: Float64Array; braidPs?: Float64Array; braidTn?: Float32Array; braidTe?: Float32Array; braidRow?: Uint8Array; kind?: number; regime?: Uint8Array; steepness?: Float32Array; speed?: Float32Array; sigma?: Float32Array; pitchOn?: Float32Array };
+type RibbonLine = { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; depth?: Float32Array; wetR?: Float32Array; wetL?: Float32Array; bedR?: Float32Array; bedL?: Float32Array; braidK?: Float32Array; braidPh?: Float64Array; braidPs?: Float64Array; braidTn?: Float32Array; braidTe?: Float32Array; braidRow?: Uint8Array; inBraid?: Uint8Array; kind?: number; regime?: Uint8Array; steepness?: Float32Array; speed?: Float32Array; sigma?: Float32Array; pitchOn?: Float32Array };
 
 /** Whether sample i of a line is a fall's lip whose face (to sample i + 1) is steep enough to draw as a curtain. */
 function curtainAt(r: RibbonLine, i: number): boolean {
@@ -1028,7 +1069,7 @@ function ribbonKeep(r: RibbonLine, from: number, to: number, flowing: boolean): 
   // (A braided bed's rows are the network's (RiverLine.braidRow), no more and no fewer: its threads are read in them, as
   // the ground under them is cut - channelForm.ts rowFrame - and a row more or less moves them by metres.)
   const braided = (k: number): boolean => !!r.braidRow && (r.braidK![k] > 1 || (k + 1 < r.braidK!.length && r.braidK![k + 1] > 1));
-  const must = (k: number): boolean => r.regime![k] === REGIME.fall || (k > 0 && r.regime![k - 1] === REGIME.fall) || (!!r.pitchOn && k > 0 && (r.pitchOn[k] > 0) !== (r.pitchOn[k - 1] > 0)) || (braided(k) && r.braidRow![k] > 0);
+  const must = (k: number): boolean => r.regime![k] === REGIME.fall || (k > 0 && r.regime![k - 1] === REGIME.fall) || (!!r.pitchOn && k > 0 && (r.pitchOn[k] > 0) !== (r.pitchOn[k - 1] > 0)) || (!!r.inBraid && k > 0 && r.inBraid[k] !== r.inBraid[k - 1]) || (braided(k) && r.braidRow![k] > 0);
   let i = from;
   out.push(i);
   while (i < to - 1) {
@@ -1073,7 +1114,8 @@ function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, fl
   // side's water and the line - the bars beyond the water drawn far away, where the terrain's triangles are coarser
   // than they are: FLOW_BARS.)
   const bed = !!(r.bedR && r.bedL && r.wetR && r.wetL);
-  const across = bed ? BED_ACROSS : RIBBON_ACROSS;
+  const hasBraid = !!(bed && r.braidK && r.braidPh && r.braidPs);
+  const across = hasBraid ? BRAID_ACROSS : bed ? BED_ACROSS : RIBBON_ACROSS;
   const { pos, depth, info, tan, idx } = b;
   // Running water: the flow per row, and no ribbon down a fall's face (createFallGeometries draws its curtain).
   const flowing = flow && !!r.steepness && !!r.speed && !!r.regime;
@@ -1107,10 +1149,11 @@ function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, fl
     const mid = r.wetR && r.wetL ? 0.5 * (r.wetR[i] - r.wetL[i]) : 0;
     // (A seeded world's line: its thread's own depth, channelForm.ts - a pool at a bend, a riffle at a crossing.)
     const centreDepth = r.depth ? r.depth[i] : 2.2 + w * 0.05;
-    // (A braided bed's frame: its middle and half-width, the main water's middle across it - channelForm.ts braidAt.)
-    const bK = bed && r.braidK && r.braidK[i] > 1 ? r.braidK[i] : 0;
-    const bXc = bK > 0 ? 0.5 * (r.bedR![i] - r.bedL![i]) : 0;
-    const bHb = bK > 0 ? Math.max(1, 0.5 * (r.bedR![i] + r.bedL![i])) : 1;
+    // (A braided bed's frame: always populated along a line with braids so start/stop quads interpolate phases
+    // smoothly down to K = 1 instead of snapping ph/ps to 0 across a single row.)
+    const bK = hasBraid ? r.braidK![i] : 0;
+    const bXc = hasBraid ? 0.5 * (r.bedR![i] - r.bedL![i]) : 0;
+    const bHb = hasBraid ? Math.max(1, 0.5 * (r.bedR![i] + r.bedL![i])) : 1;
     let fall = 0;
     if (flowing) {
       const lip = r.regime![i] === REGIME.fall;
@@ -1119,7 +1162,9 @@ function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, fl
       curtain.push(curtainAt(r, i));
       if (mask) {
         const lake = mask.at(r.north[i], r.east[i]);
-        inLake.push(lake > -Infinity && r.level[i] <= lake + 0.3);
+        inLake.push((lake > -Infinity && r.level[i] <= lake + 0.3) || !!r.inBraid?.[i]);
+      } else if (r.inBraid) {
+        inLake.push(!!r.inBraid[i]);
       }
     }
     for (const a of across) {
@@ -1148,7 +1193,7 @@ function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, fl
       if (flowing) {
         b.flow.push(r.steepness![i], r.speed![i], fall, grainToUnit((r as { grain?: Float32Array }).grain?.[i] ?? 0));
         b.pitch.push(r.sigma?.[i] ?? 0, r.pitchOn?.[i] ?? 0);
-        if (bK > 0) {
+        if (hasBraid) {
           b.braid.push(bK, r.braidPh![i], r.braidPs![i], bHb);
           // (The vertex's place right of the line, -off: across the bed from its middle.)
           b.braidU.push((-off - bXc) / bHb, (mid - bXc) / bHb);
