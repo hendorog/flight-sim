@@ -44,7 +44,11 @@
 // frame for the interior and exterior views so every shader variant is linked, and fade back in.
 
 import { setWorldSeed, worldSeed } from '../world/worldSeed';
-import { setSnowShift } from '../world/terrain/heightfield';
+import { OrographyPrefetch } from './weather/orographyPrefetch';
+import { setOrographySource } from '../physics/weather/orography/orographyField';
+import { mountainWavesOf } from '../core/weatherFields';
+import { seededModel, setSnowShift, snowShiftM, terrainHeight as worldTerrainHeight } from '../world/terrain/heightfield';
+import { townSite } from '../world/terrain/townMask';
 import { disabled } from '../physics/damage';
 import * as THREE from 'three';
 import {
@@ -244,6 +248,8 @@ export class Simulator {
   /** First error thrown by each subsystem update (the loop keeps running). */
   readonly errors: string[] = [];
   ready = false;
+  /** The worker source of the mountain-wave tiles (orographyPrefetch.ts). */
+  private orography!: OrographyPrefetch;
 
   private readonly failed = new Set<string>();
   private readonly airframeVisibility = new AirframeVisibility();
@@ -409,6 +415,10 @@ export class Simulator {
     if (startTod !== null) this.weather.timeOfDay = startTod;
     const weatherBefore = { ...this.weather };
     if (decision.kind === 'resume') restoreWeather(this.weather, decision.snapshot.weather);
+    // Mountain-wave tiles of the world terrain are solved in a worker (orographyPrefetch.ts), never on this thread:
+    // registered before the physics samples the wind. Jobs start once the terrain module has the town site (below).
+    this.orography = new OrographyPrefetch();
+    setOrographySource(worldTerrainHeight, this.orography);
     const physics = new SimPhysics({ weather: this.weather, events, aircraft: def,
       ...(p.rotorcraftConfig ? { rotorcraftConfig: p.rotorcraftConfig } : {}), ...(p.forceHalfPHop ? { forceHalfPHop: true } : {}) });
     const carbIcing = loadCarbIcing(this.store);
@@ -599,6 +609,8 @@ export class Simulator {
       await new Promise((r) => setTimeout(r, 100));
     }
     await terrainDone;
+    // The orography worker samples the same terrain as the terrain workers (era, seed, snow shift, model, town site).
+    this.orography.setup({ kind: 'setup', town: townSite(), era: era().id, seed: worldSeed(), snowShift: snowShiftM(), model: seededModel() });
 
     // The era's animals (none in the present day: nothing is constructed). Initialised here, before the cloud
     // shadow scan and the shader warm-up, so every mesh it will ever draw is patched and compiled.
@@ -1759,6 +1771,7 @@ export class Simulator {
     if (this.career) this.run('career', this.career, subsystemDt);
     s.ui.demoFlying = !!this.demo && this.demo.outcome !== 'taken-over';
     this.run('aircraftWeather', this.aircraftWeather, subsystemDt);
+    this.prefetchOrography();
     this.run('ui', s.ui, subsystemDt);
     this.demoUi?.update(physics.state, ctx.controls, s.ui.menuOpen || !!this.schoolHold || this.careerHold);
     this.run('audio', s.audio, subsystemDt);
@@ -1855,11 +1868,28 @@ export class Simulator {
     return st.inflight === 0 || st.nearestMissing > NEAR_TERRAIN;
   }
 
+  /** Queue the mountain-wave tiles the aircraft needs now and soon (orographyPrefetch.ts). */
+  private prefetchOrography(): void {
+    if (mountainWavesOf(this.weather) === 0) return;
+    const st = this.physics.state;
+    this.orography.update(this.physics.env.windField.orography, st.position.x, st.position.y, st.velocity.x, st.velocity.y);
+  }
+
+  /** The mountain-wave tiles at the aircraft are in (or the gain is 0): part of __ready. */
+  private orographyReady(): boolean {
+    if (mountainWavesOf(this.weather) === 0) return true;
+    const field = this.physics.env.windField.orography;
+    field.update(this.weather, this.physics.time);
+    const p = this.physics.state.position;
+    return field.ready(p.x, p.y);
+  }
+
   /** __ready: loaded, run= done, terrain near the camera streamed in, exposure settled, a few frames drawn. */
   private updateReadiness(now: number): void {
     switch (this.readyPhase) {
       case 'streaming': {
-        if (this.terrainStreamed() || now - this.readyStart > READY_TIMEOUT_MS) {
+        if ((this.terrainStreamed() && this.orographyReady()) || now - this.readyStart > READY_TIMEOUT_MS) {
+          if (!this.orographyReady()) console.warn(`[sim] __ready after ${READY_TIMEOUT_MS} ms without the mountain-wave tiles at the aircraft`);
           const st = this.systems.terrain.stats;
           if (!this.terrainStreamed()) console.warn(`[sim] __ready after ${READY_TIMEOUT_MS} ms with ${st.inflight} terrain tiles still building`);
           this.post.snapExposure();
@@ -1898,6 +1928,10 @@ export class Simulator {
       },
       get flightModel() {
         return sim.physics.fm;
+      },
+      /** Solve times of the mountain-wave tiles received from the orography worker. */
+      get orography() {
+        return sim.orography.timings;
       },
       get autoflight() {
         return sim.physics.autoflight;

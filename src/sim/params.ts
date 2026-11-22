@@ -26,6 +26,12 @@
 //                  6..14[, intensity 0..1[, core radius km 1..5[, moving FROM deg, kt]]]]; repeat cb= for up to 6
 //                  cells. Without cb= the cells are derived from the conditions (physics/weather/stormField.ts);
 //                  any cb= replaces them with the listed cells, and cb=none gives no cells at all
+//   aloft=18000,270,45[,-21]   a wind-aloft level: altitude ft MSL 2700..60000, wind FROM deg, kt 0..250[, temperature
+//                  deg C -90..50]; repeat aloft= for up to 12 levels; an entry out of range is ignored. Without aloft=
+//                  the winds aloft are derived from the conditions (physics/weather/windsAloft.ts); aloft=none alone
+//                  gives no shear above the boundary layer; none together with levels ignores the whole parameter
+//   waves=0.5      mountain-wave gain 0..1 (default 1): scales the terrain waves, lee shelter, valley channelling
+//                  and slope winds; 0 turns them off
 //   quality=low|medium|high|ultra (default high)    dpr=1.5      device-pixel-ratio cap (default 1: the 3D
 //                                                                  view renders at CSS-pixel resolution)
 //   scale=0.75     3D render scale 0.5..1 (times the capped pixel ratio; the DOM UI stays at native DPR;
@@ -80,7 +86,7 @@ import { ERA_SCENARIO_IDS } from './eraChoice';
 import { isR22Demo, type R22DemoId } from './rotorcraft/flights';
 import { sanitizeMoonScale } from './skyPrefs';
 import type { CloudType, MidCloudType, StormCell } from '../core/types';
-import { FOG_TOP_MAX_M, FOG_VIS_MAX_M, FOG_VIS_MIN_M, MAX_STORMS, MID_ALT_MAX_M, NO_STORMS, PRECIP_RATE_MAX_MMH } from '../core/weatherFields';
+import { FOG_TOP_MAX_M, FOG_VIS_MAX_M, FOG_VIS_MIN_M, MAX_STORMS, MID_ALT_MAX_M, NO_STORMS, PRECIP_RATE_MAX_MMH, parseAloftParams } from '../core/weatherFields';
 import { CB_DEFAULT_INTENSITY, CB_DEFAULT_RADIUS_M, CB_DEFAULT_TOP_M, stormCell, weatherPresetById } from './weatherPresets';
 
 const CAMERA_MODES: readonly CameraMode[] = ['cockpit', 'chase', 'orbit', 'flyby', 'tower'];
@@ -277,6 +283,11 @@ export function parseParams(search: string): SimParams {
     }
     if (storms.length > 0) weather.storms = Object.freeze(storms);
   }
+
+  const aloft = parseAloftParams(q.getAll('aloft'));
+  if (aloft) weather.windsAloft = aloft;
+  const waves = num('waves');
+  if (waves !== null) weather.mountainWaves = Math.min(1, Math.max(0, waves));
 
   const camPos = triple('camPos');
   const aircraft = q.get('aircraft');

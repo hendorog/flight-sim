@@ -3,6 +3,7 @@
 // the layer extended by TOWER_EXTENSION, the extinction 0.1 /m, the top fraction 1 / 1.6, and neutral type
 // terms. Each other type must hand over its CLOUD_TYPE_PROFILES / CLOUD_TYPE_SHAPE row, and a mid-level sheet
 // its cover, altitude, kind and optical depth.
+import { windAloftAt } from '../../src/physics/weather/windsAloft';
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { defaultWeather, type CloudType, type WeatherSettings } from '../../src/core/types';
@@ -11,11 +12,9 @@ import { coverageParams } from '../../src/render/clouds/coverage';
 import { KT } from '../../src/core/math';
 import {
   CLOUD_TYPE_SHAPE,
-  CLOUD_WIND_FACTOR,
   CloudModel,
   extendedLayerTopM,
   MID_TAU_MAX,
-  MID_WIND_FACTOR,
   midSheetTau,
   TOWER_EXTENSION,
 } from '../../src/render/clouds/cloudModel';
@@ -99,22 +98,30 @@ describe('CloudModel mid-level sheet', () => {
     expect(m.uniforms.uMid.value.toArray()).toEqual([1, 5200, 0, MID_TAU_MAX.altostratus]);
   });
 
-  it('drifts the sheet downwind along its axis, wrapped to 30 km', () => {
+  it('drifts the sheet with the wind aloft at its altitude, in the world frame, wrapped to 30 km', () => {
     const m = new CloudModel();
-    const w: WeatherSettings = { ...defaultWeather(), windDirectionDeg: 270, windSpeedKt: 20, midCover: 0.5 };
-    let prev = m.uniforms.uMidOffset.value.x;
+    const w: WeatherSettings = { ...defaultWeather(), windDirectionDeg: 270, windSpeedKt: 20, midCover: 0.5, midAltM: 5200 };
+    const sheet = windAloftAt(w, 5200, { north: 0, east: 0 });
+    let prev = m.uniforms.uMidOffset.value.clone();
     for (let i = 0; i < 200; i++) {
       m.update(ctxFor(w, i * 0.5), 0.5);
       const o = m.uniforms.uMidOffset.value;
-      expect(o.y).toBe(0);
-      expect(o.x).toBeGreaterThanOrEqual(0);
-      expect(o.x).toBeLessThan(30_000);
-      // Wind from 270 blows toward +x (the sheet axis is (1, 0)): each step lowers the offset by
-      // speed * MID_WIND_FACTOR * dt, modulo the 30 km wrap.
-      const back = (((prev - o.x) % 30_000) + 30_000) % 30_000;
-      expect(back).toBeCloseTo(20 * KT * CLOUD_WIND_FACTOR * MID_WIND_FACTOR * 0.5, 6);
-      prev = o.x;
+      for (const c of [o.x, o.y]) {
+        expect(c).toBeGreaterThanOrEqual(0);
+        expect(c).toBeLessThan(30_000);
+      }
+      // Each step moves the offset against the drift: x by -east * dt, z (= -north) by +north * dt, modulo 30 km.
+      const dx = (((prev.x - o.x) % 30_000) + 30_000) % 30_000;
+      const dz = (((o.y - prev.y) % 30_000) + 30_000) % 30_000;
+      expect(dx).toBeCloseTo(sheet.east * 0.5, 6);
+      expect(dz).toBeCloseTo((((sheet.north * 0.5) % 30_000) + 30_000) % 30_000, 6);
+      prev = o.clone();
     }
+    // The low layer and the cirrus move with the winds at their heights: their drift speeds differ.
+    const low = windAloftAt(w, 0.5 * (m.uniforms.uLayer.value.x + m.uniforms.uLayer.value.y), { north: 0, east: 0 });
+    const upper = windAloftAt(w, 9000, { north: 0, east: 0 });
+    expect(Math.hypot(m.drift.x, m.drift.z) / 0.5).toBeCloseTo(Math.hypot(low.north, low.east), 6);
+    expect(Math.hypot(upper.north, upper.east)).toBeGreaterThan(Math.hypot(low.north, low.east));
   });
 
   it('applies the sheet only above the extended layer top, the same test the sky model uses', () => {

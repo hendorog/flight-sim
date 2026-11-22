@@ -238,6 +238,11 @@ ${FLIGHT_CUES_CSS}
 #fsui .toggle input[type=number] { width: 96px; height: auto; margin-left: auto; font: inherit; font-size: 13px; color: var(--fg);
   background: rgba(255,255,255,.07); border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; text-align: right; }
 #fsui .toggle input[type=number]:disabled { opacity: .6; }
+#fsui .aloft { display: grid; grid-template-columns: 90px repeat(3, minmax(0, 1fr)); gap: 5px 10px; align-items: center; margin: 4px 0 10px; font-size: 13px; }
+#fsui .aloft .aloft-head { color: var(--fg-dim); font-size: 12px; }
+#fsui .aloft input[type=number] { width: 100%; box-sizing: border-box; font: inherit; color: var(--fg); background: rgba(255,255,255,.07);
+  border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; text-align: right; pointer-events: auto; }
+#fsui .aloft input::placeholder { color: var(--fg-dim); opacity: .7; }
 #fsui a.button { display: inline-block; margin: 4px 0 8px; font-weight: 650; text-decoration: none; color: #04121c; background: var(--accent);
   border-radius: 10px; padding: 9px 14px; cursor: pointer; pointer-events: auto; }
 #fsui a.button:hover { background: #7fd3ff; }

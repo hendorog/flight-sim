@@ -8,7 +8,8 @@
 
 import * as THREE from 'three';
 import type { SimContext } from '../../core/context';
-import { KT, smoothstep } from '../../core/math';
+import { KT, smoothstep, type Vec3 } from '../../core/math';
+import type { SimEnvironment } from '../../physics/environment';
 import { AIRPORT } from '../../core/world';
 import { nedToThree } from '../../core/frames';
 import { BatchSet, boxGeo, cylGeo, placement } from './geom';
@@ -38,6 +39,7 @@ export class Windsocks {
   private readonly fabric: THREE.MeshStandardMaterial[];
   private readonly poleMaterial = new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.45, metalness: 0.6 });
   private readonly tmp = new THREE.Vector2();
+  private readonly air: Vec3 = { x: 0, y: 0, z: 0 };
 
   /** The home field's socks (layout.ts WINDSOCKS, lit), plus `extra` ones (unlit, e.g. the generated fields'). */
   constructor(extra: readonly { north: number; east: number; elevation: number }[] = []) {
@@ -96,7 +98,9 @@ export class Windsocks {
     const a = dt > 0 ? 1 - Math.exp(-dt / FILTER_TAU) : 0;
     for (const f of this.fabric) f.emissiveIntensity = 0.5 * night; // floodlit fabric, ~5 cd/m^2
     for (const s of this.socks) {
-      const w = ctx.env.wind(s.pos, ctx.simTime);
+      // Horizontal only: inside the airfield's reference-site mask no mountain-wave tile is sampled for it.
+      const field = (ctx.env as Partial<SimEnvironment>).windField;
+      const w = field ? field.sampleHorizontal(s.pos, ctx.simTime, this.air) : ctx.env.wind(s.pos, ctx.simTime);
       if (s.wind.lengthSq() === 0) s.wind.set(w.x, w.y);
       else s.wind.lerp(this.tmp.set(w.x, w.y), a);
       const speedKt = s.wind.length() / KT;

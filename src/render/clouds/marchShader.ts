@@ -648,8 +648,8 @@ void main() {
       vec3 p = uCamPos + dir * tm;
       float mu = max(dir.y + tm * 2.0 * uInvTwoR, 0.03);
       float footprint = tm * uPixelAngle / sqrt(mu);
-      vec2 axisN = vec2(-uCirrusAxis.y, uCirrusAxis.x);
-      vec2 q = vec2(dot(p.xz, uCirrusAxis), dot(p.xz, axisN)) + uMidOffset;
+      // World frame: the sheet drifts with the wind at its own altitude (uMidOffset, 2-D).
+      vec2 q = p.xz + uMidOffset;
       bool ac = uMid.z > 0.5;
       // Altostratus patches from a blurred mip: broad sheets with soft, ragged edges.
       float wl = max(0.0, log2(footprint / MID_TEXEL)) + (ac ? 0.0 : 1.5);
@@ -672,8 +672,7 @@ void main() {
           float et = mix(0.8, 0.4, patchy);
           float elem = smoothstep(et, et + 0.3, e);
           // The side of an element away from the sun (the cell field rises toward the sun) is shaded.
-          vec2 sxz = vec2(dot(uLightDir.xz, uCirrusAxis), dot(uLightDir.xz, axisN));
-          sxz /= max(length(sxz), 1e-4);
+          vec2 sxz = uLightDir.xz / max(length(uLightDir.xz), 1e-4);
           float es = textureLod(uShapeTex, qa + vec3(sxz.x, 0.0, sxz.y) * (40.0 * AC_FREQ), el).r;
           shade = mix(clamp(1.0 - 6.0 * (es - e), 0.45, 1.4), 1.0, smoothstep(1.0, 3.0, el));
           // Thick, grey centres and thin, bright rims (up to 6 x the patch mean, see MID_TAU_MAX). The ramp on

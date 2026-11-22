@@ -10,16 +10,18 @@
 // impossible at the route's 3,500 ft with a 1,000 ft margin. The diversion goes to the glacial lake up the
 // valley instead (terrain under 2,500 ft along the way).
 //
-// Wind: section 4.1 gives 270/15 at 3,500 ft, but the sim has one surface wind that strengthens and veers with
-// height (src/physics/weather/boundaryLayer.ts). A west wind would put a tailwind on runway 07 for the landing
+// Wind: section 4.1 gives 270/15 at 3,500 ft, but the lesson sets one surface wind that strengthens and veers with
+// height (src/physics/weather/boundaryLayer.ts, with the derived winds aloft of windsAloft.ts above 2,360 ft MSL). A west wind would put a tailwind on runway 07 for the landing
 // that ends the lesson, which v1 forbids (winds 040-160). The lesson uses a surface wind of 100/9, which the
 // boundary layer makes about 125/14 at cruise height: the same navigation problem, mirrored.
 
-import { windSpeedFactor, windVeer } from '../../../physics/weather/boundaryLayer';
+import { defaultWeather } from '../../../core/types';
+import { meanWindAt, windFromDeg, windKt } from '../../../physics/weather/windsAloft';
 import type { NavRoute, NavWaypoint } from '../../types';
 
 const NM = 1852;
 const DEG = Math.PI / 180;
+const FT = 0.3048;
 
 export const ROUTE_ALT_FT = 3500;
 /** Planned cruise, KIAS. */
@@ -35,10 +37,15 @@ export const WAYPOINTS = {
   glacialLake: { id: 'glacialLake', name: 'the glacial lake', north: 12986, east: 27199 },
 } as const satisfies Record<string, NavWaypoint>;
 
-/** The cruise wind, from the surface wind and the boundary-layer profile at about 2,500 ft above the ground. */
+/**
+ * The cruise wind at ROUTE_ALT_FT MSL, about 2,500 ft above the ground: the boundary-layer profile of the surface
+ * wind plus the share of the derived winds aloft it carries (physics/weather/windsAloft.ts meanWindAt), for the
+ * default date (day 172).
+ */
 export function cruiseWind(): { dirDeg: number; kt: number } {
-  const agl = 2500 * 0.3048;
-  return { dirDeg: (SURFACE_WIND.dirDeg + windVeer(agl) / DEG) % 360, kt: SURFACE_WIND.kt * windSpeedFactor(agl) };
+  const w = { ...defaultWeather(), windDirectionDeg: SURFACE_WIND.dirDeg, windSpeedKt: SURFACE_WIND.kt };
+  const v = meanWindAt(w, ROUTE_ALT_FT * FT, 2500 * FT, { north: 0, east: 0 });
+  return { dirDeg: windFromDeg(v), kt: windKt(v) };
 }
 
 /** True airspeed from IAS with the 2 % per 1,000 ft rule of thumb a pilot uses on a nav log (ISA). */

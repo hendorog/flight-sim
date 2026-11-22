@@ -1,5 +1,5 @@
-// URL weather parameters for the optional fields (src/sim/params.ts): top=, wx=, ctype=, mid=, precip=, fog=
-// and cb=, their clamps, and the order wx= < the other weather parameters.
+// URL weather parameters for the optional fields (src/sim/params.ts): top=, wx=, ctype=, mid=, precip=, fog=,
+// cb=, aloft= and waves=, their clamps, and the order wx= < the other weather parameters.
 
 import { describe, expect, it } from 'vitest';
 import { parseParams } from '../../src/sim/params';
@@ -9,6 +9,33 @@ import { CB_DEFAULT_INTENSITY, CB_DEFAULT_RADIUS_M, CB_DEFAULT_TOP_M, weatherPre
 const wx = (search: string) => parseParams(search).weather;
 
 describe('URL weather parameters for the optional fields', () => {
+  it('aloft= builds a sorted wind-aloft table, rejecting out-of-range entries; aloft=none gives []; waves= is clamped to 0..1', () => {
+    expect(wx('?aloft=18000,270,45,-21&aloft=6000,250,20')).toEqual({
+      windsAloft: [{ altFt: 6000, dirDeg: 250, kt: 20 }, { altFt: 18000, dirDeg: 270, kt: 45, tempC: -21 }],
+    });
+    // Out of range: rejected, not clamped (the direction is taken modulo 360).
+    expect(wx('?aloft=90000,-90,40').windsAloft).toBeUndefined();
+    expect(wx('?aloft=9000,-90,400').windsAloft).toBeUndefined();
+    expect(wx('?aloft=9000,-90,40,80').windsAloft).toBeUndefined();
+    expect(wx('?aloft=60000,-90,250,50').windsAloft).toEqual([{ altFt: 60000, dirDeg: 270, kt: 250, tempC: 50 }]);
+    // Below the lowest altitude the wind profile uses (2700 ft): rejected, so two such levels do not collide either.
+    expect(wx('?aloft=500,270,45').windsAloft).toBeUndefined();
+    expect(wx('?aloft=500,270,45&aloft=800,250,30&aloft=9000,270,30').windsAloft).toEqual([{ altFt: 9000, dirDeg: 270, kt: 30 }]);
+    expect(wx('?aloft=2600,270,45').windsAloft).toBeUndefined();
+    expect(wx('?aloft=2700,270,45').windsAloft).toEqual([{ altFt: 2700, dirDeg: 270, kt: 45 }]);
+    expect(wx('?aloft=none').windsAloft).toEqual([]);
+    // none combined with levels is an invalid parameter: the whole aloft= is ignored (derived winds).
+    expect(wx('?aloft=none&aloft=9000,270,30').windsAloft).toBeUndefined();
+    expect(wx('?aloft=9000,270,30&aloft=none').windsAloft).toBeUndefined();
+    expect(wx('?aloft=9000,270').windsAloft).toBeUndefined();
+    expect(wx('?aloft=x,1,2&aloft=9000,270,30').windsAloft).toEqual([{ altFt: 9000, dirDeg: 270, kt: 30 }]);
+    expect(wx('?aloft=9000,270,30&aloft=9000,90,10').windsAloft).toHaveLength(1);
+    expect(wx('?waves=0.3').mountainWaves).toBe(0.3);
+    expect(wx('?waves=7').mountainWaves).toBe(1);
+    expect(wx('?waves=-1').mountainWaves).toBe(0);
+    expect('mountainWaves' in wx('?cover=0.5')).toBe(false);
+  });
+
   it('sets none of the fields when the parameters are absent', () => {
     const w = wx('?cover=0.5&base=1200');
     expect(w).toEqual({ cloudCover: 0.5, cloudBaseM: 1200 });

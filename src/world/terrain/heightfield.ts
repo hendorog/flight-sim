@@ -1833,6 +1833,25 @@ export function sampleTerrain(north: number, east: number, out: TerrainSample): 
 
 const scratch = makeSample();
 
+let tagEra: unknown = null;
+let tagSeed = NaN;
+let tagValue = '';
+/**
+ * A string naming the terrain terrainHeight returns now: the era id and the world seed, the two things it depends on
+ * besides position. Cache keys of things built from terrainHeight include it (physics/weather/orography
+ * setTerrainTag). The same string is returned while neither changes (no allocation per call).
+ */
+export function terrainGenerationTag(): string {
+  const e = era();
+  const s = worldSeed();
+  if (e !== tagEra || s !== tagSeed) {
+    tagEra = e;
+    tagSeed = s;
+    tagValue = `${e.id}:${s}`;
+  }
+  return tagValue;
+}
+
 /** Surface elevation MSL, m: the ground, or the water surface where water covers it. */
 export function terrainHeight(north: number, east: number): number {
   const s = sampleTerrain(north, east, scratch);

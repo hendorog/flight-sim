@@ -11,6 +11,7 @@
 // names the field it is held at. Pure: no storage, no DOM.
 
 import type { StormCell, WeatherSettings } from '../core/types';
+import { isAloftTable } from '../core/weatherFields';
 import type { LoadingRequest } from '../physics/interfaces';
 import { isDamageItem } from '../physics/damage';
 import {
@@ -95,7 +96,7 @@ const CONTRACT_FIELDS_COVERED: readonly true[] = [
     | 'jobKind' | 'jobId' | 'outcome' | 'blockS' | 'airborneS' | 'nightS' | 'landingsDay' | 'landingsNight' | 'net' | 'repDelta'
     | 'remarks'>,
   true satisfies Covers<WeatherSettings, (typeof WEATHER_NUMBERS)[number] | (typeof WEATHER_OPTIONAL_NUMBERS)[number]
-    | (typeof WEATHER_OPTIONAL_STRINGS)[number] | 'storms'>,
+    | (typeof WEATHER_OPTIONAL_STRINGS)[number] | 'storms' | 'windsAloft'>,
   true satisfies Covers<StormCell, 'northM' | 'eastM' | 'radiusM' | 'topM' | 'intensity' | 'motionDeg' | 'motionKt' | 'lightning'>,
 ];
 
@@ -164,7 +165,7 @@ const WEATHER_NUMBERS = [
   'cloudTopM', 'visibilityM', 'timeOfDay', 'dayOfYear',
 ] as const satisfies readonly (keyof WeatherSettings)[];
 const WEATHER_OPTIONAL_NUMBERS = [
-  'cirrusCover', 'midCover', 'midAltM', 'precipRateMmH', 'fogTopM', 'fogVisibilityM',
+  'cirrusCover', 'midCover', 'midAltM', 'precipRateMmH', 'fogTopM', 'fogVisibilityM', 'mountainWaves',
 ] as const satisfies readonly (keyof WeatherSettings)[];
 /** Optional string fields: copied when strings; src/core/weatherFields.ts treats unknown values as absent. */
 const WEATHER_OPTIONAL_STRINGS = ['cloudType', 'midType', 'precipType'] as const satisfies readonly (keyof WeatherSettings)[];
@@ -195,6 +196,8 @@ export function validateWeather(v: unknown): WeatherSettings | null {
     const storms = allOf(v.storms, stormCell);
     if (storms) out.storms = storms;
   }
+  // A malformed wind-aloft table is left out (read as derived, core/weatherFields.ts windsAloftOf).
+  if (isAloftTable(v.windsAloft)) out.windsAloft = Object.freeze(v.windsAloft.map((l) => ({ ...l })));
   return out as unknown as WeatherSettings;
 }
 

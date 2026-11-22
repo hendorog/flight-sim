@@ -242,8 +242,16 @@ all read as the default in the last column.
 | `fogTopM` | number | m above `AIRPORT.elevation` (120 m) | 0..300 | 0 (no fog) |
 | `fogVisibilityM` | number | m | 50..1000 | 200 |
 | `storms` | `readonly StormCell[]` | | first 6 entries (`MAX_STORMS`) read | absent: cells derived from the conditions; an array (also empty) replaces them |
+| `windsAloft` | `readonly WindAloftLevel[]` | | at most 12 levels, altitudes 2700..60000 ft strictly ascending, kt 0..250, tempC -90..50 | absent or malformed: derived from the conditions; `[]`: no shear above the boundary layer |
+| `mountainWaves` | number | gain | 0..1 | 1 |
 
 `visibilityM` stays the prevailing visibility; `fogVisibilityM` applies only inside the fog layer.
+
+`WindAloftLevel` fields: `altFt` (ft MSL), `dirDeg` (wind FROM, degrees true), `kt`, optional `tempC` (deg C). A
+table that fails any check (an entry out of range, altitudes not strictly ascending, more than 12 entries) reads as
+absent. The lowest altitude, 2700 ft (`ALOFT_ALT_MIN_FT`), is the lowest whole hundred feet above the level the wind
+profile ignores (shear base + 100 m = 820 m MSL = 2690 ft): every accepted level sets both its wind and its
+temperature. Writers replace the array and do not edit a level in place.
 
 `StormCell` fields: `northM`, `eastM` (NED m at simTime 0), `radiusM` (core radius, 1000..5000 m), `topM` (anvil
 top, 6000..14000 m MSL; the base is `cloudBaseM`), `intensity` (0..1), `motionDeg` (direction the cell moves from,
@@ -258,7 +266,8 @@ reset equals `stormCentreAt(cell, tOld)` before it. `TrainingSystem` records the
 weather at a lesson start and re-anchors the cells from it when it restores the copy at the lesson end. A snapshot
 restore sets the clock and the weather from the same snapshot and moves no cell. The boot resume restores the
 snapshot weather with `restoreWeather`, so an optional field set by the URL and absent from the snapshot goes back
-to its `NEUTRAL_EXTRAS` value. Resume snapshots are schema 5 (`src/sim/resume.ts` `SNAPSHOT_SCHEMA`; schema 5 adds the hail damage, with the
+to its `NEUTRAL_EXTRAS` value. Resume snapshots are schema 6 (`src/sim/resume.ts` `SNAPSHOT_SCHEMA`; schema 6 adds
+`windsAloft` and `mountainWaves`, and a schema 5 or older snapshot is read with the derived winds aloft; schema 5 adds the hail damage, with the
 rotor's level and dose present only once a rotor took damage, and a schema 4 or older snapshot is read with none); a schema 3 or
 older snapshot with `storms: []`, the neutral value before the derived cells, is read with `storms` removed, so it
 resumes with derived cells (`tests/sim/resume.test.ts`, with a snapshot written by commit 0692043). Derived cells run on the weather clock (`timeOfDay`, `dayOfYear`), which none of
@@ -280,14 +289,18 @@ The module does not import three.js. The accessors that take an `out` object wri
 | `precipExtinctionPerM(type, rateMmH)` | extinction, 1/m; 0 for `'none'` or rate 0 |
 | `effectiveVisibilityM(w)` | `w.visibilityM` itself when the precipitation rate reads as 0; otherwise `3.912 / (3.912 / visibilityM + precipExtinctionPerM)` |
 | `deriveCloudTop(partial, current)` | sets `partial.cloudTopM` to `cloudBaseM` + the current layer depth when `partial` has a base and no top |
+| `windsAloftOf(w)` | the manual wind-aloft table when `isAloftTable` accepts it (returned as stored; `[]` included); otherwise undefined (derived) |
+| `isAloftTable(a)` | the table check of `windsAloftOf` and `sanitizeExtras` |
+| `parseAloftParams(values)` | the table of the `aloft=` URL values (sorted; an entry out of range or malformed is left out, not clamped; a repeated altitude keeps its first entry; the lowest 12 kept), `[]` for `none` alone, undefined when nothing usable or when `none` is combined with levels |
+| `mountainWavesOf(w)` | the gain clamped to 0..1; 1 when absent or not finite |
 | `sanitizeExtras(w)` | deletes each new key whose value fails its type check; keeps values of the right type unclamped |
 | `NEUTRAL_EXTRAS` | frozen object with every new key at its "nothing there" value (below) |
-| `WEATHER_EXTRA_KEYS` | the nine new keys in declaration order |
+| `WEATHER_EXTRA_KEYS` | the eleven new keys in declaration order |
 | `CLOUD_TYPE_PROFILES` | per-type uniform inputs for the clouds module (below) |
 
 `NEUTRAL_EXTRAS`: `cloudType 'auto'`, `midCover 0`, `midType 'altostratus'`, `midAltM 4500`, `precipType 'none'`,
 `precipRateMmH 0`, `fogTopM 0`, `fogVisibilityM 200`, `storms undefined` (the cells are derived from the
-conditions). Its `midAltM` is the fixed 4500 m, not
+conditions), `windsAloft undefined` (derived winds aloft), `mountainWaves 1`. Its `midAltM` is the fixed 4500 m, not
 the cloud-top rule of the absent default; with `midCover 0` no sheet is drawn.
 
 `precipExtinctionPerM` uses power laws in the rate R, 1/km: rain 0.25·R^0.63, drizzle 1.5·R^0.5, snow 1.3·R^0.8.
@@ -399,6 +412,157 @@ to the MIL-F-8785C intensities as max(`turbulence`, severity), clamped there at 
 (`src/render/cameras/cockpitRig.ts`) uses the same maximum. The physics clamps a cell's radius, top and intensity
 with `cellRadiusM`, `cellTopM` and `cellIntensity`.
 
+## Winds aloft and terrain effects on the wind
+
+Owner decisions: the behaviour below is the default; winds aloft are derived and can be overridden by manual
+levels; they exist over a calm surface; `windsAloft: []` and `mountainWaves: 0` turn them off (the calm-air test
+rigs set both); schema 5 snapshots are read with the derived winds; the wave grid is 256 x 256 at 500 m.
+Constants marked unconfirmed are tuning values or values from literature not checked against a source.
+
+### Free-atmosphere wind (`src/physics/weather/windsAloft.ts`)
+
+- `G0`, the gradient wind: the 10 m wind times `gradientWindFactor` (1.638), veered 25 deg.
+- `F(z) = G0 + T Phi(z)`, z in m MSL. `Phi` is 0 up to `PROFILE_BASE_M` (field elevation + 600 m = 720 m), ramps in
+  quadratically over 300 m, grows linearly to the jet at 10500 m (the shear falls from 1 to -0.6 between 9000 and
+  11400 m), then falls at -0.6 until it is 0.35 of its jet value (20.6 km) and stays there. Unconfirmed shape.
+- `T` = baroclinic part toward the east, `q g Gamma_y / (f T_m)`, f = 1.058e-4 1/s at 46.5 deg, T_m = 255 K,
+  `Gamma_y = 5.5e-6 + 2.5e-6 cos(2 pi (day - 15) / 365)` K/m (unconfirmed), activity factor
+  `q = 0.6 + 0.8 |G0| / (|G0| + 8 m/s)` (unconfirmed; 0.6 in calm air), plus a barotropic part `G0 / 8000 m`
+  (unconfirmed). Thermal-wind shear before q: 1.09e-3 1/s on day 196, 2.91e-3 1/s on day 15
+  (`tests/weather/windsAloft.test.ts`).
+- Manual levels: the (north, east) difference between each level and the derived wind at its altitude is
+  interpolated linearly in height, from 0 at `PROFILE_BASE_M`, constant above the top level; levels at or below
+  `PROFILE_BASE_M` + 100 m are ignored. Each level is reproduced exactly; opposite directions at two levels pass
+  through a speed near 0 between them.
+- `windAloftAt(w, z, out)` and `derivedWindAloftAt` are the shared accessors (menu, clouds, storms, training).
+- Level temperatures: with any `tempC`, `temperatureProfileOf(w)` gives the atmosphere model a profile (nodes at
+  the field elevation with `isaDeviation` and at each level with a temperature, linear in geopotential altitude
+  between nodes, constant outside, closed-form hydrostatic pressure per segment, `src/physics/atmosphere.ts`).
+  Without temperatures the uniform-deviation code path runs unchanged.
+
+Derived tables (free wind `F`, direction FROM / kt; the 0 ft column is `G0`; the 10 m wind is the setting), from
+`tests/weather/windsAloft.test.ts`:
+
+| Weather | 0 | 3000 | 6000 | 9000 | 12000 | 18000 | 24000 | 30000 | 34000 | 39000 ft |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| default (100/6, day 172) | 125/9.8 | 125/9.8 | 132/9.4 | 139/9.2 | 146/9.1 | 161/9.4 | 174/10.2 | 184/11.5 | 187/12.0 | 184/11.5 |
+| default, day 15 | 125/9.8 | 126/9.6 | 147/7.5 | 178/7.0 | 205/8.4 | 231/14.2 | 241/21.2 | 246/28.6 | 247/31.0 | 246/28.8 |
+| calm, day 196 | 0 | 270/0.1 | 270/1.2 | 270/2.4 | 270/3.5 | 270/5.9 | 270/8.2 | 270/10.5 | 270/11.3 | 270/10.6 |
+| calm, day 15 | 0 | 270/0.2 | 270/3.3 | 270/6.4 | 270/9.5 | 270/15.7 | 270/21.9 | 270/28.0 | 270/30.1 | 270/28.2 |
+| 270/15, day 172 | 295/24.6 | 295/24.9 | 293/29.7 | 292/34.6 | 291/39.5 | 289/49.4 | 288/59.3 | 288/69.2 | 288/72.5 | 288/69.5 |
+
+### Boundary layer under the winds aloft (`src/physics/weather/windField.ts`)
+
+- Mean wind = the boundary-layer wind of the setting (`u10 windSpeedFactor(agl)` from `dir + windVeer(agl)`) plus
+  `s R(-beta) (F(z) - G0)`, `s = windSpeedFactor(agl) / gradientWindFactor`, `beta = 25 deg - windVeer(agl)`, z the
+  MSL altitude. Below `PROFILE_BASE_M` and with `windsAloft: []` nothing is added (the arithmetic of the field before
+  the winds aloft). The 10 m wind at every airfield (66..366 m) equals the setting.
+- Mechanical turbulence uses the equivalent 10 m wind `|F(z)| / gradientWindFactor` above the base.
+- Over a synthetic 2000 m ridge, 12 kt westerly, day 15: at 3000 m MSL 36.4 kt over the ridge, 36.7 kt over the
+  plain; at 100 m above the ridge 24.8 kt, where the log law of the setting alone gives 16.5 kt.
+
+### Mountain waves (`src/physics/weather/orography/`)
+
+- Tiles (`tiles.ts`): centres every 64 km (the airport at a centre); each solves on 256 x 256 points at 500 m (a
+  periodic 128 km domain); weight `1 - smootherstep(16 km, 48 km, |d|)` per axis, so the weights of overlapping
+  tiles sum to 1 (largest error 1.6e-15 over 20000 random points) and at most four tiles overlap.
+- Terrain per tile (`terrainGrid.ts`, wind-independent, cached): heights from `EnvironmentOptions.orographyTerrain`
+  (default `terrain.height`; the world passes `terrainHeight`, which the worker samples too), mean, relief after the
+  least-squares plane, envelope (highest terrain within 6 km, 3 km box), channelling tensor from the Hessian of the
+  3 km box-smoothed terrain. A tile with relief under 1 m has no waves and no channelling.
+- Background (`tileSolve.ts`): layers bounded by the tile mean and 1500, 3000, 4500, 6500, 9000, 11000, 14000 m
+  (bounds within 300 m of the mean dropped), each with `F` and `N^2` (`stability.ts`, `N^2 = (g/T)(g/cp + dT/dz)`;
+  ISA gives N = 0.0112 1/s at 5 km and 0.0210 1/s above 11 km) at its middle (top layer: 2000 m above its bottom).
+- Launch layer: the lowest layer whose `|F|` is at least 0.5 m/s (`MIN_WAVE_WIND`). The waves are solved from its
+  bottom (the solution's `base`) up, and the terrain below the base is filled to it (the calm air under it is
+  blocked). With wind in the lowest layer the base is the tile mean and nothing is filled. Calm surface, day 15,
+  derived winds aloft, world terrain (`tests/weather/orographyTime.test.ts` and a probe, 2026-11-18): tiles (0, 0)
+  and (0, -1) launch from 1500 m; the largest |w| in their fields is 0.727 and 0.562 m/s (0 for both before the
+  launch layer, when the lowest layer's wind decided every mode).
+- Blocked flow: `h_eff = max(h, envelope - U / N, base fill)` with U and N of the launch layer (critical Froude
+  number 1, unconfirmed). On 1000 m corrugations 5 km apart the spread of `h_eff` is 1000 m at 40 and 20 kt, 788 m
+  at 10 kt, 394 m at 5 kt.
+- Solver (`linearWaves.ts`): per Fourier mode, `sigma = k U + l V - i nu` (nu 1.5e-4 1/s, unconfirmed),
+  `m^2 = K^2 (N^2 / sigma^2 - 1)` with Im(m) > 0 (for nu = 0 and a propagating mode, sign(Re m) = sign(Re sigma)), a radiating top layer, eta and sigma^2 eta' continuous at the
+  interfaces, critical levels (Re sigma changes sign or |Re sigma| < 0.5 m/s K) absorbing. Wavelengths under 1.5 km
+  are removed. Fields w, u, v at 0, 150, 300, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 7500, 9000,
+  10500, 12000, 14000 m above the base, times sqrt(rho(base) / rho(z)). Checked against analytic solutions in
+  `tests/weather/linearWaves.test.ts` (Witch of Agnesi, non-hydrostatic wavelength, evanescent decay, two-layer
+  trapped wave, energy flux, critical level).
+- Lookup (`orographyField.ts`): terrain-following height `zeta = (z - base) - (h_eff - base) exp(-max(0, z - h_eff) / H_s)`,
+  `H_s = max(1500 m, 1.2 max|h_eff - base|)`; trilinear in the window; sum over the tiles with their weights.
+- In `WindField`: the horizontal perturbation times `s(agl)` is added to the mean wind; the vertical speed is added
+  times `1 - exp(-agl / 300 m)` (the fine-terrain lift `V . grad(h)` keeps its form and its 4 m/s clamp).
+  Breaking: `b = -(u' . F) / |F|^2`; for b > 0 every perturbation times `tanh(b / 0.8) / (b / 0.8)`; w limited to
+  `12 tanh(w / 12)`; turbulence severity `0.9 smoothstep(0.5, 1, b)` (all unconfirmed). Daytime convection scales the
+  waves by `1 - 0.5 w* / 2.2` (unconfirmed).
+
+### Near-surface terrain terms
+
+- Lee shelter (`shelter.ts`): wake top `max over upwind d <= 10 km of h(x - d u) - 0.15 d` for the lowest layer's
+  wind, speed factor `1 - 0.6 smoothstep(0, 1, (H_w - z) / max(50, 0.5 (H_w - h)))`; the same smoothstep adds to
+  the mechanical-turbulence roughness factor. Behind a 600 m ridge at 3 km and 30 m AGL the factor is 0.4.
+- Valley channelling (`channel.ts`): the wind loses `0.7 c_depth (a n n^T) V`, `c_depth` 1 at the floor of a valley
+  deeper than 500 m and 0 at the envelope. An 800 m valley removes 3.49 m/s of a 5 m/s cross-valley component and
+  none of the along-valley one.
+- Slope winds (`slopeWind.ts`): along the fall line, `A min(1, |grad h| / 0.3) (agl / delta) exp(1 - agl / delta)
+  (1 - smoothstep(5, 12, |F|))`; day `A = 3 m/s` times the sun and sky terms and the insolation of the slope,
+  delta 60 m; night `A = -2 m/s (1 - cover)`, delta 25 m; gradient on a 200 m baseline. Over the world terrain
+  (calm, clear, day 172) the largest slope wind is 3.0 m/s at 13:00 at 60 m AGL and 1.8 m/s at 02:00 at 25 m AGL.
+- Reference sites (`sites.ts`): the horizontal terms are multiplied by `smoothstep(2 km, 5 km, distance)` for each
+  airfield, so the mean wind at every airfield is the boundary-layer wind of the setting.
+- `mountainWaves` multiplies all of these terms and the waves; 0 skips the module.
+- `WindBreakdown` gains `wave` (the horizontal contribution and the vertical speed, m/s), `slope`, `shelter` (the
+  speed factor) and `waveSeverity`.
+
+### Solutions, worker and fades
+
+- Node and tests: a missing solution is solved synchronously on first use (LRU of 8 solutions, 16 tile terrains).
+- Cache keys: the terrain function, its terrain tag (`setTerrainTag`; for `terrainHeight` the era id and the world
+  seed, `terrainGenerationTag` in `heightfield.ts`) and the tile; a field's wave key holds the tag too.
+- Browser: `src/sim/weather/orographyPrefetch.ts` is registered for `terrainHeight` before the physics is built;
+  one worker (`orographyWorker.ts`, set up with the terrain workers' era, seed and town site) solves one tile at a
+  time from two queues: the tiles `get()` missed (any sampler), first, and the tiles with weight > 0 at the aircraft
+  and 60 s and 180 s ahead, rebuilt every frame without touching the first queue. A tile the field holds is not
+  queued. The source keeps 10 solutions, least recently used dropped first, and counts the solutions received
+  (`version`); a field asks again for a missed tile only after that count changed. `__ready` waits for the tiles
+  at the aircraft.
+- A field keeps 12 tiles; past that it drops the least recently sampled tile that no sample read in the last 1 s
+  (if every tile is in use it keeps them all).
+- Fades: a solution that arrives after a miss ramps in over 3 s simulated; a tile dropped and found again without a
+  miss keeps its ramp. After a change of the wind, the ISA deviation, the table or the terrain tag, the tiles on
+  display fade out over 3 s from the weight each had, while the new ones fade in. A further change while that fade
+  runs and part of the newer set is on display waits until the fade ends (at most 3 s). Two changes 1.5 s apart over
+  the test hills: largest change of the wave vector per 0.01 s 0.0089 m/s against a largest difference of 3.93 m/s
+  between the three settled fields (0.916 m/s before this rule, `tests/weather/orographyTime.test.ts`).
+- The day of the year in the wave weather is frozen at a reset and at a weather edit: the date moving on at midnight
+  with the clock running re-solves nothing (the free-atmosphere wind of the flight follows the date).
+- A scenario reset (`WindField.reset`, also before `SimPhysics.hoverIntoWind`) takes the current weather's tiles in
+  full; a sample more than 1 s earlier than the previous one is treated as a reset. The worker path reproduces the
+  synchronous solution bit for bit (`tests/weather/orography.test.ts`).
+- The airfield windsocks read `WindField.sampleHorizontal`: inside the reference-site mask (2 km of a field) it
+  samples no tile, so the windsock leaves out the vertical wave and the wave-breaking turbulence severity there;
+  elsewhere it equals `sample()`.
+- Memory: a solution with waves holds 8,939,760 bytes (window 193 x 193, 18 levels x 3 fields and 6 terrain and
+  shelter windows, float32). On the main thread the source keeps at most 10, a field 12 while no more than 12 tiles
+  are sampled within 1 s, and a fading set at most as many as the field held. Under that condition at most 34
+  distinct solutions (304 MB) are held when none is shared; the bound before the least-recently-used change was the
+  same 34.
+- Cost (node, this container, 2026-11-18, with a full test run in the background): 268-306 ms per 256 x 256 solve,
+  468 ms to sample a tile's terrain; `env.wind` 13.6 us at 3000 m and 14.5 us at 100 m AGL in
+  the four-tile corner at (32 km, 32 km), 10.5 us on flat terrain (the cost tests assert under 30 us).
+- Consumers of the winds aloft: the storm steering wind (above; also the anvil offset of `cellGeometry.ts`), the
+  cloud drift (`src/render/clouds/cloudModel.ts`: the low layer with `windAloftAt` at its mid-height, the mid-level
+  sheet at `midAltM` with a 2-D offset in the world frame, the cirrus at 9000 m along its own axis; the factors 1.8,
+  2.2 and 2.5 on the surface wind are gone) and the L20 nav log (`src/training/content/syllabus/route.ts`
+  `cruiseWind`, `meanWindAt` at 3500 ft MSL and 2500 ft AGL on day 172: 124.9/14.5 kt, 123.9/14.5 kt before).
+  The ATIS, the tower and the training weather line keep the surface wind; the HUD, the windsock, the flight model
+  and the precipitation streaks read `env.wind`.
+- Wave field for a 25 kt north-westerly, default stability, over 0..60 km north and +/-30 km east, at the altitude
+  or 200 m above the ground where that is higher: largest w 6.4 /
+  -7.1 m/s at 3000 m, 6.6 / -6.4 m/s at 5000 m, 5.3 / -4.8 m/s at 8000 m; at 4000 m along the wind through the range,
+  7 maxima above 0.3 m/s spaced 12.7 km on average.
+
 ## Storm cells derived from the conditions (`src/physics/weather/stormField.ts`)
 
 With `storms` absent, the storm cells come from a lattice of candidate sites, at a rate set by a convective
@@ -490,9 +654,9 @@ Activity of the Thunderstorm conditions with one field varied (same test):
 - Time base: T = ((`dayOfYear` − 1) x 24 + `timeOfDay`) x 3600 s. The simulation time is not used: a scenario
   reset (clock to 0) and a resume leave T unchanged. `clock=0` stops T, and the cells stand still. Editing the
   time of day or the date moves T. The date wraps from day 366 to 1, and T goes back a year.
-- Drift: from the birth position with the steering wind (`stormSteering`): from `windDirectionDeg` plus the
-  boundary layer's veer at `STEERING_HEIGHT_M` 2000 m (`windVeer`, 24.95 deg), at `windSpeedKt` x
-  `STEERING_FACTOR` 1.8 (the factor the cumulus layer drifts with, `CLOUD_WIND_FACTOR`). A derived cell's
+- Drift: from the birth position with the steering wind (`stormSteering`): the free-atmosphere wind at
+  `STEERING_ALT_M` 3000 m MSL (`windAloftAt`, "Winds aloft and terrain effects on the wind"). Before the winds
+  aloft it was `windDirectionDeg` veered 24.95 deg at `windSpeedKt` x 1.8. A derived cell's
   `motionDeg` and `motionKt` carry it, so the physics and the render move the cell alike. The drift is not stored:
   a change of the wind settings moves each live cell by the change of velocity times its age.
 
