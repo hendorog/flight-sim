@@ -18,6 +18,11 @@ self.onmessage = (e: MessageEvent<ModelRequest>) => {
   const moved: ArrayBuffer[] = model ? [model.lattice.buffer as ArrayBuffer] : [];
   if (model?.slopes) moved.push(model.slopes.h.buffer as ArrayBuffer, model.slopes.w.buffer as ArrayBuffer, model.slopes.chan.buffer as ArrayBuffer, model.slopes.floor.buffer as ArrayBuffer, model.slopes.lz.buffer as ArrayBuffer);
   if (model?.slopes?.dir) moved.push(model.slopes.dir.buffer as ArrayBuffer);
+  if (model?.slopes?.lines) {
+    const ln = model.slopes.lines;
+    moved.push(ln.start.buffer as ArrayBuffer, ln.north.buffer as ArrayBuffer, ln.east.buffer as ArrayBuffer, ln.half.buffer as ArrayBuffer, ln.cap.buffer as ArrayBuffer);
+    if (ln.level) moved.push(ln.level.buffer as ArrayBuffer);
+  }
   if (model?.route) moved.push(model.route.buffer as ArrayBuffer);
   (self as unknown as Worker).postMessage(reply, moved);
 };

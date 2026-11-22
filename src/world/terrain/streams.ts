@@ -25,6 +25,7 @@
 // down a steep slope it is a continuous cascade, its water following the ground (refineSteep). It falls only where the
 // ground breaks (falls.ts: a fault, a hanging valley's lip, a lake perched on a wall).
 
+import { COURSE_ON, courseRasterDir, courseSnap } from './courses';
 import { breachAllowance, DOMAIN_HALF, DRAIN_CELL, HOLLOW_TOL, LAKE_MARGIN, LAKE_MIDDLE_DEPTH, LAKE_RASTER, MinHeap, RASTER_N, RIVER_AREA, type Drainage, type LakeMask } from './drainage';
 import { gullyNet } from './gullies';
 import { slopeParams } from './hillslopes';
@@ -903,6 +904,16 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       }
     }
   }
+  // A cell a slope-channel course runs through drains along it, where that falls on the filled ground.
+  const cdir = COURSE_ON ? courseRasterDir() : null;
+  if (cdir && cdir.length === N) {
+    for (let k = 0; k < N; k++) {
+      const a = cdir[k];
+      if (a < 0 || F[k] === Infinity || isOutlet(k)) continue;
+      const q = k + DI[a] * R + DJ[a];
+      if (F[q] < F[k]) rdir[k] = a;
+    }
+  }
   const recv = (k: number): number => (rdir[k] < 0 ? -1 : k + DI[rdir[k]] * R + DJ[rdir[k]]);
   const cellKm2 = (LAKE_RASTER / 1000) ** 2;
   const area = new Float32Array(N).fill(cellKm2);
@@ -1253,7 +1264,8 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
   const courseLine = new Int32Array(courses.length).fill(-1);
   const tb = performance.now();
   const HALF = LAKE_RASTER / 2;
-  const LOOK = [HALF / 3, (2 * HALF) / 3, HALF];
+  const LOOK = COURSE_ON ? [1, 2, 3, 4, 5, 6].map((k) => (k * HALF) / 6) : [HALF / 3, (2 * HALF) / 3, HALF];
+  const snapAt = { n: 0, e: 0 };
   courses.forEach((C, ci) => {
     const { path } = C;
     const m = path.length;
@@ -1269,6 +1281,12 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       at.n[i] = bn;
       at.e[i] = be;
       at.g[i] = bg;
+      if (COURSE_ON && hid[k] < 0 && mask.poolAt(ki, kj) < 0 && courseSnap(k, bn, be, snapAt)) {
+        at.n[i] = snapAt.n;
+        at.e[i] = snapAt.e;
+        at.g[i] = p.route(snapAt.n, snapAt.e);
+        continue;
+      }
       if (m < 3 || i === 0 || i >= m - 2 || hid[k] >= 0 || mask.poolAt(ki, kj) >= 0) continue;
       const a = path[i - 1];
       const b = path[i + 1];
@@ -1283,7 +1301,7 @@ export function traceStreams(p: { d: Drainage; mask: LakeMask; route: (north: nu
       const sj = Math.round(ue);
       const A = (ki + si) * R + kj + sj;
       const B = (ki - si) * R + kj - sj;
-      if (A >= 0 && B >= 0 && A < N && B < N && Gr[A] - Gr[k] > V_SIDE && Gr[B] - Gr[k] > V_SIDE) continue;
+      if (!COURSE_ON && A >= 0 && B >= 0 && A < N && B < N && Gr[A] - Gr[k] > V_SIDE && Gr[B] - Gr[k] > V_SIDE) continue;
       vee[i] = 0;
       const n0 = bn;
       const e0 = be;

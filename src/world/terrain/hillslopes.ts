@@ -40,6 +40,7 @@
 // floorGround), so the rivers laid on them (riverNetwork.ts) read the model's floor as their level.
 
 import { DOMAIN_HALF } from './drainage';
+import { bendCourses, COURSE_ON } from './courses';
 
 /** Settings of the threshold-hillslope pass. */
 export interface SlopeParams {
@@ -83,7 +84,7 @@ export function setSlopeParams(p: Partial<SlopeParams> | null): void {
 export const slopeParams = (): SlopeParams => ({ ...SLOPES, ...(override ?? {}) });
 /** The settings as part of the model's cache key (heightfield.ts), with the pass's version (bump when what it holds or
  * hands on changes meaning). */
-const SLOPE_VERSION = 'lf3';
+const SLOPE_VERSION = 'lf3-xBraid3';
 export const slopeKey = (p: SlopeParams): string => [SLOPE_VERSION, p.sc, p.ac, p.ks, p.theta, p.onset, p.full, p.iterations, p.gully, p.fine, p.lift, p.soft, p.crown].join('_');
 
 /** What the pass hands the terrain (erosion.ts ErosionField.slopes), on the fine grid (n x n from (-DOMAIN_HALF,
@@ -109,6 +110,9 @@ export interface SlopeField {
   /** ... and the catchment it summed down that routing at each node it built, km² (0 elsewhere). Not cached
    * (gullies.ts sums it again from `dir` when absent). */
   area?: Float32Array;
+  /** Every course the ground was made about (the floors' lines given, then the slope channels'), with levels: the
+   * terrain draws them (erosion.ts floorGround). */
+  lines?: FloorLines;
 }
 
 
@@ -122,6 +126,8 @@ export interface FloorLines {
   east: Float32Array;
   half: Float32Array;
   cap: Uint8Array;
+  /** Each point's level, m (the course's floor there); cap bit 4 marks a slope channel's course (no floor: a V). */
+  level?: Float32Array;
 }
 
 /** The lines are searched in chunks of this many segments (each chunk's box grown by its reach). */
@@ -229,11 +235,18 @@ class Heap {
 }
 
 /** Probes: what the last pass did (nodes, iterations' changed receivers, ms per part). */
-export const slopeStats = { active: 0, sampled: 0, changed: [] as number[], corners: 0, msSample: 0, msPass: 0, floorLines: 0, floorPoints: 0, floorNodes: 0, floorWalls: 0, msFloor: 0, msLevels: 0, lines: null as FloorLines | null };
+export const slopeStats = { active: 0, sampled: 0, changed: [] as number[], corners: 0, msSample: 0, msPass: 0, floorLines: 0, floorPoints: 0, floorNodes: 0, floorWalls: 0, msFloor: 0, msLevels: 0, lines: null as FloorLines | null, chains: 0, chainPoints: 0, rebuilt: 0, raised: 0, msCourses: 0 };
 
 /** A model's floor bounds the nodes' ground this far past its edge, m (FloorLines; past that the pass's own build from
  * its receivers stands under the floor's slopes anyway). */
 const FLOOR_REACH = 750;
+/** The slope channels' courses from this catchment, km² (the channel head's, SlopeParams.ac), resampled every
+ * CHAIN_STEP m; their wander's size by sqrt(area / 30 km²), no less than CHAIN_SIZE_MIN; the ground made about the
+ * courses to CONE_REACH past each floor's edge. */
+const CHAIN_AREA = 1.5;
+const CHAIN_STEP = 75;
+const CHAIN_SIZE_MIN = 0.35;
+const CONE_REACH = 1500;
 
 /**
  * The pass (see the head of the file). `n`, `cell`: the fine grid. `weight`: the pass's weight at each node, [0, 1] (the
@@ -262,6 +275,8 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, g
   // never stand over.
   const fz = new Float32Array(N).fill(Infinity);
   const floor = new Uint8Array(N);
+  /** A floor node's level (its course's), NaN: none. */
+  const floorZ = new Float32Array(N).fill(NaN);
   {
     // (Per line, the nearest of its points to each node about it, chunk by chunk; then the floor's ground there.)
     const bd = new Float64Array(N).fill(Infinity);
@@ -269,7 +284,54 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, g
     const bw = new Float32Array(N);
     const bo = new Uint8Array(N);
     const touched: number[] = [];
-    for (let li = 0; li < lines.start.length - 1; li++) {
+    const lev = COURSE_ON ? lines.level : undefined;
+    if (lev) {
+      // About every course, the lowest of every stretch's ground in reach - its level on its floor (a node within its
+      // half-width, or half a node, lies on it, fixed there), its level plus the threshold rise past its floor's edge
+      // beside it (fz). No nearest stretch: the least of all of them.
+      for (let li = 0; li < lines.start.length - 1; li++) {
+        const s1 = lines.start[li + 1] - 1;
+        for (let k = lines.start[li]; k < s1; k += 3) {
+          const k1 = Math.min(s1, k + 3);
+          const an = lines.north[k], ae = lines.east[k];
+          const dn = lines.north[k1] - an, de = lines.east[k1] - ae;
+          const L2 = dn * dn + de * de;
+          const hMax = Math.max(lines.half[k], lines.half[k1]);
+          const reach = hMax + FLOOR_REACH;
+          const reach2 = reach * reach;
+          const y0 = Math.max(1, Math.ceil((Math.min(an, an + dn) - reach - origin) / cell));
+          const y1 = Math.min(n - 2, Math.floor((Math.max(an, an + dn) + reach - origin) / cell));
+          const x0 = Math.max(1, Math.ceil((Math.min(ae, ae + de) - reach - origin) / cell));
+          const x1 = Math.min(n - 2, Math.floor((Math.max(ae, ae + de) + reach - origin) / cell));
+          for (let y = y0; y <= y1; y++) {
+            const qn = origin + y * cell - an;
+            for (let x = x0; x <= x1; x++) {
+              const q = y * n + x;
+              if (!(W[q] > 0)) continue;
+              const qe = origin + x * cell - ae;
+              const t = L2 > 1e-6 ? Math.min(1, Math.max(0, (qn * dn + qe * de) / L2)) : 0;
+              const pn = qn - t * dn, pe = qe - t * de;
+              const d2 = pn * pn + pe * pe;
+              if (d2 > reach2) continue;
+              const d = Math.sqrt(d2);
+              const half = lines.half[k] + t * (lines.half[k1] - lines.half[k]);
+              const z = lev[k] + t * (lev[k1] - lev[k]);
+              const past = d - half;
+              if (past > FLOOR_REACH) continue;
+              if (past <= 0 || d <= 0.5 * cell) {
+                floor[q] = 255;
+                if (z < bz[q] || !(bd[q] < Infinity)) {
+                  bz[q] = z;
+                  bd[q] = 0;
+                }
+              } else fz[q] = Math.min(fz[q], z + (p.sc / W[q]) * past);
+            }
+          }
+        }
+      }
+      for (let q = 0; q < N; q++) if (floor[q]) floorZ[q] = bz[q];
+    }
+    for (let li = 0; !lev && li < lines.start.length - 1; li++) {
       const s1 = lines.start[li + 1] - 1;
       for (let k0 = lines.start[li]; k0 < s1; k0 += FLOOR_CHUNK) {
         const k1 = Math.min(s1, k0 + FLOOR_CHUNK);
@@ -374,6 +436,7 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, g
       const q = y * n + x;
       if (!near[q]) continue;
       G[q] = ground(origin + y * cell, origin + x * cell);
+      if (floor[q] && floorZ[q] === floorZ[q]) G[q] = floorZ[q];
       sampled++;
       if (state[q] !== 2) state[q] = 1;
       else if (G[q] <= 0) {
@@ -628,6 +691,205 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, g
     const v = Math.min(H[c], H[r] + slopeOf(c) * dist);
     H[c] = Math.max(v, H[r] + EPS * dist);
   }
+  // The slope channels' own courses, then the ground made about every course.
+  let allLines: FloorLines | undefined;
+  if (COURSE_ON && lines.level) {
+    const t2 = performance.now();
+    // Chains of channel nodes (CHAIN_AREA and more): from each head down its main donors' line to the node it joins
+    // (another chain's, a fixed node's) - every channel node on one chain.
+    const isCh = (c: number): boolean => state[c] === 2 && area[c] >= CHAIN_AREA;
+    const main = new Int32Array(N).fill(-1);
+    for (let k = 0; k < active; k++) {
+      const c = list[k];
+      if (!isCh(c)) continue;
+      const r = rec[c];
+      if (main[r] < 0 || area[c] > area[main[r]] || (area[c] === area[main[r]] && c < main[r])) main[r] = c;
+    }
+    const cs: number[] = [0];
+    const cn: number[] = [];
+    const ce: number[] = [];
+    const cz: number[] = [];
+    const csize: number[] = [];
+    const cmouth: number[] = [];
+    for (let k = 0; k < active; k++) {
+      const h0 = list[k];
+      if (!isCh(h0) || main[h0] >= 0) continue;
+      const path: number[] = [h0];
+      let cur = h0;
+      for (;;) {
+        const r = rec[cur];
+        path.push(r);
+        if (!isCh(r) || main[r] !== cur) break;
+        cur = r;
+      }
+      const m = path.length;
+      const pn = path.map((q) => origin + ((q / n) | 0) * cell);
+      const pe = path.map((q) => origin + (q % n) * cell);
+      const pz = path.map((q) => H[q]);
+      const sn = pn.slice();
+      const se = pe.slice();
+      for (let pass = 0; pass < 2; pass++) {
+        for (let i = 1; i < m - 1; i++) {
+          sn[i] = 0.25 * pn[i - 1] + 0.5 * pn[i] + 0.25 * pn[i + 1];
+          se[i] = 0.25 * pe[i - 1] + 0.5 * pe[i] + 0.25 * pe[i + 1];
+        }
+        for (let i = 1; i < m - 1; i++) {
+          pn[i] = sn[i];
+          pe[i] = se[i];
+        }
+      }
+      for (let i = 0; i < m - 1; i++) {
+        const l = Math.hypot(pn[i + 1] - pn[i], pe[i + 1] - pe[i]);
+        const steps = Math.max(1, Math.ceil(l / CHAIN_STEP));
+        for (let j = 0; j < steps; j++) {
+          const u = j / steps;
+          cn.push(pn[i] + u * (pn[i + 1] - pn[i]));
+          ce.push(pe[i] + u * (pe[i + 1] - pe[i]));
+          cz.push(pz[i] + u * (pz[i + 1] - pz[i]));
+        }
+      }
+      cn.push(pn[m - 1]);
+      ce.push(pe[m - 1]);
+      cz.push(pz[m - 1]);
+      cs.push(cn.length);
+      const last = path[m - 1];
+      csize.push(Math.min(1, Math.max(CHAIN_SIZE_MIN, Math.sqrt(area[path[m - 2]] / 30))));
+      cmouth.push(state[last] === 2 || floor[last] ? 0 : 1);
+    }
+    const C: FloorLines = { start: Int32Array.from(cs), north: Float32Array.from(cn), east: Float32Array.from(ce), half: new Float32Array(cn.length), cap: new Uint8Array(cs.length - 1).fill(4 | 1), level: Float32Array.from(cz) };
+    const wgt = new Float32Array(cn.length);
+    for (let k = 0; k < cn.length; k++) {
+      const fy = Math.min(n - 1.001, Math.max(0, (cn[k] - origin) / cell));
+      const fx = Math.min(n - 1.001, Math.max(0, (ce[k] - origin) / cell));
+      const i = Math.floor(fy), j = Math.floor(fx);
+      const ty = fy - i, tx = fx - j;
+      const w0 = (1 - ty) * ((1 - tx) * W[i * n + j] + tx * W[i * n + j + 1]) + ty * ((1 - tx) * W[(i + 1) * n + j] + tx * W[(i + 1) * n + j + 1]);
+      wgt[k] = smoothstep(0.35, 0.75, w0);
+    }
+    const b = bendCourses({ lines: C, weight: wgt, size: Float32Array.from(csize), mouth: Uint8Array.from(cmouth), fixed: lines });
+    C.north = b.north;
+    C.east = b.east;
+    for (let p0 = 0; p0 < C.start.length - 1; p0++) for (let k = C.start[p0] + 1; k < C.start[p0 + 1]; k++) if (C.level![k] > C.level![k - 1]) C.level![k] = C.level![k - 1];
+    slopeStats.chains = C.start.length - 1;
+    slopeStats.chainPoints = cn.length;
+    const H2 = new Float32Array(N).fill(Infinity);
+    const dmin = new Float32Array(N).fill(Infinity);
+    const cone = (Lx: FloorLines): void => {
+      const lv = Lx.level!;
+      for (let li = 0; li < Lx.start.length - 1; li++) {
+        const s1 = Lx.start[li + 1] - 1;
+        for (let k = Lx.start[li]; k < s1; k += 3) {
+          const k1 = Math.min(s1, k + 3);
+          const an = Lx.north[k], ae = Lx.east[k];
+          const dn = Lx.north[k1] - an, de = Lx.east[k1] - ae;
+          const L2 = dn * dn + de * de;
+          const hMax = Math.max(Lx.half[k], Lx.half[k1]);
+          const reach = hMax + CONE_REACH;
+          const reach2 = reach * reach;
+          const y0 = Math.max(1, Math.ceil((Math.min(an, an + dn) - reach - origin) / cell));
+          const y1 = Math.min(n - 2, Math.floor((Math.max(an, an + dn) + reach - origin) / cell));
+          const x0 = Math.max(1, Math.ceil((Math.min(ae, ae + de) - reach - origin) / cell));
+          const x1 = Math.min(n - 2, Math.floor((Math.max(ae, ae + de) + reach - origin) / cell));
+          for (let y = y0; y <= y1; y++) {
+            const qn = origin + y * cell - an;
+            for (let x = x0; x <= x1; x++) {
+              const q = y * n + x;
+              if (state[q] !== 2) continue;
+              const qe = origin + x * cell - ae;
+              const t = L2 > 1e-6 ? Math.min(1, Math.max(0, (qn * dn + qe * de) / L2)) : 0;
+              const pn = qn - t * dn, pe = qe - t * de;
+              const d2 = pn * pn + pe * pe;
+              if (d2 > reach2) continue;
+              const d = Math.sqrt(d2);
+              const half = Lx.half[k] + t * (Lx.half[k1] - Lx.half[k]);
+              const past = d - half;
+              if (past < dmin[q]) dmin[q] = past;
+              const v = lv[k] + t * (lv[k1] - lv[k]) + (p.sc / Math.max(W[q], 1e-3)) * (past > 0 ? past : 0);
+              if (v < H2[q]) H2[q] = v;
+            }
+          }
+        }
+      }
+    };
+    cone(lines);
+    cone(C);
+    let rebuilt = 0;
+    for (let k = 0; k < active; k++) {
+      const c = list[k];
+      let v = H2[c];
+      if (!(v < Infinity)) continue;
+      const e = Gf[c] + p.lift * L[c];
+      if (v > e) v = Math.min(e + p.crown * L[c], e + p.soft * L[c] * (v - e));
+      const r = Math.min(1, Math.max(0, 1 - (dmin[c] - 0.6 * CONE_REACH) / (0.4 * CONE_REACH)));
+      const u = r * r * (3 - 2 * r);
+      H[c] += u * (v - H[c]);
+      rebuilt++;
+    }
+    // (No closed hollow: a priority flood from the fixed nodes, each node at least EPS over the one it drains to.)
+    {
+      const hf = new Float32Array(N);
+      const dn2 = new Uint8Array(N);
+      const hp = new Heap(1 << 16);
+      for (let q = 0; q < N; q++) {
+        if (state[q] !== 1) continue;
+        hf[q] = H[q];
+        dn2[q] = 1;
+        const y = (q / n) | 0;
+        const x = q - y * n;
+        for (let d = 0; d < 8; d++) {
+          const yy = y + DI8[d];
+          const xx = x + DJ8[d];
+          if (yy < 0 || xx < 0 || yy >= n || xx >= n) continue;
+          if (state[yy * n + xx] === 2) {
+            hp.push(q, H[q]);
+            break;
+          }
+        }
+      }
+      let raised = 0;
+      while (hp.size > 0) {
+        const c = hp.pop();
+        const y = (c / n) | 0;
+        const x = c - y * n;
+        for (let d = 0; d < 8; d++) {
+          const yy = y + DI8[d];
+          const xx = x + DJ8[d];
+          if (yy < 0 || xx < 0 || yy >= n || xx >= n) continue;
+          const nb = yy * n + xx;
+          if (dn2[nb] || state[nb] !== 2) continue;
+          dn2[nb] = 1;
+          const lo = hf[c] + EPS * (DI8[d] !== 0 && DJ8[d] !== 0 ? Math.SQRT2 : 1) * cell;
+          if (H[nb] < lo) {
+            hf[nb] = lo;
+            raised++;
+          } else hf[nb] = H[nb];
+          hp.push(nb, hf[nb]);
+        }
+      }
+      for (let k = 0; k < active; k++) if (dn2[list[k]]) H[list[k]] = hf[list[k]];
+      slopeStats.raised = raised;
+    }
+    slopeStats.rebuilt = rebuilt;
+    route(H);
+    orderAndArea();
+    const cat = (a: FloorLines, c: FloorLines): FloorLines => {
+      const st = Array.from(a.start);
+      const off = a.north.length;
+      for (let i = 1; i < c.start.length; i++) st.push(c.start[i] + off);
+      const f32 = (x: Float32Array, y: Float32Array): Float32Array => {
+        const o = new Float32Array(x.length + y.length);
+        o.set(x);
+        o.set(y, x.length);
+        return o;
+      };
+      const cap = new Uint8Array(a.cap.length + c.cap.length);
+      cap.set(a.cap);
+      cap.set(c.cap, a.cap.length);
+      return { start: Int32Array.from(st), north: f32(a.north, c.north), east: f32(a.east, c.east), half: f32(a.half, c.half), cap, level: f32(a.level!, c.level!) };
+    };
+    allLines = cat(lines, C);
+    slopeStats.msCourses = performance.now() - t2;
+  }
   // The channels' floors (the gullies and small relief give way there): from the channel head's catchment up, and
   // the two nodes beside each diagonal step as the step's.
   const chan = new Uint8Array(N);
@@ -664,5 +926,5 @@ export function thresholdSlopes(n: number, cell: number, weight: Float32Array, g
   slopeStats.corners = corners;
   slopeStats.msSample = t1 - t0;
   slopeStats.msPass = performance.now() - t1;
-  return { h: H, w: w8, chan, floor, lz, sc: p.sc, dir, area };
+  return { h: H, w: w8, chan, floor, lz, sc: p.sc, dir, area, ...(allLines ? { lines: allLines } : {}) };
 }

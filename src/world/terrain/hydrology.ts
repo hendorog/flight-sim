@@ -311,6 +311,9 @@ export interface ChannelNear {
   braidPh?: number;
   braidPs?: number;
   braidW?: number;
+  braidLevel?: number;
+  braidPast?: number;
+  braidBankLvl?: number;
   dist: number;
   side: number;
   level: number;

@@ -176,9 +176,13 @@ export function formOf(A: number, S: number, F: number): Form {
   // 0.7, the Selwyn's pi, and straightened every big lowland river of 0.6-0.8 - p7-8's, om-plains' - against section 7
   // and the owner's kept meanders.)
   const lowland = 0.95 * (1 - smooth(0.7, 1.2, pi));
-  const om2 = Math.max(0.35 + 1.4 * (1 - smooth(0.05, 0.7, pi)), lowland);
+  // Confined / semi-confined single-thread valley rivers (pi >= 0.7, betaLaw ~ 0, Wa ~ Ws): without this floor, om2
+  // dropped to 0.35 rad (sinuosity 1.027 — dead straight down the valley floor). Scaled by Ws / Wa so wide braided or
+  // transitional beds never bend tighter than Wa, and eased on steep step-pool torrents (sigma).
+  const valleySingle = 0.72 * (Ws / Math.max(Ws, Wa)) * (1 - 0.75 * sigma);
+  const om2 = Math.max(0.35 + 1.4 * (1 - smooth(0.05, 0.7, pi)), lowland, valleySingle);
   const lam2 = 13 * w;
-  const om1 = 0.4;
+  const om1 = 0.4 + 0.22 * smooth(0.65, 1.05, pi) * (1 - betaLaw) * (1 - 0.75 * sigma);
   const lam1 = 378 * Math.pow(a, 0.204);
   const bankH = 0.35 * Math.pow(a, 0.17) * (1 - 0.4 * betaLaw);
   const bankTan = Math.tan(((14 + 36 * smooth(0.005, 0.08, s)) * Math.PI) / 180);
@@ -874,6 +878,7 @@ export interface BraidRibbon {
   K: ArrayLike<number>;
   ph: ArrayLike<number>;
   ps: ArrayLike<number>;
+  level?: ArrayLike<number>;
   rows: Int32Array;
 }
 /** The braided ribbon's columns across a row (water.ts: -3 and 3 the right and left bed edges, -2 and 2 the main
@@ -881,10 +886,10 @@ export interface BraidRibbon {
 export const BRAID_ACROSS = [-3, -2.667, -2.333, -2, -1, 0, 1, 2, 2.333, 2.667, 3];
 const TWIN_COLS = BRAID_ACROSS.length;
 /** braidTwin's output: what the ribbon's fragment there reads - u, um, the bed's half-width, K, the phases, the main
- * water's width - and whether it lies in the main water's columns (main). */
-export const twinHit = { u: 0, um: 0, hb: 1, K: 0, ph: 0, ps: 0, w: 0, main: false };
+ * water's width, the interpolated ribbon surface level - and whether it lies in the main water's columns (main). */
+export const twinHit = { u: 0, um: 0, hb: 1, K: 0, ph: 0, ps: 0, w: 0, level: 0, main: false };
 const twinV = new Float64Array(2 * TWIN_COLS * 2);
-const twinA = new Float64Array(2 * TWIN_COLS * 7);
+const twinA = new Float64Array(2 * TWIN_COLS * 8);
 /**
  * The ribbon's own reading of a braided bed at a point (pn, pe): its two rows about it (rowFrame's guess from row r0,
  * then the quads either side), its vertices and their attributes as ribbonRows builds them, the triangle (as it indexes
@@ -893,13 +898,13 @@ const twinA = new Float64Array(2 * TWIN_COLS * 7);
  */
 export function braidTwin(L: BraidRibbon, r0: number, pn: number, pe: number): boolean {
   const R = L.rows;
-  for (const dj of [0, -1, 1, -2, 2, -3, 3, -4, 4]) {
+  for (const dj of [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6, -7, 7, -8, 8]) {
     const q = r0 + dj;
     if (q < 0 || q + 1 >= R.length) continue;
     const i0 = R[q];
     const i1 = R[q + 1];
     const reach = Math.max(L.bedR[i0], L.bedL[i0], L.bedR[i1], L.bedL[i1], L.wetR[i0] + 1, L.wetL[i0] + 1, L.wetR[i1] + 1, L.wetL[i1] + 1) + 2;
-    if (pn < Math.min(L.north[i0], L.north[i1]) - reach || pn > Math.max(L.north[i0], L.north[i1]) + reach || pe < Math.min(L.east[i0], L.east[i1]) - reach || pe > Math.max(L.east[i0], L.east[i1]) + reach) continue;
+    if (pn < Math.min(L.north[i0], L.north[i1]) - reach || pn > Math.max(L.north[i0], L.north[i1]) + reach || pe < Math.min(L.east[i0], L.east[i1]) + 0 - reach || pe > Math.max(L.east[i0], L.east[i1]) + reach) continue;
     // The quad's 2 * TWIN_COLS vertices (rows q, q + 1; columns across) and their attributes.
     for (let h = 0; h < 2; h++) {
       const i = R[q + h];
@@ -912,6 +917,7 @@ export function braidTwin(L: BraidRibbon, r0: number, pn: number, pe: number): b
       const mid = 0.5 * (wR - wL);
       const xc = 0.5 * (L.bedR[i] - L.bedL[i]);
       const hb = Math.max(1, 0.5 * (L.bedR[i] + L.bedL[i]));
+      const lvl = L.level ? L.level[i] : 0;
       for (let c = 0; c < TWIN_COLS; c++) {
         const a = BRAID_ACROSS[c];
         const right = a < 0;
@@ -923,7 +929,7 @@ export function braidTwin(L: BraidRibbon, r0: number, pn: number, pe: number): b
         const v = h * TWIN_COLS + c;
         twinV[2 * v] = L.north[i] + pnn * off;
         twinV[2 * v + 1] = L.east[i] + pen * off;
-        const at = 7 * v;
+        const at = 8 * v;
         twinA[at] = (-off - xc) / hb;
         twinA[at + 1] = (mid - xc) / hb;
         twinA[at + 2] = hb;
@@ -931,6 +937,7 @@ export function braidTwin(L: BraidRibbon, r0: number, pn: number, pe: number): b
         twinA[at + 4] = L.ph[i];
         twinA[at + 5] = L.ps[i];
         twinA[at + 6] = 2 * w;
+        twinA[at + 7] = lvl;
       }
     }
     // Its triangles as ribbonRows indexes them: (a, c, a + 1) and (a + 1, c, c + 1), a = row q column k, c = row q + 1.
@@ -944,7 +951,7 @@ export function braidTwin(L: BraidRibbon, r0: number, pn: number, pe: number): b
         const l1 = ((e2 - e0) * (pn - n2) + (n0 - n2) * (pe - e2)) / det;
         const l2 = 1 - l0 - l1;
         if (l0 < -1e-9 || l1 < -1e-9 || l2 < -1e-9) continue;
-        const f = (o: number): number => l0 * twinA[7 * v0 + o] + l1 * twinA[7 * v1 + o] + l2 * twinA[7 * v2 + o];
+        const f = (o: number): number => l0 * twinA[8 * v0 + o] + l1 * twinA[8 * v1 + o] + l2 * twinA[8 * v2 + o];
         twinHit.u = f(0);
         twinHit.um = f(1);
         twinHit.hb = f(2);
@@ -952,6 +959,7 @@ export function braidTwin(L: BraidRibbon, r0: number, pn: number, pe: number): b
         twinHit.ph = f(4);
         twinHit.ps = f(5);
         twinHit.w = f(6);
+        twinHit.level = f(7);
         // (The main water's columns, -2..2: the shader draws no other thread there.)
         twinHit.main = k >= 3 && k <= 6;
         return true;

@@ -29,6 +29,7 @@
 import { DOMAIN_HALF, DRAIN_CELL, HOME_MOUND, HOME_RADIUS, LAKE_HOME_CLEAR, RIVER_AREA } from './drainage';
 import { FLOOR_CHUNK, floorChunk, nearLine, type FloorLines, type SlopeField } from './hillslopes';
 import { placeBlock, type Structure } from './structure';
+import { bendCourses, COURSE_ON, CourseBend, setCourseBend } from './courses';
 
 /** Settings of the steady-state model. */
 export interface SteadyParams {
@@ -55,7 +56,7 @@ export interface SteadyParams {
  */
 export const STEADY: SteadyParams = { iterations: 30, ridge: 400, m: 0.6, sc: 0.45, grade: 0.06 };
 /** Bump when the model or its inputs change meaning: part of the cache key (macroCache.ts). */
-export const MODEL_VERSION = 'ss7-v1';
+export const MODEL_VERSION = 'ss7-v1-xBraid2';
 
 /** Catchment, cells, from which a diagonal step of a channel lowers the cells beside it. */
 const CORNER_AREA = 10;
@@ -613,14 +614,13 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
   const { pn, pe } = channelCourse(n, origin, receiver, area);
   const sn = new Float64Array(PIECE_SAMPLES + 1);
   const se = new Float64Array(PIECE_SAMPLES + 1);
-  const ex = new Float64Array(PIECE_SAMPLES + 1);
-  const fk = new Float64Array(PIECE_SAMPLES + 1);
   // The floors' lines (FloorLines): each piece's points (about every FLOOR_STEP m), by the cell it runs from (its
-  // donor's, or a channel's first cell's own), then joined into courses below.
+  // donor's, or a channel's first cell's own), then joined into courses, bent onto winding valley paths across both
+  // hill country and mountains, and carved into `carve` and `floorMask` along those exact bent courses.
   const pieceFrom = new Map<number, number[]>();
   const headPiece = new Map<number, number[]>();
   const strengthOf = (c: number): number => smoothstep(CHANNEL_AREA, 2 * CHANNEL_AREA, area[c]);
-  const carvePiece = (a: number, c: number, r: number, strength: number): void => {
+  const buildPiece = (a: number, c: number, r: number, strength: number): void => {
     // Quadratic B-spline piece from the middle of a->c, about c, to the middle of c->r (a = c: from the cell itself),
     // through the smoothed course (coursePiece, as the rivers' axes are laid, riverNetwork.ts).
     const cn1 = pn[c];
@@ -632,23 +632,12 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
     const f0 = 0.5 * (eroded[a] + eroded[c]);
     const f1 = eroded[c];
     const f2 = 0.5 * (eroded[c] + Math.max(eroded[r], LAND_MIN));
-    let any = false;
     for (let k = 0; k <= PIECE_SAMPLES; k++) {
       const t = k / PIECE_SAMPLES;
       coursePiece(pn0, pe0, cn1, ce1, pn2, pe2, t);
       sn[k] = pieceAt.n;
       se[k] = pieceAt.e;
-      const fl = (1 - t) * (1 - t) * f0 + 2 * t * (1 - t) * f1 + t * t * f2;
-      fk[k] = fl;
-      ex[k] = Math.max(0, bicubic(eroded, n, origin, DRAIN_CELL, pieceAt.n, pieceAt.e, true) - fl) * strength;
-      if (ex[k] > 0) any = true;
     }
-    for (let k = 0; k < PIECE_SAMPLES; k++) {
-      markFloor(floorMask, N, sn[k], se[k], sn[k + 1], se[k + 1], strength);
-      if (any && (ex[k] > 0 || ex[k + 1] > 0)) carveSegment(carve, surface, N, sn[k], se[k], fk[k], sn[k + 1], se[k + 1], fk[k + 1], Math.max(ex[k], ex[k + 1]), strength);
-    }
-    // Its floor's line, about every FLOOR_STEP m along the same piece; the floor's half-width by the channel's strength,
-    // running on from cell to cell as its level does (f0, f1, f2).
     let len = 0;
     for (let k = 0; k < PIECE_SAMPLES; k++) len += Math.hypot(sn[k + 1] - sn[k], se[k + 1] - se[k]);
     const steps = Math.max(1, Math.ceil(len / FLOOR_STEP));
@@ -658,7 +647,9 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
     for (let k = 0; k <= steps; k++) {
       const u = k / steps;
       coursePiece(pn0, pe0, cn1, ce1, pn2, pe2, u);
-      pts.push(pieceAt.n, pieceAt.e, FLOOR_HALF * ((1 - u) * (1 - u) * s0 + 2 * u * (1 - u) * strength + u * u * s2));
+      const st = (1 - u) * (1 - u) * s0 + 2 * u * (1 - u) * strength + u * u * s2;
+      const fl = (1 - u) * (1 - u) * f0 + 2 * u * (1 - u) * f1 + u * u * f2;
+      pts.push(pieceAt.n, pieceAt.e, FLOOR_HALF * st, fl, st);
     }
     if (a === c) headPiece.set(c, pts);
     else pieceFrom.set(a, pts);
@@ -679,9 +670,75 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
       const d = i * n + j;
       if (receiver[d] !== c || area[d] < CHANNEL_AREA) continue;
       donors++;
-      carvePiece(d, c, r, strength);
+      buildPiece(d, c, r, strength);
     }
-    if (donors === 0) carvePiece(c, c, r, strength);
+    if (donors === 0) buildPiece(c, c, r, strength);
+  }
+  // Assemble the courses (from each head down its main-donor chain to the mouth or into the receiver course it joins),
+  // bend them onto winding courses when COURSE_ON, and carve `floorMask` and `carve` directly along the bent courses.
+  const mainDonor = new Int32Array(n * n).fill(-1);
+  for (const c of channel) {
+    const r = receiver[c];
+    if (r >= 0 && (mainDonor[r] < 0 || area[c] > area[mainDonor[r]])) mainDonor[r] = c;
+  }
+  const lineStart: number[] = [0];
+  const lineN: number[] = [];
+  const lineE: number[] = [];
+  const lineW: number[] = [];
+  const lineZ: number[] = [];
+  const lineS: number[] = [];
+  const lineA: number[] = [];
+  const lineCap: number[] = [];
+  for (const [h, first] of headPiece) {
+    const add = (pts: number[], from: number): void => {
+      for (let k = from; k < pts.length; k += 5) {
+        lineN.push(pts[k]);
+        lineE.push(pts[k + 1]);
+        lineW.push(pts[k + 2]);
+        lineZ.push(pts[k + 3]);
+        lineS.push(pts[k + 4]);
+      }
+    };
+    add(first, 0);
+    let cur = h;
+    let cap = 3;
+    for (;;) {
+      const pts = pieceFrom.get(cur);
+      if (!pts) break;
+      add(pts, 5);
+      const r = receiver[cur];
+      if (mainDonor[r] !== cur) {
+        cap = 1;
+        break;
+      }
+      cur = r;
+    }
+    lineStart.push(lineN.length);
+    lineCap.push(cap);
+    lineA.push(area[cur]);
+  }
+  let floorLines: FloorLines = { start: Int32Array.from(lineStart), north: Float32Array.from(lineN), east: Float32Array.from(lineE), half: Float32Array.from(lineW), cap: Uint8Array.from(lineCap) };
+  if (COURSE_ON) floorLines = bentFloors(floorLines, Float32Array.from(lineZ), Float32Array.from(lineA), inp, eroded, n, origin);
+  else setCourseBend(null);
+  const flZ = floorLines.level ?? Float32Array.from(lineZ);
+  const flS = Float32Array.from(lineS);
+  const flEx = new Float32Array(floorLines.north.length);
+  for (let k = 0; k < flEx.length; k++) {
+    flEx[k] = Math.max(0, bicubic(eroded, n, origin, DRAIN_CELL, floorLines.north[k], floorLines.east[k], true) - flZ[k]) * flS[k];
+  }
+  for (let p = 0; p < floorLines.start.length - 1; p++) {
+    const s0 = floorLines.start[p];
+    const s1 = floorLines.start[p + 1] - 1;
+    for (let k = s0; k < s1; k += 2) {
+      const k1 = Math.min(s1, k + 2);
+      const str = Math.max(flS[k], flS[k1]);
+      const n0 = floorLines.north[k], e0 = floorLines.east[k];
+      const n1 = floorLines.north[k1], e1 = floorLines.east[k1];
+      markFloor(floorMask, N, n0, e0, n1, e1, str);
+      let exMax = Math.max(flEx[k], flEx[k1]);
+      if (k1 > k + 1 && flEx[k + 1] > exMax) exMax = flEx[k + 1];
+      if (exMax > 0) carveSegment(carve, surface, N, n0, e0, flZ[k], n1, e1, flZ[k1], exMax, str);
+    }
   }
   // The carve, faded out near home as the change is, and with the floor faded out toward the fine grid's edge (none
   // within EDGE_KEEP[0] of it: the samples there read neither, so the ground stays continuous across it).
@@ -706,47 +763,78 @@ export function buildErosion(inp: ModelInputs, T: Float32Array): ErosionField {
       for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) carveAny[i * n + j] = 1;
     }
   }
-  // The floors' lines: one per course, from a channel's first cell down its pieces while it is its receiver's main
-  // donor (the largest), so to the mouth (its end the line's own) or into the course it joins (its last piece runs on
-  // into that course's, and past its end the floor is that course's).
-  const mainDonor = new Int32Array(n * n).fill(-1);
-  for (const c of channel) {
-    const r = receiver[c];
-    if (r >= 0 && (mainDonor[r] < 0 || area[c] > area[mainDonor[r]])) mainDonor[r] = c;
-  }
-  const lineStart: number[] = [0];
-  const lineN: number[] = [];
-  const lineE: number[] = [];
-  const lineW: number[] = [];
-  const lineCap: number[] = [];
-  for (const [h, first] of headPiece) {
-    const add = (pts: number[], from: number): void => {
-      for (let k = from; k < pts.length; k += 3) {
-        lineN.push(pts[k]);
-        lineE.push(pts[k + 1]);
-        lineW.push(pts[k + 2]);
-      }
-    };
-    add(first, 0);
-    let cur = h;
-    let cap = 3;
-    for (;;) {
-      const pts = pieceFrom.get(cur);
-      if (!pts) break;
-      add(pts, 3);
-      const r = receiver[cur];
-      if (mainDonor[r] !== cur) {
-        cap = 1;
-        break;
-      }
-      cur = r;
-    }
-    lineStart.push(lineN.length);
-    lineCap.push(cap);
-  }
-  const floorLines: FloorLines = { start: Int32Array.from(lineStart), north: Float32Array.from(lineN), east: Float32Array.from(lineE), half: Float32Array.from(lineW), cap: Uint8Array.from(lineCap) };
   return { delta: change, base, carve, carveAny, floor: floorMask, course: new Uint8Array(N * N), courseAny: new Uint8Array(n * n), floorLines, home: { north: home.north, east: home.east }, lattice: eroded, routing, valley: valleyDepth(eroded, n, fixed), slopes: null, slopeAny: null, floorIndex: null };
 }
+
+/**
+ * Lay the 1 km model's floors' lines as winding courses (courses.ts) across both hill country and mountains. Each
+ * point's level is the floor's level there, held from rising downstream; the wander is faded out over held ground /
+ * approach caps, near the fine grid's edge, at sea level, and within reach of lattice lakes or kept lowland lake sills,
+ * so lakes keep their outlets. Because `carve` and `floorMask` are rasterised after this step, hill-country, foothill,
+ * and mountain valleys all share the same bent courses as `riverNetwork`.
+ */
+function bentFloors(L: FloorLines, z: Float32Array, lineArea: Float32Array, inp: ModelInputs, eroded: Float32Array, n: number, origin: number): FloorLines {
+  const P = L.north.length;
+  for (let p = 0; p < L.start.length - 1; p++) for (let k = L.start[p] + 1; k < L.start[p + 1]; k++) if (z[k] > z[k - 1]) z[k] = z[k - 1];
+  // The lattice's lakes: cells a priority flood from the sea and the domain's edge raises by more than half a metre.
+  const filled = Float32Array.from(eroded);
+  const seen = new Uint8Array(n * n);
+  const heap = new Heap(n * n);
+  for (let c = 0; c < n * n; c++) {
+    const i = (c / n) | 0;
+    const j = c - i * n;
+    if (inp.fixed[c] || i === 0 || j === 0 || i === n - 1 || j === n - 1) {
+      seen[c] = 1;
+      heap.push(c, filled[c]);
+    }
+  }
+  while (heap.size > 0) {
+    const c = heap.pop();
+    const i = (c / n) | 0;
+    const j = c - i * n;
+    for (let k = 0; k < 8; k++) {
+      const ii = i + DI8[k];
+      const jj = j + DJ8[k];
+      if (ii < 0 || jj < 0 || ii >= n || jj >= n) continue;
+      const d = ii * n + jj;
+      if (seen[d]) continue;
+      seen[d] = 1;
+      if (filled[d] < filled[c]) filled[d] = filled[c];
+      heap.push(d, filled[d]);
+    }
+  }
+  const weight = new Float32Array(P);
+  for (let k = 0; k < P; k++) {
+    const fy = (L.north[k] - origin) / DRAIN_CELL;
+    const fx = (L.east[k] - origin) / DRAIN_CELL;
+    const hard = bilinear(inp.hard, n, Math.min(n - 1.001, Math.max(0, fy)), Math.min(n - 1.001, Math.max(0, fx)));
+    const cap = bilinear(inp.cap, n, Math.min(n - 1.001, Math.max(0, fy)), Math.min(n - 1.001, Math.max(0, fx)));
+    const edge = Math.min(L.north[k] - origin, L.east[k] - origin, -origin - L.north[k], -origin - L.east[k]);
+    let w = Math.min(1, Math.max(0, hard)) * (1 - Math.min(1, Math.max(0, cap))) * smoothstep(COURSE_EDGE[0], COURSE_EDGE[1], edge) * smoothstep(1, 6, z[k]);
+    if (w > 0) {
+      let dl = Infinity;
+      const i0 = Math.round(fy);
+      const j0 = Math.round(fx);
+      for (let i = i0 - 2; i <= i0 + 2; i++) for (let j = j0 - 2; j <= j0 + 2; j++) {
+        if (i < 0 || j < 0 || i >= n || j >= n) continue;
+        const c = i * n + j;
+        if (filled[c] - eroded[c] > 0.5 || inp.sill[c] > 0) dl = Math.min(dl, Math.hypot(origin + i * DRAIN_CELL - L.north[k], origin + j * DRAIN_CELL - L.east[k]));
+      }
+      w *= smoothstep(700, 2000, dl);
+    }
+    weight[k] = w;
+  }
+  const nL = L.start.length - 1;
+  const mouth = new Uint8Array(nL);
+  for (let p = 0; p < nL; p++) mouth[p] = L.cap[p] & 2 ? 1 : 0;
+  void lineArea;
+  const b = bendCourses({ lines: L, weight, size: new Float32Array(nL).fill(1), mouth, fixed: null });
+  setCourseBend(new CourseBend(L.north, L.east, b.dn, b.de));
+  return { start: L.start, north: b.north, east: b.east, half: L.half, cap: L.cap, level: z };
+}
+
+/** Courses fade in from the fine grid's edge over COURSE_EDGE m (inside EDGE_KEEP). */
+const COURSE_EDGE = [4000, 10000];
 
 /** A point of a course's quadratic B-spline piece (coursePiece), m. */
 const pieceAt = { n: 0, e: 0 };
@@ -901,7 +989,7 @@ export function attachSlopes(f: ErosionField, s: SlopeField): void {
         e1 = Math.max(e1, L.east[k]);
         w = Math.max(w, L.half[k]);
       }
-      const r = w + FLOOR_DRAW[1];
+      const r = COURSE_ON && L.cap[p] & 4 ? CHAIN_DRAW[1] : w + FLOOR_DRAW[1];
       line.push(p);
       seg.push(k0);
       bx.push(n0 - r, n1 + r, e0 - r, e1 + r);
@@ -941,6 +1029,10 @@ function floorGround(f: Pick<ErosionField, 'floorLines' | 'floorIndex'>, z: Floa
   out.fc = Infinity;
   const idx = f.floorIndex;
   if (!idx) return;
+  if (COURSE_ON && f.floorLines.level) {
+    courseGround(f.floorLines, idx, north, east, slope, out);
+    return;
+  }
   const c = cellAt(north, east);
   const a0 = idx.start[c];
   const a1 = idx.start[c + 1];
@@ -973,6 +1065,79 @@ function floorGround(f: Pick<ErosionField, 'floorLines' | 'floorIndex'>, z: Floa
   }
   fold();
   out.fw = pastMin < Infinity ? 1 - smoothstep(FLOOR_DRAW[0], FLOOR_DRAW[1], pastMin) : 0;
+}
+/** The slope channels' courses (FloorLines cap bit 4) are drawn to CHAIN_DRAW[0] m from their line, fading out by
+ * CHAIN_DRAW[1]; their channel's floor (the gullies give way) within CHAIN_CH. */
+const CHAIN_DRAW = [150, 300];
+const CHAIN_CH = [30, 80];
+/**
+ * The ground made about the courses at (north, east), into `out` (fc, with fw 1): the slopes' ground `out.hs` lowered
+ * to each stretch's in reach - its level on its floor, its level plus `slope` times how far past its floor's edge the
+ * point lies - by that stretch's own weight, which fades out with its distance before the stretch's chunk drops out of
+ * the point's list; the lowest of them all. Every term is continuous and each comes in from none, so the ground has no
+ * seam (no nearest stretch, no cut-off at a box's edge). A slope channel's floor marks the point's channel weight (ch)
+ * as the nodes' marks do.
+ */
+function courseGround(L: FloorLines, idx: FloorIndex, north: number, east: number, slope: number, out: ErosionSample): void {
+  const c = cellAt(north, east);
+  const a0 = idx.start[c];
+  const a1 = idx.start[c + 1];
+  if (a1 <= a0) {
+    out.fc = out.hs;
+    out.fw = 1;
+    return;
+  }
+  const box = idx.box;
+  const lv = L.level as Float32Array;
+  const hs = out.hs;
+  const chainR2 = CHAIN_DRAW[1] * CHAIN_DRAW[1];
+  let G = hs;
+  let dC2 = CHAIN_CH[1] * CHAIN_CH[1];
+  for (let a = a0; a < a1; a++) {
+    const ch = idx.list[a];
+    if (north < box[4 * ch] || north > box[4 * ch + 1] || east < box[4 * ch + 2] || east > box[4 * ch + 3]) continue;
+    const p = idx.line[ch];
+    const chain = (L.cap[p] & 4) !== 0;
+    const k1 = Math.min(L.start[p + 1] - 1, idx.seg[ch] + FLOOR_CHUNK);
+    for (let k = idx.seg[ch]; k < k1; k++) {
+      const an = L.north[k], ae = L.east[k];
+      const dn = L.north[k + 1] - an, de = L.east[k + 1] - ae;
+      const L2 = dn * dn + de * de;
+      const t0 = L2 > 1e-6 ? ((north - an) * dn + (east - ae) * de) / L2 : 0;
+      const t = t0 < 0 ? 0 : t0 > 1 ? 1 : t0;
+      const qn = north - an - t * dn;
+      const qe = east - ae - t * de;
+      const d2 = qn * qn + qe * qe;
+      if (chain) {
+        if (d2 >= chainR2) continue;
+        if (d2 < dC2) dC2 = d2;
+        const z = lv[k] + t * (lv[k + 1] - lv[k]);
+        if (z >= hs) continue;
+        const d = Math.sqrt(d2);
+        const v = z + slope * d;
+        if (v >= hs) continue;
+        const w = 1 - smoothstep(CHAIN_DRAW[0], CHAIN_DRAW[1], d);
+        const g = hs + w * (sminUp(hs, v, FLOOR_SMIN) - hs);
+        if (g < G) G = g;
+      } else {
+        const h = L.half[k] + t * (L.half[k + 1] - L.half[k]);
+        const rMax = h + FLOOR_DRAW[1];
+        if (d2 >= rMax * rMax) continue;
+        const z = lv[k] + t * (lv[k + 1] - lv[k]);
+        if (z >= hs) continue;
+        const d = Math.sqrt(d2);
+        const past = d - h;
+        const v = z + slope * (past > 0 ? past : 0);
+        if (v >= hs) continue;
+        const w = 1 - smoothstep(FLOOR_DRAW[0], FLOOR_DRAW[1], past);
+        const g = hs + w * (sminUp(hs, v, FLOOR_SMIN) - hs);
+        if (g < G) G = g;
+      }
+    }
+  }
+  out.fc = G;
+  out.fw = 1;
+  if (dC2 < CHAIN_CH[1] * CHAIN_CH[1]) out.ch = Math.max(out.ch, 1 - smoothstep(CHAIN_CH[0], CHAIN_CH[1], Math.sqrt(dC2)));
 }
 /** A smooth minimum of a and b over k that never dips under the lower (equal grounds stay as they are); its weight on b
  * into sminW (heightfield.ts: the slopes' ground meeting the model's floors). */

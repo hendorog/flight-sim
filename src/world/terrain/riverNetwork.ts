@@ -13,6 +13,7 @@ import { hash2i, gnoise } from './noise';
 import { LAKE_ZONE, PolylineIndex, CHANNEL_BANK, type FlowHit, type PolylineNear, type ChannelNear, type Hydrology, type Lake, type NetworkQuery, type OxbowHit, type RiverHit, type RiverLine, type ValleyHit, type ValleyNear } from './hydrology';
 import { cellEast, cellNorth, LAKE_RASTER, type Drainage, type DrainLine, type LakeMask } from './drainage';
 import { channelCourse, courseSpline } from './erosion';
+import { COURSE_ON, courseBend } from './courses';
 import { bedWidth, breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, REGIME, refineSteep, STREAM_SPACING, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
 import { BRAID_SPAN, BRAID_WAVE, BRAID_WIG, BRAID_WIG_MIN, beltOffsets, bendOf, braidRows, braidStart, braidTwin, rowFrame, rowHit, twinHit, type BraidRibbon, fitSwing, formOf, hAt, layThread, sineAmplitude, stepWhite, threadDepth, type ThreadLaw } from './channelForm';
 import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
@@ -489,6 +490,43 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const count = pts.n.length;
     const north = Float64Array.from(pts.n);
     const east = Float64Array.from(pts.e);
+    // Laid on the model's winding courses: each point moved as the course's nearest point was; between points found on
+    // them, linearly interpolated or smoothly faded at ends.
+    const cb = COURSE_ON ? courseBend() : null;
+    if (cb) {
+      const bn = new Float64Array(count);
+      const be = new Float64Array(count);
+      const found = new Uint8Array(count);
+      const o = { n: 0, e: 0 };
+      for (let i = 0; i < count; i++) if (cb.at(north[i], east[i], o)) {
+        bn[i] = o.n;
+        be[i] = o.e;
+        found[i] = 1;
+      }
+      let prev = -1;
+      for (let i = 0; i <= count; i++) {
+        if (i < count && !found[i]) continue;
+        for (let j = prev + 1; j < i; j++) {
+          if (prev >= 0 && i < count) {
+            const u = (j - prev) / (i - prev);
+            bn[j] = bn[prev] + u * (bn[i] - bn[prev]);
+            be[j] = be[prev] + u * (be[i] - be[prev]);
+          } else {
+            const k = prev >= 0 ? prev : i;
+            if (k < 0 || k >= count) continue;
+            const f = Math.max(0, 1 - (Math.abs(j - k) * AXIS_SPACING) / 1000);
+            bn[j] = bn[k] * f;
+            be[j] = be[k] * f;
+          }
+        }
+        prev = i;
+      }
+      for (let i = 0; i < count; i++) {
+        north[i] += bn[i];
+        east[i] += be[i];
+      }
+      clearOfRunway(north as unknown as number[], east as unknown as number[]);
+    }
     const s = new Float64Array(count);
     for (let i = 1; i < count; i++) s[i] = s[i - 1] + Math.hypot(north[i] - north[i - 1], east[i] - east[i - 1]);
     const area = new Float64Array(count);
@@ -1236,7 +1274,10 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       }
     }
     // Nothing may cross itself: a curl the pull onto the parent (or a loop the cutoffs missed) folds in is cut out.
-    untangle(north, east, valleyS);
+    for (let g = 0, len = -1; g < 16 && north.length !== len; g++) {
+      len = north.length;
+      untangle(north, east, valleyS);
+    }
     steps = north.length - 1;
     const count = steps + 1;
     const s = new Float64Array(count);
@@ -1439,7 +1480,39 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     for (let j = 0; j < ns; j++) {
       const st = traced.streams[j];
       const m = st.north.length;
-      if (m < 4 || st.s[m - 1] < 4 * LAMBDA_MIN) continue;
+      if (m < 4 || st.s[m - 1] < 4 * LAMBDA_MIN) {
+        if (m >= 4) {
+          const nn = Array.from(st.north);
+          const ee = Array.from(st.east);
+          const ix = Array.from({ length: m }, (_, i) => i);
+          for (let g = 0, len = -1; g < 16 && nn.length !== len; g++) {
+            len = nn.length;
+            untangle(nn, ee, ix);
+          }
+          if (nn.length < m) {
+            const pos = Float64Array.from(ix);
+            const idx = Float64Array.from({ length: m }, (_, i) => i);
+            const at = (arr: Float64Array): Float64Array => Float64Array.from(pos, (v) => sampleAt(idx, arr, v));
+            st.area = at(st.area);
+            st.breach = at(st.breach);
+            st.cut = at(st.cut);
+            st.halfWidth = at(st.halfWidth);
+            st.level = at(st.level);
+            for (let i = 1; i < nn.length; i++) st.level[i] = Math.min(st.level[i], st.level[i - 1]);
+            if (st.held > 0) {
+              let h = 0;
+              while (h < nn.length && pos[h] <= st.held - 1 + 1e-6) h++;
+              st.held = Math.max(1, h);
+            }
+            st.north = Float64Array.from(nn);
+            st.east = Float64Array.from(ee);
+            const s2 = new Float64Array(nn.length);
+            for (let i = 1; i < nn.length; i++) s2[i] = s2[i - 1] + Math.hypot(nn[i] - nn[i - 1], ee[i] - ee[i - 1]);
+            st.s = s2;
+          }
+        }
+        continue;
+      }
       // (Its floor and law as a river's: roomOfLine, lawAlong.)
       const S = gradientOf(st.s, st.level, st.area);
       const R = roomOfLine(st.north, st.east, st.s, st.level, st.area, S, false);
@@ -2266,7 +2339,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       te: rows.te,
       row,
       rows: { idx, n: Float64Array.from(idx, (i) => c.north[i]), e: Float64Array.from(idx, (i) => c.east[i]), tn: Float32Array.from(idx, (i) => rows.tn[i]), te: Float32Array.from(idx, (i) => rows.te[i]) },
-      twin: { north: c.north, east: c.east, tn: rows.tn, te: rows.te, bedR: f.bedR, bedL: f.bedL, wetR: f.wetR, wetL: f.wetL, K, ph, ps, rows: idx },
+      twin: { north: c.north, east: c.east, tn: rows.tn, te: rows.te, bedR: f.bedR, bedL: f.bedL, wetR: f.wetR, wetL: f.wetL, K, ph, ps, level: c.level, rows: idx },
     };
     formStats.braided += KS.filter((k) => k > 1.5).length;
   }
@@ -2393,6 +2466,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         const fm = formOfLine[li];
         o.wet = undefined;
         o.braidK = 0;
+        o.braidPast = -1;
         if (fm) {
           // A river's bed, water edge, depth and bank on this side (the law's, channelForm.ts).
           const bd2 = side > 0 ? fm.bedR : fm.bedL;
@@ -2405,27 +2479,50 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
           // (A braided bed's threads, read as its ribbon reads them where it is drawn: channelForm.ts braidTwin.)
           const bz = fm.braid;
           const bw = bz ? bz.rows : null;
-          if (bz && bw && (bz.K[i] > 1 || bz.K[i + 1] > 1) && rowFrame(bw.n, bw.e, bw.tn, bw.te, rowAt(bw.idx, i), pn, pe) && braidTwin(bz.twin, rowHit.j, pn, pe) && !twinHit.main) {
-            o.braidK = twinHit.K;
-            o.braidU = twinHit.u;
-            o.braidUm = twinHit.um;
-            o.braidHb = twinHit.hb;
-            o.braidPh = twinHit.ph;
-            o.braidPs = twinHit.ps;
-            o.braidW = twinHit.w;
+          if (bz && bw && (bz.K[i] > 1 || bz.K[i + 1] > 1) && rowFrame(bw.n, bw.e, bw.tn, bw.te, rowAt(bw.idx, i), pn, pe)) {
+            if (braidTwin(bz.twin, rowHit.j, pn, pe)) {
+              if (!twinHit.main) {
+                o.braidK = twinHit.K;
+                o.braidU = twinHit.u;
+                o.braidUm = twinHit.um;
+                o.braidHb = twinHit.hb;
+                o.braidPh = twinHit.ph;
+                o.braidPs = twinHit.ps;
+                o.braidW = twinHit.w;
+                o.braidLevel = twinHit.level;
+              }
+            } else {
+              const rj = rowHit.j;
+              const iA = bw.idx[rj];
+              const iB = bw.idx[rj + 1];
+              const rt = rowHit.t;
+              if (bz.K[iA] > 1.05 || bz.K[iB] > 1.05) {
+                const bR = fm.bedR[iA] + (fm.bedR[iB] - fm.bedR[iA]) * rt;
+                const bL = fm.bedL[iA] + (fm.bedL[iB] - fm.bedL[iA]) * rt;
+                const hbRow = 0.5 * (bR + bL);
+                if (hbRow > 25) {
+                  const past = rowHit.x >= 0 ? rowHit.x - bR : -rowHit.x - bL;
+                  if (past >= -4 && past <= 48) {
+                    o.braidPast = Math.max(0, past);
+                    o.braidBankLvl = r.level[iA] + (r.level[iB] - r.level[iA]) * rt;
+                  }
+                }
+              }
+            }
           }
         }
         const br = breachReach[li];
+        const hasBraid = (o.braidK !== undefined && o.braidK > 1) || (o.braidPast !== undefined && o.braidPast >= 0);
         if (br && (br[i] > 0 || br[i + 1] > 0)) {
           const b = (r as { breach: Float64Array }).breach;
           o.breach = b[i] + (b[i + 1] - b[i]) * t;
           o.reach = Math.max(br[i], br[i + 1]);
           const ct = (r as { cut: Float64Array }).cut;
           o.cut = ct[i] + (ct[i + 1] - ct[i]) * t;
-          return (o.braidK !== undefined && o.braidK > 1) || dist < Math.max(Math.max(o.halfWidth, fm ? o.bed : 0) + CHANNEL_MARGIN, o.reach);
+          return hasBraid || dist < Math.max(Math.max(o.halfWidth, fm ? o.bed : 0) + CHANNEL_MARGIN, o.reach);
         }
         o.breach = 0;
-        return (o.braidK !== undefined && o.braidK > 1) || dist < Math.max(o.halfWidth, fm ? o.bed : 0) + CHANNEL_MARGIN;
+        return hasBraid || dist < Math.max(o.halfWidth, fm ? o.bed : 0) + CHANNEL_MARGIN;
       });
     },
   };
@@ -2470,7 +2567,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
             braidAbsU = au;
             braidU = twinHit.u;
             braidHb = twinHit.hb;
-            braidLevel = r.level[i] + (r.level[i + 1] - r.level[i]) * t;
+            braidLevel = twinHit.level || (r.level[i] + (r.level[i + 1] - r.level[i]) * t);
             braidHw = r.halfWidth[i] + (r.halfWidth[i + 1] - r.halfWidth[i]) * t;
             braidS = r.s[i] + (r.s[i + 1] - r.s[i]) * t;
           }
@@ -2841,7 +2938,7 @@ function untangle(n: number[], e: number[], vs: number[]): void {
       be0 = Math.min(be0, e[i]);
       be1 = Math.max(be1, e[i]);
     }
-    const CELL = Math.min(200, Math.max(seg, 25, Math.sqrt(((bn1 - bn0 + 400) * (be1 - be0 + 400)) / UNTANGLE_CELLS)));
+    const CELL = Math.max(seg + 1, Math.min(200, Math.max(25, Math.sqrt(((bn1 - bn0 + 400) * (be1 - be0 + 400)) / UNTANGLE_CELLS))));
     const cn = new Int32Array(m);
     const ce = new Int32Array(m);
     let n0 = Infinity;

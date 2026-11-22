@@ -32,6 +32,7 @@ import { volcanoBound, volcanoHeight, volcanoMerge } from './volcano';
 import { setGeneratedAirfields, type Airfield } from '../airfields';
 import { siteAirfields } from './airfieldSiting';
 import { siteRunway, type RunwayFit } from './homeSiting';
+import { COURSE_ON, setCourseRaster } from './courses';
 
 // The home field (core/world.ts AIRPORT): its elevation and runway heading change with the world seed.
 let ELEV = AIRPORT.elevation;
@@ -925,6 +926,7 @@ export const seededModel = (): SeededModel | null => lastModel;
 export let siteMs = 0;
 function buildWater(): void {
   setGullyNet(null);
+  setCourseRaster(null, null, null, null);
   if (SEEDED) {
     // The macro model first (erosion.ts): the steady state of uplift and river incision over the noise ground's
     // drainage, which the terrain takes as its macro ground. Then the drainage, routed over the model's cells (they
@@ -1007,6 +1009,7 @@ function buildWater(): void {
         const t1 = performance.now();
         const slopes = (handed && handed.slopes) || mountainSlopes(inputs, sp, eroded);
         if (!(handed && handed.slopes)) modelMs += performance.now() - t1;
+        if (slopes.lines) eroded.floorLines = slopes.lines;
         attachSlopes(eroded, slopes);
         // (The slopes' own routing, with its catchment: the streams follow it, gullies.ts.)
         setGullyNet(gullyNetOf(slopes));
@@ -1021,10 +1024,68 @@ function buildWater(): void {
           if (v !== v) continue;
           if (Math.fround(naturalHeightSmooth(-DOMAIN_HALF + Math.floor(k / RASTER_N) * LAKE_RASTER, -DOMAIN_HALF + (k % RASTER_N) * LAKE_RASTER)) !== v) fresh = false;
         }
-        streamRaster = fresh && given2 ? given2 : smoothRaster(drainage, naturalHeightSmooth);
+        const rawRoute = fresh && given2 ? given2 : smoothRaster(drainage, naturalHeightSmooth);
+        streamRaster = rawRoute;
+        if (COURSE_ON && slopes.lines && slopes.lines.level) {
+          // A raster point's ground is the lowest of its cell, the slope-channel courses through it at their drawn
+          // level (a V's crease lies between the raster points, which would otherwise see only its walls), and it
+          // drains along that course to the cell the course runs on into. Keep `rawRoute` clean in `lastModel.route`
+          // so ROUTE_CHECKS passes on worker hand-offs.
+          streamRaster = rawRoute.slice();
+          const C = slopes.lines;
+          const NR = RASTER_N * RASTER_N;
+          const best = new Float32Array(NR).fill(Infinity);
+          const own = new Int32Array(NR).fill(-1);
+          const ownK = new Int32Array(NR).fill(-1);
+          const cellOf = (k: number): number => {
+            const i = Math.round((C.north[k] + DOMAIN_HALF) / LAKE_RASTER);
+            const j = Math.round((C.east[k] + DOMAIN_HALF) / LAKE_RASTER);
+            return i < 0 || j < 0 || i >= RASTER_N || j >= RASTER_N ? -1 : i * RASTER_N + j;
+          };
+          const bestD = new Float32Array(NR).fill(Infinity);
+          for (let p = 0; p < C.start.length - 1; p++) {
+            if (!(C.cap[p] & 4)) continue;
+            for (let k = C.start[p]; k < C.start[p + 1]; k++) {
+              const q = cellOf(k);
+              if (q < 0) continue;
+              const d = Math.hypot(C.north[k] + DOMAIN_HALF - Math.floor(q / RASTER_N) * LAKE_RASTER, C.east[k] + DOMAIN_HALF - (q % RASTER_N) * LAKE_RASTER);
+              if (!(d < bestD[q])) continue;
+              bestD[q] = d;
+              own[q] = p;
+              ownK[q] = k;
+            }
+          }
+          for (let q = 0; q < NR; q++) {
+            if (own[q] < 0) continue;
+            const v = streamRaster[q];
+            if (!(v === v)) {
+              own[q] = -1;
+              continue;
+            }
+            best[q] = naturalHeightSmooth(C.north[ownK[q]], C.east[ownK[q]]);
+          }
+          const dir = new Int8Array(NR).fill(-1);
+          const DI = [-1, -1, -1, 0, 0, 1, 1, 1];
+          const DJ = [-1, 0, 1, -1, 1, -1, 0, 1];
+          for (let q = 0; q < NR; q++) {
+            if (own[q] < 0) continue;
+            if (best[q] < streamRaster[q]) streamRaster[q] = best[q];
+            const p = own[q];
+            for (let k = ownK[q] + 1; k < C.start[p + 1]; k++) {
+              const r = cellOf(k);
+              if (r === q) continue;
+              if (r < 0) break;
+              const di = Math.floor(r / RASTER_N) - Math.floor(q / RASTER_N);
+              const dj = (r % RASTER_N) - (q % RASTER_N);
+              for (let a = 0; a < 8; a++) if (DI[a] === di && DJ[a] === dj) dir[q] = a;
+              break;
+            }
+          }
+          setCourseRaster(dir, own, ownK, C);
+        }
         mask.changed.length = 0;
         if (!fresh) modelMs += performance.now() - t2;
-        lastModel = { seed: worldSeed(), key, lattice: T, slopes, route: streamRaster };
+        lastModel = { seed: worldSeed(), key, lattice: T, slopes, route: rawRoute };
         if (modelOnly) throw MODEL_DONE;
       }, slopePinned, slopeWall, () => streamRaster);
     } catch (e) {
@@ -1101,18 +1162,24 @@ function withCourses(L: FloorLines, axes: ReadonlyArray<{ north: ArrayLike<numbe
   const e = Array.from(L.east);
   const h = Array.from(L.half);
   const cap = Array.from(L.cap);
+  const lv = L.level ? Array.from(L.level) : null;
   for (const a of axes) {
     const m = a.north.length;
     if (m < 2) continue;
+    let low = Infinity;
     for (let i = 0; i < m; i++) {
       n.push(a.north[i]);
       e.push(a.east[i]);
       h.push(Math.max(floorHalfFor(a.area[i]), a.half[i]));
+      if (lv) {
+        low = Math.min(low, seededNaturalHeight(a.north[i], a.east[i], false, true, false));
+        lv.push(low);
+      }
     }
     start.push(n.length);
     cap.push(3);
   }
-  return { start: Int32Array.from(start), north: Float32Array.from(n), east: Float32Array.from(e), half: Float32Array.from(h), cap: Uint8Array.from(cap) };
+  return { start: Int32Array.from(start), north: Float32Array.from(n), east: Float32Array.from(e), half: Float32Array.from(h), cap: Uint8Array.from(cap), ...(lv ? { level: Float32Array.from(lv) } : {}) };
 }
 /**
  * The threshold-hillslope pass (hillslopes.ts) over a seeded world's mountains: its weight from the orogen's mountain
@@ -1466,24 +1533,38 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
   // trough of the thread's own depth: what the ribbon draws wet is wet where the sim asks (landing, ditching).
   for (let j = 0; j < nc; j++) {
     const c = channelNear[j];
+    if (c.braidPast !== undefined && c.braidPast >= 0 && !(c.braidK !== undefined && c.braidK > 1)) {
+      let shielded = false;
+      for (let q = 0; q < nc && !shielded; q++) {
+        const o = channelNear[q];
+        if (o.line !== c.line && o.level > c.braidBankLvl! + 0.3 && o.dist < (o.wet ?? o.halfWidth) + BRAID_SHIELD) shielded = true;
+      }
+      if (!shielded) {
+        const past = c.braidPast;
+        const top = Math.max(BRAID_BAR_LOW, 0.6 * (c.bankH ?? 1));
+        const apron = c.braidBankLvl! + top + 0.04 * Math.min(past, 18) + 0.45 * Math.max(0, past - 18);
+        h += (smin(h, apron, 1.5) - h) * open * (1 - smooth(24, 48, past));
+      }
+    }
     if (c.braidK === undefined || !(c.braidK > 1) || !(c.braidHb! > 1)) continue;
     // (Not within BRAID_SHIELD m of another river's water standing higher; minor streams well inside a wide braided bed
     // already grade down to the shingle and do not raise levees over it.)
     let shielded = false;
+    const bLvl = c.braidLevel ?? c.level;
     const deepInBed = c.braidHb! > 35 && (1 - Math.abs(c.braidU!)) * c.braidHb! > 10;
     for (let q = 0; q < nc && !shielded; q++) {
       const o = channelNear[q];
-      if (o.line !== c.line && !(deepInBed && o.kind === 1) && o.level > c.level + 0.3 && o.dist < (o.wet ?? o.halfWidth) + BRAID_SHIELD) shielded = true;
+      if (o.line !== c.line && !(deepInBed && o.kind === 1) && o.level > bLvl + 0.3 && o.dist < (o.wet ?? o.halfWidth) + BRAID_SHIELD) shielded = true;
     }
     if (shielded) continue;
     const top = Math.max(BRAID_BAR_LOW, 0.6 * (c.bankH ?? 1));
-    h += (Math.min(h, c.level + BRAID_BAR_LOW + (top - BRAID_BAR_LOW) * Math.min(1, Math.abs(c.braidU!))) - h) * open;
+    h += (Math.min(h, bLvl + BRAID_BAR_LOW + (top - BRAID_BAR_LOW) * Math.min(1, Math.abs(c.braidU!))) - h) * open;
     const inside = braidAt(c.braidU!, c.braidUm!, c.braidHb!, c.braidK, c.braidPh!, c.braidPs!, c.braidW!);
     if (inside > 0) {
       const half = braidHit.half;
       const q = 1 - inside / half;
-      h += (Math.min(h, c.level - threadDepth(2 * half, 0) * (1 - q * q)) - h) * open;
-      if (h < c.level && open >= 1) out.river = Math.max(out.river, c.level);
+      h += (Math.min(h, bLvl - threadDepth(2 * half, 0) * (1 - q * q)) - h) * open;
+      if (h < bLvl && open >= 1) out.river = Math.max(out.river, bLvl);
     }
   }
   return h;
