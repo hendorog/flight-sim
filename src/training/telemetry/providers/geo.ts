@@ -8,7 +8,7 @@
 
 import { FT, NM, RAD } from '../../../core/math';
 import { C172 } from '../../../core/c172';
-import { AIRPORT, runwayCoords } from '../../../core/world';
+import { AIRPORT, onHomeAirport, runwayCoords } from '../../../core/world';
 import { AIM_POINT, GLIDE_PATH } from '../../../sim/scenarios';
 import { airportSurface, HOLD_LINE_V, isOnRunway } from '../../../world/airport/layout';
 import { classifyCircuitLeg } from '../../geo/circuit';
@@ -16,7 +16,10 @@ import type { CircuitLeg, SignalDef, SignalFrame, SignalProvider, TelemetrySourc
 import { defineSignals } from './define';
 
 const HALF_LENGTH = AIRPORT.runway.length / 2;
-const RWY_HDG_DEG = AIRPORT.runway.heading * RAD;
+let RWY_HDG_DEG = AIRPORT.runway.heading * RAD;
+onHomeAirport(() => {
+  RWY_HDG_DEG = AIRPORT.runway.heading * RAD;
+});
 /** The runway's protected area (inside the hold lines) extends this far beyond each runway end, m. */
 const PROTECTED_BEYOND_END_M = 60;
 

@@ -1,0 +1,13 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+BC seed 1: thread points 3727: farmland 0 (0.0 %), forest 8 (0.2 %), off the painted bed 139 (3.7 %); bar points 54127: farmland 258 (0.5 %), forest 22510 (41.6 %), off the painted bed 1817 (3.4 %)
+BC seed 42: thread points 2960: farmland 0 (0.0 %), forest 0 (0.0 %), off the painted bed 64 (2.2 %); bar points 45166: farmland 336 (0.7 %), forest 18554 (41.1 %), off the painted bed 1067 (2.4 %)
+BC seed 777777: thread points 3453: farmland 0 (0.0 %), forest 4 (0.1 %), off the painted bed 84 (2.4 %); bar points 55061: farmland 380 (0.7 %), forest 24760 (45.0 %), off the painted bed 1702 (3.1 %)
+BC seed 7: thread points 4357: farmland 0 (0.0 %), forest 1 (0.0 %), off the painted bed 116 (2.7 %); bar points 68156: farmland 588 (0.9 %), forest 28367 (41.6 %), off the painted bed 2415 (3.5 %)
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  12:09:49
+   Duration  211.57s (tests 100%)
+

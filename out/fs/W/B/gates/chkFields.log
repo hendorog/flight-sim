@@ -1,0 +1,41 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+AF seed 1 KIVY 21732,37792 elev 111
+AF seed 1 KMRH 35596,27852 elev 70
+AF seed 1 KDNS 17613,26306 elev 189
+AF seed 1 KWSB 11466,13842 elev 153
+AF seed 1 KTHR 41605,18025 elev 227
+AF seed 1 KDNW 173,20048 elev 231
+AF seed 1 KBRM 30406,11629 elev 320
+AF seed 1 KNRH 5667,30469 elev 326
+AF seed 42 KWSH 20322,40042 elev 71
+AF seed 42 KELM 8258,41712 elev 74
+AF seed 42 KTHR 40034,21476 elev 95
+AF seed 42 KASH 43579,-3525 elev 81
+AF seed 42 KIVY 21488,160 elev 196
+AF seed 42 KSND 44519,7462 elev 85
+AF seed 42 KNRC 16318,16245 elev 430
+AF seed 42 KOKF 32001,32546 elev 217
+AF seed 777777 KPMF 29629,18013 elev 525
+AF seed 777777 KHLT 43872,10078 elev 778
+AF seed 777777 KFRM 22492,28347 elev 342
+AF seed 777777 KPMH 35764,-483 elev 1028
+AF seed 777777 KRDM -37737,14255 elev 613
+AF seed 777777 KMRH 10447,41990 elev 647
+AF seed 777777 KTHR -14576,343 elev 748
+AF seed 777777 KLNG 44031,-12076 elev 772
+AF seed 7 KLYN -44289,11934 elev 34
+AF seed 7 KBRM -14575,40130 elev 50
+AF seed 7 KMRH -18120,14451 elev 72
+AF seed 7 KWSH -1677,24115 elev 45
+AF seed 7 KCLC 7967,18600 elev 51
+AF seed 7 KNRD -32294,10593 elev 26
+AF seed 7 KIVY -3701,35955 elev 75
+AF seed 7 KGLN 16153,-7979 elev 607
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  10:04:28
+   Duration  143.93s (tests 99%)
+

@@ -1,0 +1,3 @@
+rr42-1 seed=42&camPos=-33149,-70547,752&camLook=-34209,-69487,152&fov=55
+d42-plan seed=42&camPos=-34232,-69461,3200&camLook=-34231,-69461,150&fov=55
+d42-low seed=42&camPos=-34500,-69800,420&camLook=-34232,-69461,150&fov=55

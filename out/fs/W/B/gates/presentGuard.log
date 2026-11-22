@@ -1,0 +1,9 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  09:57:31
+   Duration  3.58s (tests 61%, transform 21%, import 18%)
+

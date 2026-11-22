@@ -122,7 +122,7 @@ function stationCall(s: RadioSituation): string {
 
 /** The holding point for a runway end at the home field (layout.ts): the outermost connector serving it. */
 function holdingPoint(end: RunwayEnd): string {
-  const ids = RUNWAY_CONNECTORS.filter((c) => c.runway === (end === 0 ? '07' : '25')).map((c) => c.name);
+  const ids = RUNWAY_CONNECTORS.filter((c) => c.end === end).map((c) => c.name);
   return end === 0 ? ids[0] : ids[ids.length - 1];
 }
 

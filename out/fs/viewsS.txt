@@ -1,0 +1,9 @@
+floor seed=42&camPos=-12600,-40800,1300&camLook=-13600,-41700,600
+wind seed=42&camPos=-11700,-40700,1000&camLook=-12718,-41720,600
+face seed=42&camPos=-11500,-40200,1050&camLook=-13500,-42300,550
+foot seed=42&camPos=-12900,-42300,950&camLook=-13450,-41650,680
+fields seed=42&camPos=-12300,-42400,950&camLook=-12900,-41500,690
+ww1 seed=1&camPos=-23850,113700,450&camLook=-23350,114100,110
+ww42 seed=42&camPos=-71800,20100,1000&camLook=-71300,20500,700
+ww7 seed=777777&camPos=21000,-144450,650&camLook=21500,-144050,330
+floorNR seed=42&camPos=-12600,-40800,1300&camLook=-13600,-41700,600&rills=0

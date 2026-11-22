@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseParams } from '../../src/sim/params';
 import { decideBoot, type FlightSnapshot, type KeyValueStore } from '../../src/sim/resume';
-import { chooseSeed, randomSeed, RANDOM_SEED_MAX, saveSeedPreference, SEED_PREF_KEY, seedDevChoiceUrl, seedSwitchUrl } from '../../src/sim/seedChoice';
+import { chooseSeed, lessonSeedZeroUrl, randomSeed, RANDOM_SEED_MAX, saveSeedPreference, SEED_PREF_KEY, seedDevChoiceUrl, seedSwitchUrl } from '../../src/sim/seedChoice';
 
 function memoryStore(init: Record<string, string> = {}): KeyValueStore & { data: Record<string, string> } {
   const data = { ...init };
@@ -35,6 +35,27 @@ describe('chooseSeed', () => {
     expect(chooseSeed(parseParams(''), memoryStore({ [SEED_PREF_KEY]: 'junk' }))).toEqual({ seed: 0, source: 'default' });
     expect(chooseSeed(parseParams(''), throwing)).toEqual({ seed: 0, source: 'default' });
     expect(chooseSeed(parseParams(''), null)).toEqual({ seed: 0, source: 'default' });
+  });
+
+  it('flies a lesson in today\'s world whatever the URL or the preference says', () => {
+    const stored = memoryStore({ [SEED_PREF_KEY]: '42' });
+    expect(chooseSeed(parseParams('?lesson=L04'), stored)).toEqual({ seed: 0, source: 'lesson' });
+    expect(chooseSeed(parseParams('?lesson=L04&seed=7'), stored)).toEqual({ seed: 0, source: 'lesson' });
+    expect(stored.data[SEED_PREF_KEY]).toBe('42');
+  });
+
+  it('reloads a lesson started in a seeded world into seed 0, keeping the aircraft and era', () => {
+    const u = new URL(lessonSeedZeroUrl('https://x.test/index.html?aircraft=pa38&era=present&seed=42&scenario=cruise&resume=0', 'L10', { phase: 'climb', brief: false, standard: 'faa' }));
+    expect(u.searchParams.get('seed')).toBeNull();
+    expect(u.searchParams.get('scenario')).toBeNull();
+    expect(u.searchParams.get('resume')).toBeNull();
+    expect(u.searchParams.get('aircraft')).toBe('pa38');
+    expect(u.searchParams.get('era')).toBe('present');
+    expect(u.searchParams.get('lesson')).toBe('L10');
+    expect(u.searchParams.get('phase')).toBe('climb');
+    expect(u.searchParams.get('brief')).toBe('0');
+    expect(u.searchParams.get('standard')).toBe('faa');
+    expect(chooseSeed(parseParams(u.search), memoryStore({ [SEED_PREF_KEY]: '42' }))).toEqual({ seed: 0, source: 'lesson' });
   });
 
   it('stores the choice, and survives a store that throws', () => {

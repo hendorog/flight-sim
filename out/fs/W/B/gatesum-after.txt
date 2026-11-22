@@ -1,0 +1,35 @@
+wallsGate stream+chain valley > 30 m km: 120.1 / 106.5 / 122.0
+group class 2: 2 stream/chain on a floor beside a lower floor        2517 r   415.3 km  594>30 |  2400 r   393.7 km  549>30 |  2625 r   428.1 km  624>30
+group class 3: 3 tributary beside its receiver before the junction    359 r    71.9 km  134>30 |   372 r    65.4 km  105>30 |   393 r    77.3 km  120>30
+group class 5: 5 level over the natural ground at its centre          147 r    39.9 km   98>30 |   139 r    32.5 km   75>30 |   184 r    47.2 km  122>30
+drawnGate (i) corr: 0.735 / 0.746 / 0.748
+drawnGate (ii) thin: 0 / 0 / 0
+chkWetArea: 
+endsGate sinks now: 0 0 0 0; seed 7: 
+endsGate DRY/dead lines: filled by the dead-end rule (FILL_DEAD_ENDS): none; pond outlets given their inflow 0 | filled by the dead-end rule (FILL_DEAD_ENDS): none; pond outlets given their inflow 0 | filled by the dead-end rule (
+outletLoops: seed 1: outlets 16; loops 0; cycles through lakes and ponds 0 | seed 42: outlets 17; loops 0; cycles through lakes and ponds 0 | seed 777777: outlets 20; loops 0; cycles through lakes and ponds 0 | seed 7: outlets 15;
+cycles: seed 1: lines 6366 outlets 13 cycles 0 | seed 42: lines 6538 outlets 17 cycles 0 | seed 777777: lines 6758 outlets 18 cycles 0 | seed 7: lines 7787 outlets 15 cycles 0
+selfCross: seed 1: 0 self-crossings | seed 7: 0 self-crossings | seed 42: 0 self-crossings | seed 1234: 0 self-crossings | seed 99991: 0 self-crossings | seed 777777: 0 self-crossings
+headFeed dry heads: 16 / 8 / 7
+chkPitch: seed 1: pitch units shaped 861961 of 861961 found (100.0 %), samples inserted 335093; pitchOn km 12732 of which segment  | seed 42: pitch units shaped 868364 of 868364 found (100.0 %), samples inserted 326879; pitchOn km
+fieldBanks >2.5/>4 m: 2170 m, > 4 m 50 / 1960 m, > 4 m 280 / 16450 m, > 4 m 430
+heldOver in reach >3 / >5: 777777: 17 / 9 | 1: 3 / 0 | 42: 20 / 8
+dryNear hidden m: 476 / 1948 / 403
+overGround >10 m points: - / - / -
+waterWalls >2 m %: - / - / -
+stepScan >100 m: 0 / 0 / 0
+lakeStats: seed 1: 73 ponds -> 71 lakes (2 left dry, 2 of them on a river) + 39 extra pools; water 636 km²; level lowered | seed 42: 74 ponds -> 74 lakes (0 left dry, 0 of them on a river) + 63 extra pools; water 585 km²; level lo
+homeCheck ok: 0
+riverZero: - / - / -
+worstN s1: WN seed 1 TOTAL step: across every line, steps over 50 m 8, over 100 m 0 (25 m samples) | WN seed 1 TOTAL poolcut: 186 falls; pool water under the ground 60 m beside it (lower side) p50 19.0 p90 54.8 max 65.6 m; over 5 
+worstN s42: WN seed 42 TOTAL step: across every line, steps over 50 m 8, over 100 m 0 (25 m samples) | WN seed 42 TOTAL poolcut: 304 falls; pool water under the ground 60 m beside it (lower side) p50 17.1 p90 51.4 max 65.5 m; over
+worstN s777777: WN seed 777777 TOTAL step: across every line, steps over 50 m 92, over 100 m 2 (25 m samples) | WN seed 777777 TOTAL poolcut: 214 falls; pool water under the ground 60 m beside it (lower side) p50 17.8 p90 50.5 max
+feedCount: 
+tr-owner: 
+beltOut: 
+fieldFaces: 
+underLake: 
+presentGuard: 2 passed (2)
+suite: 749 passed (749)
+suite long:  Test Files  7 passed (7)       Tests  80 passed (80) 
+fields: 0 lines

@@ -1,0 +1,21 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+seed 1 (i): 7456 profiles; drawn width / law p10 0.88 p25 1.02 p50 1.25 p75 1.67 p90 2.43; within x0.6-1.6 72.2 %; corr(log width, log A) 0.735
+seed 1 (ii): 6118 junctions; receiver water under 0.8x the joining line's: 0
+seed 1 (iv): stream sink ends: plain 0, hill 0, mountain 0 (of the hill and mountain ones: chain streams 0, f3's 0)
+seed 1 (iii): non-outlet stream samples with a breach wider than the bed: 0 of 1683543 on 0 lines; widest breach half-width 0 m
+seed 42 (i): 7726 profiles; drawn width / law p10 0.90 p25 1.06 p50 1.32 p75 1.89 p90 2.61; within x0.6-1.6 65.9 %; corr(log width, log A) 0.746
+seed 42 (ii): 6238 junctions; receiver water under 0.8x the joining line's: 0
+seed 42 (iv): stream sink ends: plain 0, hill 0, mountain 0 (of the hill and mountain ones: chain streams 0, f3's 0)
+seed 42 (iii): non-outlet stream samples with a breach wider than the bed: 0 of 1766545 on 0 lines; widest breach half-width 0 m
+seed 777777 (i): 7626 profiles; drawn width / law p10 0.88 p25 1.02 p50 1.23 p75 1.61 p90 2.30; within x0.6-1.6 74.0 %; corr(log width, log A) 0.748
+seed 777777 (ii): 6526 junctions; receiver water under 0.8x the joining line's: 0
+seed 777777 (iv): stream sink ends: plain 0, hill 0, mountain 0 (of the hill and mountain ones: chain streams 0, f3's 0)
+seed 777777 (iii): non-outlet stream samples with a breach wider than the bed: 0 of 1778258 on 0 lines; widest breach half-width 0 m
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  09:57:31
+   Duration  102.51s (tests 99%)
+

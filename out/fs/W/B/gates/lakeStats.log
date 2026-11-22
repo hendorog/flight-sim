@@ -1,0 +1,12 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+seed 1: 73 ponds -> 71 lakes (2 left dry, 2 of them on a river) + 39 extra pools; water 636 km²; level lowered by the flood: median 0.0 m, p90 0.0, max 7.1, 0 by more than 10 m
+seed 42: 74 ponds -> 74 lakes (0 left dry, 0 of them on a river) + 63 extra pools; water 585 km²; level lowered by the flood: median 0.0 m, p90 0.0, max 22.6, 1 by more than 10 m
+seed 777777: 62 ponds -> 61 lakes (1 left dry, 0 of them on a river) + 52 extra pools; water 623 km²; level lowered by the flood: median 0.0 m, p90 0.0, max 38.4, 1 by more than 10 m
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  09:57:31
+   Duration  95.50s (tests 99%, import 1%)
+

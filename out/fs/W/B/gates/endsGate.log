@@ -1,0 +1,209 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+seed 1: lines with A >= 10 km2 at their end: 3841; ends {"sea":161,"join":3627,"edge":22,"lake":31}; trace-time ends {"channel":5821,"sea":98,"edge":7,"lake":35}
+
+  streams ending 'sink'/'stuck' now (any A): 0
+    
+  pond sizes (raster points of 6.25 ha), largest: ; total 0.0 km2
+  ponds (largest first): 
+  filled by the dead-end rule (FILL_DEAD_ENDS): none; pond outlets given their inflow 0
+  ponds closed (no outlet): none
+  ponds made 0; pondWhy undefined
+  climbed reaches (A >= 10, water > 10 m under the routing ground for >= 500 m): 80 lines, 55.7 km
+    line 6 kind 0 A 2557.0 0.75 km under the ground by > 10 m (max 18 m) ending at 1419,97154, end -
+    line 77 kind 0 A 901.0 0.99 km under the ground by > 10 m (max 29 m) ending at -4958,93810, end -
+    line 82 kind 0 A 2244.0 0.55 km under the ground by > 10 m (max 67 m) ending at -7350,-110486, end -
+    line 96 kind 0 A 688.0 0.82 km under the ground by > 10 m (max 28 m) ending at -59982,28075, end -
+    line 102 kind 0 A 2407.0 0.52 km under the ground by > 10 m (max 14 m) ending at -23808,106183, end -
+    line 117 kind 0 A 2869.0 1.00 km under the ground by > 10 m (max 18 m) ending at -20351,-94949, end -
+    line 127 kind 0 A 154.0 0.85 km under the ground by > 10 m (max 27 m) ending at -26770,124398, end -
+    line 135 kind 0 A 548.0 0.50 km under the ground by > 10 m (max 12 m) ending at 11961,86102, end -
+    line 136 kind 0 A 423.0 1.15 km under the ground by > 10 m (max 18 m) ending at -7518,132589, end -
+    line 166 kind 0 A 127.7 0.54 km under the ground by > 10 m (max 16 m) ending at -104850,-21675, end -
+    line 207 kind 0 A 94.0 0.60 km under the ground by > 10 m (max 14 m) ending at -103291,2523, end -
+    line 261 kind 0 A 7522.0 0.72 km under the ground by > 10 m (max 28 m) ending at -85435,-104705, end -
+    line 344 kind 0 A 2578.0 0.57 km under the ground by > 10 m (max 11 m) ending at 5710,-3755, end -
+    line 402 kind 0 A 185.0 0.52 km under the ground by > 10 m (max 15 m) ending at 4669,-49249, end -
+    line 485 kind 1 A 46.7 0.75 km under the ground by > 10 m (max 47 m) ending at 15534,-118282, end channel
+    line 721 kind 1 A 13.7 0.51 km under the ground by > 10 m (max 52 m) ending at 7510,-67485, end channel
+    line 737 kind 1 A 43.3 0.58 km under the ground by > 10 m (max 55 m) ending at -10985,-34795, end channel
+    line 891 kind 1 A 65.4 0.56 km under the ground by > 10 m (max 24 m) ending at -712,-63782, end channel
+    line 916 kind 1 A 31.2 0.56 km under the ground by > 10 m (max 55 m) ending at -12262,-95480, end channel
+    line 936 kind 1 A 16.0 0.60 km under the ground by > 10 m (max 36 m) ending at -18980,-90225, end channel
+    line 1067 kind 1 A 21.2 0.62 km under the ground by > 10 m (max 34 m) ending at -43777,-17781, end channel
+    line 1161 kind 1 A 62.8 0.53 km under the ground by > 10 m (max 45 m) ending at -45087,-92968, end channel
+    line 1583 kind 1 A 10.1 0.51 km under the ground by > 10 m (max 49 m) ending at -40492,-135232, end channel
+    line 1734 kind 1 A 15.3 0.52 km under the ground by > 10 m (max 56 m) ending at 39492,105768, end channel
+    line 1772 kind 1 A 39.6 0.52 km under the ground by > 10 m (max 21 m) ending at -17500,29667, end channel
+    line 2248 kind 1 A 37.1 0.53 km under the ground by > 10 m (max 54 m) ending at 38337,113984, end channel
+    line 2300 kind 1 A 34.7 0.54 km under the ground by > 10 m (max 44 m) ending at 62291,-113921, end channel
+    line 2438 kind 1 A 39.8 0.62 km under the ground by > 10 m (max 57 m) ending at -75164,-34268, end channel
+    line 2547 kind 1 A 546.9 0.56 km under the ground by > 10 m (max 22 m) ending at -11953,39260, end channel
+    line 2833 kind 1 A 58.2 0.54 km under the ground by > 10 m (max 38 m) ending at -64464,-79468, end channel
+    line 2993 kind 1 A 26.4 0.51 km under the ground by > 10 m (max 53 m) ending at 26708,-136724, end channel
+    line 3011 kind 1 A 246.2 0.56 km under the ground by > 10 m (max 52 m) ending at 37715,-133076, end channel
+    line 3206 kind 1 A 34.9 0.69 km under the ground by > 10 m (max 75 m) ending at -12007,89742, end channel
+    line 3248 kind 1 A 24.2 0.51 km under the ground by > 10 m (max 67 m) ending at 75765,119959, end channel
+    line 3273 kind 1 A 21.2 0.61 km under the ground by > 10 m (max 35 m) ending at -101465,-134780, end channel
+    line 3387 kind 1 A 30.9 0.53 km under the ground by > 10 m (max 54 m) ending at -12527,89224, end channel
+    line 3400 kind 1 A 45.1 0.78 km under the ground by > 10 m (max 38 m) ending at 77252,112435, end channel
+    line 3463 kind 1 A 282.5 0.55 km under the ground by > 10 m (max 45 m) ending at -67079,-26522, end channel
+    line 3482 kind 1 A 103.2 0.54 km under the ground by > 10 m (max 47 m) ending at -24952,57336, end channel
+    line 3550 kind 1 A 19.4 0.65 km under the ground by > 10 m (max 59 m) ending at 73719,109276, end channel
+seed 42: lines with A >= 10 km2 at their end: 3943; ends {"sea":242,"join":3670,"edge":16,"lake":15}; trace-time ends {"channel":5978,"lake":17,"sea":122,"edge":1}
+
+  streams ending 'sink'/'stuck' now (any A): 0
+    
+  pond sizes (raster points of 6.25 ha), largest: ; total 0.0 km2
+  ponds (largest first): 
+  filled by the dead-end rule (FILL_DEAD_ENDS): none; pond outlets given their inflow 0
+  ponds closed (no outlet): none
+  ponds made 0; pondWhy undefined
+  climbed reaches (A >= 10, water > 10 m under the routing ground for >= 500 m): 109 lines, 82.2 km
+    line 1 kind 0 A 4024.0 0.77 km under the ground by > 10 m (max 19 m) ending at -2727,-27208, end -
+    line 5 kind 0 A 1998.0 0.89 km under the ground by > 10 m (max 34 m) ending at -121428,33420, end -
+    line 6 kind 0 A 1973.0 0.90 km under the ground by > 10 m (max 30 m) ending at 10666,-44257, end -
+    line 11 kind 0 A 1229.5 0.50 km under the ground by > 10 m (max 12 m) ending at 91746,-7477, end -
+    line 23 kind 0 A 1479.0 1.06 km under the ground by > 10 m (max 25 m) ending at -17284,-10411, end -
+    line 38 kind 0 A 2457.0 0.58 km under the ground by > 10 m (max 11 m) ending at -91908,13758, end -
+    line 51 kind 0 A 1954.0 0.53 km under the ground by > 10 m (max 18 m) ending at 15425,-6146, end -
+    line 57 kind 0 A 317.0 0.51 km under the ground by > 10 m (max 16 m) ending at -119258,-115862, end -
+    line 75 kind 0 A 240.0 0.93 km under the ground by > 10 m (max 19 m) ending at -104235,3165, end -
+    line 83 kind 0 A 1070.0 0.78 km under the ground by > 10 m (max 22 m) ending at -26977,38724, end -
+    line 93 kind 0 A 488.0 0.58 km under the ground by > 10 m (max 12 m) ending at -75347,-140974, end -
+    line 98 kind 0 A 534.0 0.51 km under the ground by > 10 m (max 13 m) ending at -62117,-27779, end -
+    line 105 kind 0 A 564.0 0.80 km under the ground by > 10 m (max 23 m) ending at -138728,21108, end -
+    line 107 kind 0 A 644.0 0.51 km under the ground by > 10 m (max 12 m) ending at 53558,102538, end -
+    line 112 kind 0 A 380.0 1.15 km under the ground by > 10 m (max 20 m) ending at -89159,16202, end -
+    line 122 kind 0 A 356.0 0.74 km under the ground by > 10 m (max 15 m) ending at 38724,-38904, end -
+    line 136 kind 0 A 141.0 0.59 km under the ground by > 10 m (max 13 m) ending at -70155,73451, end -
+    line 157 kind 0 A 248.0 0.50 km under the ground by > 10 m (max 14 m) ending at -143798,62396, end -
+    line 192 kind 0 A 650.0 1.17 km under the ground by > 10 m (max 24 m) ending at 8858,-5956, end -
+    line 209 kind 0 A 408.0 0.64 km under the ground by > 10 m (max 26 m) ending at -2610,-9110, end -
+    line 213 kind 0 A 252.0 0.57 km under the ground by > 10 m (max 13 m) ending at 152694,-149173, end -
+    line 216 kind 0 A 317.0 0.56 km under the ground by > 10 m (max 17 m) ending at 4855,-22153, end -
+    line 268 kind 0 A 72.0 0.63 km under the ground by > 10 m (max 15 m) ending at 77737,62265, end -
+    line 426 kind 1 A 60.6 0.74 km under the ground by > 10 m (max 14 m) ending at -96712,-107615, end channel
+    line 434 kind 1 A 28.6 0.87 km under the ground by > 10 m (max 78 m) ending at -6786,-24763, end channel
+    line 619 kind 1 A 42.4 0.56 km under the ground by > 10 m (max 48 m) ending at -14712,-47078, end channel
+    line 855 kind 1 A 42.9 0.59 km under the ground by > 10 m (max 64 m) ending at -26235,8955, end channel
+    line 991 kind 1 A 60.5 0.59 km under the ground by > 10 m (max 15 m) ending at -17425,-113983, end channel
+    line 998 kind 1 A 22.2 0.51 km under the ground by > 10 m (max 37 m) ending at 48482,-43727, end channel
+    line 1069 kind 1 A 174.9 0.51 km under the ground by > 10 m (max 53 m) ending at -15011,1483, end channel
+    line 1191 kind 1 A 33.9 0.87 km under the ground by > 10 m (max 15 m) ending at 55120,-32180, end channel
+    line 1209 kind 1 A 39.7 0.68 km under the ground by > 10 m (max 48 m) ending at 80277,-16777, end channel
+    line 1254 kind 1 A 20.0 0.50 km under the ground by > 10 m (max 48 m) ending at 80011,-19269, end channel
+    line 1296 kind 1 A 52.5 0.58 km under the ground by > 10 m (max 23 m) ending at 156930,-22029, end channel
+    line 1333 kind 1 A 33.1 0.58 km under the ground by > 10 m (max 12 m) ending at -3132,-1001, end channel
+    line 1340 kind 1 A 42.8 0.86 km under the ground by > 10 m (max 78 m) ending at -56281,52012, end channel
+    line 1427 kind 1 A 30.2 0.58 km under the ground by > 10 m (max 62 m) ending at -51780,48966, end channel
+    line 1448 kind 1 A 34.6 0.88 km under the ground by > 10 m (max 51 m) ending at 75034,-20211, end channel
+    line 1571 kind 1 A 2489.9 0.51 km under the ground by > 10 m (max 30 m) ending at -40140,-80088, end channel
+    line 1576 kind 1 A 14.6 0.50 km under the ground by > 10 m (max 44 m) ending at 94226,148024, end channel
+seed 777777: lines with A >= 10 km2 at their end: 4017; ends {"sea":150,"edge":15,"join":3829,"lake":23}; trace-time ends {"channel":6200,"edge":5,"lake":31,"sea":93}
+
+  streams ending 'sink'/'stuck' now (any A): 0
+    
+  pond sizes (raster points of 6.25 ha), largest: ; total 0.0 km2
+  ponds (largest first): 
+  filled by the dead-end rule (FILL_DEAD_ENDS): none; pond outlets given their inflow 0
+  ponds closed (no outlet): none
+  ponds made 0; pondWhy undefined
+  climbed reaches (A >= 10, water > 10 m under the routing ground for >= 500 m): 107 lines, 77.1 km
+    line 2 kind 0 A 6335.0 0.90 km under the ground by > 10 m (max 17 m) ending at 13924,-56788, end -
+    line 11 kind 0 A 1407.0 1.04 km under the ground by > 10 m (max 19 m) ending at -75123,83155, end -
+    line 14 kind 0 A 6222.0 0.93 km under the ground by > 10 m (max 29 m) ending at 72474,-112353, end -
+    line 21 kind 0 A 3290.0 0.54 km under the ground by > 10 m (max 15 m) ending at -49124,-15889, end -
+    line 24 kind 0 A 1837.0 0.86 km under the ground by > 10 m (max 30 m) ending at 1102,-47582, end -
+    line 42 kind 0 A 472.0 0.61 km under the ground by > 10 m (max 27 m) ending at 61920,-31022, end -
+    line 66 kind 0 A 3928.0 0.73 km under the ground by > 10 m (max 14 m) ending at -42491,-60359, end -
+    line 67 kind 0 A 929.0 0.88 km under the ground by > 10 m (max 24 m) ending at 106985,6971, end -
+    line 135 kind 0 A 152.0 0.55 km under the ground by > 10 m (max 14 m) ending at 154132,-115706, end -
+    line 179 kind 0 A 1030.0 0.60 km under the ground by > 10 m (max 20 m) ending at -75315,90351, end -
+    line 206 kind 0 A 9864.0 0.67 km under the ground by > 10 m (max 16 m) ending at 72697,34341, end -
+    line 230 kind 0 A 1818.0 0.61 km under the ground by > 10 m (max 13 m) ending at -93120,26077, end -
+    line 240 kind 0 A 323.0 0.55 km under the ground by > 10 m (max 14 m) ending at 10772,-65343, end -
+    line 259 kind 0 A 408.0 0.60 km under the ground by > 10 m (max 13 m) ending at 85061,-90711, end -
+    line 261 kind 0 A 366.0 0.67 km under the ground by > 10 m (max 19 m) ending at 69717,-124350, end -
+    line 340 kind 0 A 3603.0 0.61 km under the ground by > 10 m (max 14 m) ending at 151436,-130855, end -
+    line 349 kind 0 A 58.0 0.60 km under the ground by > 10 m (max 13 m) ending at -69904,-85691, end -
+    line 399 kind 0 A 51.3 0.69 km under the ground by > 10 m (max 13 m) ending at -2060,112813, end -
+    line 450 kind 1 A 53.6 0.60 km under the ground by > 10 m (max 52 m) ending at -57521,45337, end channel
+    line 461 kind 1 A 18.0 0.53 km under the ground by > 10 m (max 44 m) ending at -56272,41172, end channel
+    line 544 kind 1 A 60.2 0.50 km under the ground by > 10 m (max 61 m) ending at 10776,-17032, end channel
+    line 613 kind 1 A 26.8 0.57 km under the ground by > 10 m (max 57 m) ending at -9712,28172, end channel
+    line 647 kind 1 A 11.6 1.23 km under the ground by > 10 m (max 18 m) ending at 2522,-11760, end channel
+    line 694 kind 1 A 217.7 0.60 km under the ground by > 10 m (max 49 m) ending at -18781,45122, end channel
+    line 728 kind 1 A 56.5 0.94 km under the ground by > 10 m (max 61 m) ending at 7040,41222, end channel
+    line 945 kind 1 A 14.8 0.53 km under the ground by > 10 m (max 68 m) ending at 5234,-57996, end channel
+    line 977 kind 1 A 13.4 0.58 km under the ground by > 10 m (max 29 m) ending at -4283,23280, end channel
+    line 1076 kind 1 A 42.9 0.51 km under the ground by > 10 m (max 63 m) ending at 6735,22041, end channel
+    line 1286 kind 1 A 16.8 0.50 km under the ground by > 10 m (max 56 m) ending at -68492,44768, end channel
+    line 1315 kind 1 A 591.6 0.57 km under the ground by > 10 m (max 55 m) ending at -27579,3035, end channel
+    line 1375 kind 1 A 37.6 0.58 km under the ground by > 10 m (max 55 m) ending at -28727,-18166, end channel
+    line 1407 kind 1 A 32.6 1.03 km under the ground by > 10 m (max 64 m) ending at -18232,-21482, end channel
+    line 1498 kind 1 A 30.0 0.52 km under the ground by > 10 m (max 42 m) ending at 21405,18958, end channel
+    line 1529 kind 1 A 13.8 0.62 km under the ground by > 10 m (max 31 m) ending at -38228,-11973, end channel
+    line 1545 kind 1 A 27.3 0.54 km under the ground by > 10 m (max 52 m) ending at -78235,43252, end channel
+    line 1578 kind 1 A 74.9 0.58 km under the ground by > 10 m (max 30 m) ending at -31053,18544, end channel
+    line 1665 kind 1 A 30.2 0.59 km under the ground by > 10 m (max 57 m) ending at -40827,-5531, end channel
+    line 1682 kind 1 A 54.4 0.55 km under the ground by > 10 m (max 49 m) ending at 93230,-132418, end channel
+    line 1908 kind 1 A 16.6 0.51 km under the ground by > 10 m (max 55 m) ending at -101241,44015, end channel
+    line 1911 kind 1 A 40.9 0.71 km under the ground by > 10 m (max 15 m) ending at 35204,55560, end channel
+seed 7: lines with A >= 10 km2 at their end: 4508; ends {"sea":174,"join":4302,"edge":20,"lake":12}; trace-time ends {"channel":7222,"sea":109,"lake":13,"edge":3}
+
+  streams ending 'sink'/'stuck' now (any A): 0
+    
+  pond sizes (raster points of 6.25 ha), largest: ; total 0.0 km2
+  ponds (largest first): 
+  filled by the dead-end rule (FILL_DEAD_ENDS): none; pond outlets given their inflow 0
+  ponds closed (no outlet): none
+  ponds made 0; pondWhy undefined
+  climbed reaches (A >= 10, water > 10 m under the routing ground for >= 500 m): 79 lines, 55.0 km
+    line 8 kind 0 A 1787.0 1.14 km under the ground by > 10 m (max 18 m) ending at -84105,-73186, end -
+    line 29 kind 0 A 710.0 0.52 km under the ground by > 10 m (max 12 m) ending at -137075,-88794, end -
+    line 75 kind 0 A 3275.0 0.88 km under the ground by > 10 m (max 16 m) ending at 81288,131744, end -
+    line 81 kind 0 A 280.0 0.63 km under the ground by > 10 m (max 14 m) ending at 151683,-60627, end -
+    line 213 kind 0 A 401.0 0.82 km under the ground by > 10 m (max 20 m) ending at -137542,-82748, end -
+    line 218 kind 0 A 4436.0 0.75 km under the ground by > 10 m (max 13 m) ending at 64763,19976, end -
+    line 247 kind 0 A 83.0 0.50 km under the ground by > 10 m (max 14 m) ending at -73857,3460, end -
+    line 321 kind 0 A 162.0 0.57 km under the ground by > 10 m (max 17 m) ending at 62595,-138038, end -
+    line 390 kind 0 A 343.0 1.01 km under the ground by > 10 m (max 24 m) ending at 37875,-92095, end -
+    line 444 kind 1 A 43.5 0.58 km under the ground by > 10 m (max 46 m) ending at 112735,-59587, end channel
+    line 902 kind 1 A 23.2 0.86 km under the ground by > 10 m (max 77 m) ending at 80211,-20985, end channel
+    line 943 kind 1 A 41.1 0.75 km under the ground by > 10 m (max 45 m) ending at 92720,-136034, end channel
+    line 949 kind 1 A 15.6 0.86 km under the ground by > 10 m (max 77 m) ending at 99217,-136988, end channel
+    line 1069 kind 1 A 45.5 0.50 km under the ground by > 10 m (max 53 m) ending at 76988,-16519, end channel
+    line 1075 kind 1 A 111.7 0.60 km under the ground by > 10 m (max 31 m) ending at 94784,-130542, end channel
+    line 1115 kind 1 A 45.8 0.84 km under the ground by > 10 m (max 55 m) ending at 118727,16439, end channel
+    line 1245 kind 1 A 12.6 0.67 km under the ground by > 10 m (max 47 m) ending at 89266,-119766, end channel
+    line 1355 kind 1 A 18.6 0.51 km under the ground by > 10 m (max 63 m) ending at 64013,-120051, end channel
+    line 1429 kind 1 A 18.3 0.51 km under the ground by > 10 m (max 76 m) ending at 93794,-83013, end channel
+    line 1451 kind 1 A 57.4 0.76 km under the ground by > 10 m (max 43 m) ending at 59615,-101051, end channel
+    line 1456 kind 1 A 27.7 0.86 km under the ground by > 10 m (max 60 m) ending at 56484,-99859, end channel
+    line 1535 kind 1 A 21.7 0.52 km under the ground by > 10 m (max 36 m) ending at 68656,-104001, end channel
+    line 1589 kind 1 A 37.1 0.52 km under the ground by > 10 m (max 42 m) ending at 90898,-62000, end channel
+    line 1921 kind 1 A 16.2 0.67 km under the ground by > 10 m (max 45 m) ending at 75356,-27437, end channel
+    line 1927 kind 1 A 33.3 0.55 km under the ground by > 10 m (max 46 m) ending at 68687,-37475, end channel
+    line 1930 kind 1 A 34.0 0.57 km under the ground by > 10 m (max 37 m) ending at 70537,-21910, end channel
+    line 1939 kind 1 A 33.3 0.54 km under the ground by > 10 m (max 45 m) ending at -65818,-22967, end channel
+    line 2446 kind 1 A 40.1 0.60 km under the ground by > 10 m (max 57 m) ending at 45217,103075, end channel
+    line 3290 kind 1 A 66.5 0.54 km under the ground by > 10 m (max 26 m) ending at 87545,158382, end channel
+    line 3473 kind 1 A 35.5 0.93 km under the ground by > 10 m (max 22 m) ending at 71912,131338, end channel
+    line 3524 kind 1 A 10.4 0.52 km under the ground by > 10 m (max 40 m) ending at 30263,70475, end channel
+    line 3569 kind 1 A 18.7 0.50 km under the ground by > 10 m (max 49 m) ending at 79241,141231, end channel
+    line 3591 kind 1 A 52.7 1.14 km under the ground by > 10 m (max 16 m) ending at 41807,46744, end channel
+    line 4004 kind 1 A 23.5 0.82 km under the ground by > 10 m (max 54 m) ending at -35933,-74275, end channel
+    line 4357 kind 1 A 44.9 0.58 km under the ground by > 10 m (max 35 m) ending at 46610,-95502, end channel
+    line 4398 kind 1 A 25.6 0.78 km under the ground by > 10 m (max 60 m) ending at 95303,108637, end channel
+    line 4447 kind 1 A 12.1 0.66 km under the ground by > 10 m (max 46 m) ending at 45523,-94979, end channel
+    line 4476 kind 1 A 175.8 0.53 km under the ground by > 10 m (max 48 m) ending at 1131,-26856, end channel
+    line 4577 kind 1 A 19.6 0.80 km under the ground by > 10 m (max 55 m) ending at 19970,114919, end channel
+    line 4661 kind 1 A 772.8 1.36 km under the ground by > 10 m (max 16 m) ending at 101394,128926, end channel
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  09:57:31
+   Duration  175.15s (tests 99%)
+

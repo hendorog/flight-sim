@@ -1,0 +1,13 @@
+/home/roger/github/fs-exp/round-w-rs/out/fs/W/R/chk3/om: rivers 5788 km
+  wet W CV per km p50            0.215
+  bed W CV per 5 km p50          0.245
+  edge roughness / W p50         0.054
+  wet share p50 (p10-p90)        0.59 (0.28-0.87)
+  kinks R<W per 10 km            3.45
+  Rc p10 / W                     2.07
+  sinuosity 1 km p50 (p90)       1.087 (1.327)
+  lambda CV along a line p50     0.435 (146 lines)
+  sharp bed corners per 10 km    16.25
+  white (steepness >= 0.5, rapids) on S < 0.02   0.2 %
+  running-water look (>= 0.2) on S < 0.02        7.3 %
+  longest straight / W p50 (p95) 14.5 (31.5)

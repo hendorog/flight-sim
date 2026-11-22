@@ -6,6 +6,7 @@ import { AIRPORT } from '../../core/world';
 import { fbm, gnoise } from './noise';
 import { decodePolyline, growMeanders, projectPolyline, type MeanderAxis, type MeanderReach, type MeanderResult, type Oxbow } from './meander';
 import { RIVER_PLANFORM } from './riverPlanform';
+import type { Fall, StreamReport } from './streams';
 
 /** A lake: a noise-warped ellipse whose bed is carved into the natural terrain. */
 export interface Lake {
@@ -41,6 +42,18 @@ export interface RiverHit {
   side: number;
   /** How far upstream of the source the point lies (along the first segment's direction), m; 0 elsewhere. */
   beyondSource: number;
+  /** A seeded world's river (channelForm.ts): its bed's half-width and how far right of the line (the thread) the bed's
+   * middle lies, m - its bed is |dist * side - bedShift| < bed, its point bar on one side and its cut bank on the other.
+   * (A stream's: its half-width and 0.) */
+  bed?: number;
+  bedShift?: number;
+  /** Asked of a seeded world's query (an input, m): the bed's edges as their mean over this much of the line either
+   * side (a coarse tile's vertex spacing: no bar or bay finer than the tile is drawn). */
+  smooth?: number;
+  /** Asked by what paints or covers the bed (the ground's paint, its cover, its trees): inside a braided bed's ribbon
+   * (channelForm.ts braidTwin) dist and side are its place from the bed's middle, bedShift 0 and bed its half-width - the
+   * bed the ribbon draws, not the one the nearest point of its wandering main thread gives. */
+  bedFrame?: boolean;
 }
 
 /** Result of a valley-axis query: the smooth line the floodplain and valley walls are carved about. */
@@ -79,6 +92,242 @@ export interface Hydrology {
   queryValley(north: number, east: number, out: ValleyHit): ValleyHit;
   /** Nearest oxbow lake. */
   queryOxbow(north: number, east: number, out: OxbowHit): OxbowHit;
+  /** A seeded world's river network (riverNetwork.ts): every line, the main river first. Absent at seed 0. */
+  rivers?: ReadonlyArray<RiverLine>;
+  /** A seeded world's network queries for carving (every line near a point). Absent at seed 0. */
+  network?: NetworkQuery;
+  /** A seeded world's waterfalls (falls.ts), each with its cause (streams.ts Fall). Absent at seed 0. */
+  falls?: ReadonlyArray<Fall>;
+  /** A seeded world's fault lines (faults.ts): where its channels fall. Absent at seed 0. */
+  faults?: ReadonlyArray<import('./faults').Fault>;
+  /** A seeded world's nearest channel (river or stream) and its flow at a point. Absent at seed 0. */
+  queryFlow?(north: number, east: number, out: FlowHit): FlowHit;
+  /** A seeded world: where `near` (the airfields' approaches and flats, shaped after the streams were traced), hold every
+   * stream's water at or under `under` of the ground it was levelled on, its cut taken against `trim` of that ground
+   * (what the network's carve cuts into); its flow worked out again. Where `over` of that ground stands over its water
+   * (an airfield's blend raising the ground over it), the water is raised to it, never over the water above it, and a
+   * stream joining a reach so raised is backed up to it. Returns the samples lowered. Absent at seed 0. */
+  holdUnder?(trim: (h: number, north: number, east: number) => number, under: (h: number, north: number, east: number) => number, near: (north: number, east: number) => boolean, over?: (h: number, north: number, east: number) => number): number;
+  /** The falls within `radius` m of a point, nearest first (indices into `falls`); returns how many. Absent at seed 0. */
+  fallsNear?(north: number, east: number, radius: number, out: number[]): number;
+  /** How a seeded world's streams were traced (streams.ts), for probes. Absent at seed 0. */
+  streamReport?: StreamReport;
+  /**
+   * A seeded world's lakes as they stand (drainage.ts LakeMask): `at` gives the level of the lake whose water covers
+   * the ground below it at a point (-Infinity outside every lake), and leaves `field` (how far inside its edge the point
+   * lies, > 0); given the ground at the point, also where the ground dips below the level beside the edge. Absent at
+   * seed 0 (its lakes are the ellipses of `lakes`). `holds` how firmly a valley carved by a lake keeps its ground over
+   * the water (holdLevel), for the valley carving.
+   */
+  lakeMask?: {
+    at(north: number, east: number, ground?: number): number;
+    readonly field: number;
+    holds(north: number, east: number): number;
+    readonly holdLevel: number;
+    /** Every body of water it draws (each pond's pools, the high country's tarns among them), with its level. */
+    readonly pools: ReadonlyArray<{ readonly level: number; readonly drained?: boolean }>;
+  };
+}
+
+/**
+ * One river of a network: its channel centreline (source first) as in Hydrology.river.
+ *
+ * The contract a seeded world's channels give the water, rock and boulder drawing (water.ts, bedrock.ts,
+ * vegetation/boulders.ts), per sample of every line (all arrays the length of `s`):
+ *  - `level` the water surface, never rising downstream; on a steep reach it follows the ground down as a continuous
+ *    cascade; it drops at once only at a fall (`regime` 4 at the lip sample, the foot the next one). A stream's steep
+ *    reaches (2 % and over) are cut into pitches and pools (pitchPool.ts: `sigma`, `pitchOn`): each pitch a short steep
+ *    drop between two samples (its lip and foot), the pool below it held nearly level to the next lip.
+ *  - `gradient` over 200 m and `regime` (0 placid < 0.5 %, 1 riffle < 2 %, 2 rapids < 8 %, 3 step-pool / boulder
+ *    cascade, 4 a fall's lip), `steepness` 0-1 and `speed` m/s (streams.ts flowOf).
+ *  - `grain` the bed's stones, m (falls.ts bedGrain): 2-5 m blocks by the heads, on steep pitches and below falls,
+ *    grading down the network to 0.1-0.3 m cobbles on riffles and gravel and sand on calm reaches.
+ *  - `breach` (streams only) the half-width of the broad floor worn through a rim or sill, 0 elsewhere, and `cut`
+ *    how far the water runs under the ground there (heightfield.ts carves it: a wide saddle, walls at 24 degrees).
+ * Hydrology.falls lists the falls (streams.ts Fall): `cause` 'fault' (a fault line it crosses, faults.ts), 'hanging'
+ * (the lip of a hanging valley) or 'outlet' (a lake spilling over a wall); lip (`north`, `east`, `top`) and foot
+ * (`footNorth`, `footEast`, `bottom`), `height`, `width` (of the water going over), flow direction, and `flight` (the
+ * falls of one fault's flight share it, -1 alone). A fall's lip is sample `index` of its line and its foot `index + 1`.
+ *
+ * What the drawing builds on it (seeded worlds only):
+ *  - The bed's stones are two lattices per line in its own coordinates (channelStones.ts: fine cells STONE_ALONG m
+ *    along `s` by STONE_ACROSS m across, coarse BIG_ALONG by BIG_ACROSS for the very large blocks; x + toward the right
+ *    bank), at most one stone per cell from an integer hash of the cell, how many from `steepness` (none below rapids),
+ *    in clumps along the line and, on a stream's units, crowded onto its pitches (the pools mostly clear), how big from
+ *    `grain` (a long-tailed size law shared with the bank stones); on a river's step-pool reaches some rows are steps.
+ *    vegetation/boulders.ts stands a rock on each (its radius at the waterline the lattice's), and the ribbon's shader
+ *    (water.ts flowFragment) breaks the water white round the very same stones, white on the pitches, dark and smooth
+ *    over the pools. Both read the values the ribbon carries per row: aFlow = (steepness, speed / 6, fall weight,
+ *    grainToUnit(grain)) as bytes, aPitch = (sigma, pitchOn) as floats.
+ *  - bedrock.ts: the bare rock beside fast water reaches rockReach(halfWidth) times a ragged factor of the world
+ *    position (rockAtPoint; ROCK_EDGE_GLSL in the ground shader); no tree is planted on it (vegetation/placement.ts).
+ */
+export interface RiverLine {
+  north: Float64Array;
+  east: Float64Array;
+  level: Float64Array;
+  halfWidth: Float64Array;
+  s: Float64Array;
+  /** The river this one flows into (index into Hydrology.rivers), or -1 for one that reaches the sea or the edge. */
+  joins?: number;
+  /**
+   * A seeded world's channels (riverNetwork.ts, streams.ts) also carry: `kind`, 0 a river (the drainage's lines,
+   * meandering in their valleys), 1 a stream (traced down the terrain: a lake's outlet, a headwater; a narrow notch, no
+   * valley); and per sample the catchment `area` (km²), the water's `gradient` over 200 m (m/m), `steepness` 0-1 (a
+   * quarter per kind of flow), `regime` (REGIME: 0 placid < 0.5 %, 1 riffle < 2 %, 2 rapids < 8 %, 3 step-pool and
+   * boulder cascade, 4 the lip of a fall) and `speed` (m/s).
+   */
+  kind?: number;
+  /**
+   * What a stream ends in: 'channel' (another line, `joins`), 'lake' (a lake's water: its last reach at the lake's
+   * level), 'sea', 'edge' (the domain's), 'sink' (water lying higher than its own - a river held up on its valley
+   * floor, a lake flooded on smoother ground - so it ends some 200 m short of it, sinking into the ground), 'stuck'.
+   */
+  end?: 'channel' | 'lake' | 'sea' | 'edge' | 'sink' | 'stuck';
+  area?: Float64Array;
+  /** A stream's broad breach at each sample: the half-width of the floor worn through a rim or sill where its water runs
+   * well under the ground (0: none), and how far under the ground it runs there (its cut), m. */
+  breach?: Float64Array;
+  cut?: Float64Array;
+  gradient?: Float32Array;
+  steepness?: Float32Array;
+  regime?: Uint8Array;
+  speed?: Float32Array;
+  /** The typical size of the stones on the bed at each sample, m (falls.ts bedGrain): 2-5 m boulders by the heads, on
+   * the steep pitches and below falls, cobbles of 0.1-0.3 m on riffles, gravel and sand on the calm lowland reaches. */
+  grain?: Float32Array;
+  /** A seeded world's river (riverNetwork.ts, channelForm.ts): its bed's edge right and left of the line (the thread),
+   * and the thread's depth, at each sample, m. */
+  bedR?: Float32Array;
+  bedL?: Float32Array;
+  /** ... and its water's edge right and left of the line (the law's, varied along it; halfWidth is the catchment's). */
+  wetR?: Float32Array;
+  wetL?: Float32Array;
+  depth?: Float32Array;
+  /** ... and on a braided bed its threads at each sample (K, channelForm.ts braidAt: 1 one) and the braid's phases. */
+  braidK?: Float32Array;
+  /** ... the braid share there (channelForm.ts formOf betaLaw, smoothed as K is) ... */
+  braidShare?: Float32Array;
+  braidPh?: Float64Array;
+  braidPs?: Float64Array;
+  /** ... and its rows' directions (channelForm.ts braidRows: the ribbon is drawn on them). */
+  braidTn?: Float32Array;
+  braidTe?: Float32Array;
+  /** ... and which samples are its ribbon's rows (1) where it braids. */
+  braidRow?: Uint8Array;
+  /** On a stream joining a braided river, 1 at samples well inside the receiver's gravel bed (ribbon suppressed there,
+   * as inLake suppresses a stream's ribbon inside a lake). */
+  inBraid?: Uint8Array;
+  /**
+   * A stream's pitches and pools (pitchPool.ts): its unit coordinate `sigma` at each sample (unit k's lip at
+   * pitchPool.ts lipOf(k), its foot pitchLen(k) on, the next unit's lip at lipOf(k + 1)), and `pitchOn` 1 where its water
+   * is cut into units (a lip and a foot are samples of the line there), 0 elsewhere. Absent on rivers.
+   */
+  sigma?: Float32Array;
+  pitchOn?: Float32Array;
+}
+
+/** The nearest channel and its flow at a point (Hydrology.queryFlow), written into a caller-owned object. */
+export interface FlowHit {
+  /** Distance from its centreline, m (Infinity when none is within reach), and the bank (+1 right of the flow). */
+  dist: number;
+  side: number;
+  /** The line (index into Hydrology.rivers, -1: none), its kind (RiverLine.kind) and the nearest sample. */
+  line: number;
+  kind: number;
+  index: number;
+  /** Arc length, water level, half-width there, m. */
+  s: number;
+  level: number;
+  halfWidth: number;
+  /** RiverLine's flow at the nearest sample (gradient, regime) or interpolated (steepness, speed). */
+  gradient: number;
+  steepness: number;
+  regime: number;
+  speed: number;
+  /** Flow direction (unit north, east). */
+  dirN: number;
+  dirE: number;
+}
+
+/** A line's valley near a point (NetworkQuery.valleys). */
+export interface ValleyNear {
+  dist: number;
+  level: number;
+  floodplain: number;
+  /** How far beyond the floodplain the valley walls are carved, m. */
+  influence: number;
+  /** How far the ground where this side's wall starts (riverNetwork.ts wallStart) stands over the valley's floor, m
+   * (0 off the threshold hillslopes): the carve lowers the slopes' walls by that, tapering out across its reach
+   * (riverNetwork.ts wallLift). */
+  gap: number;
+  /** How far from the axis the channel may swing (its meander belt and half-width), m: it can run past the floodplain's
+   * edge where the floodplain's width is smoothed along the river. */
+  swing: number;
+  /** The line, and the arc length along its axis of the nearest point (diagnostics). */
+  line?: number;
+  s?: number;
+  /** A seeded world's river floor (riverNetwork.ts floorSet), once its belt is laid: the point's offset from the axis
+   * (right of the flow: +), where the belt's water goes (lo..hi, offsets from the axis), how far the floor reaches left
+   * and right of the axis, and the bank's height over the water, m. `floor` false: none. */
+  floor?: boolean;
+  y?: number;
+  lo?: number;
+  hi?: number;
+  floorL?: number;
+  floorR?: number;
+  bankH?: number;
+  /** ... and how high over the water the floor stands at its edge left and right, m. */
+  edgeL?: number;
+  edgeR?: number;
+}
+
+/** A line's channel near a point (NetworkQuery.channels). */
+export interface ChannelNear {
+  line: number;
+  /** RiverLine.kind: 0 a river, 1 a stream (carved as a narrow notch). */
+  kind: number;
+  /** A stream's broad breach here (RiverLine.breach), m: 0 none; and how far from the line it is carved, m. */
+  breach: number;
+  reach: number;
+  /** How far the stream's water runs under the ground it was traced over here (its breach's depth), m. */
+  cut: number;
+  /** A stream's bed half-width here (streams.ts bedWidth: its banks are carved to it), m; a river's: its bed's edge on
+   * this side (channelForm.ts: the point bar or the cut bank). */
+  bed: number;
+  /** A river's water edge on this side, its thread's depth, its bank's height and slope (tan) (channelForm.ts);
+   * undefined on a stream. */
+  wet?: number;
+  depth?: number;
+  bankH?: number;
+  bankTan?: number;
+  /** A braided bed's threads where its ribbon draws them (channelForm.ts braidTwin; 0: none, or the main water's own
+   * columns): K, the place across the bed and the main water's middle there (u, um), the bed's half-width, the braid's
+   * phases and the main water's width, m. */
+  braidK?: number;
+  braidU?: number;
+  braidUm?: number;
+  braidHb?: number;
+  braidPh?: number;
+  braidPs?: number;
+  braidW?: number;
+  braidLevel?: number;
+  braidPast?: number;
+  braidBankLvl?: number;
+  dist: number;
+  side: number;
+  level: number;
+  halfWidth: number;
+  s: number;
+  beyondSource: number;
+}
+
+export interface NetworkQuery {
+  /** The valleys of every line near the point (each line's nearest stretch, blended with any other about as near:
+   * riverNetwork.ts SegmentIndex.perLineBlend); returns how many were written. */
+  valleys(north: number, east: number, out: ValleyNear[]): number;
+  /** The channels of every line within carving reach of the point; returns how many were written. */
+  channels(north: number, east: number, out: ChannelNear[]): number;
 }
 
 /** Valley walls rise over this distance beyond the floodplain (everything closer to the axis is shaped by the valley). */
@@ -183,30 +432,32 @@ function densify(points: ReadonlyArray<{ north: number; east: number }>): { n: n
 
 /** The lakes, with their levels found from the natural terrain around each basin. */
 export function buildLakes(natural: (north: number, east: number) => number): Lake[] {
-  return LAKE_DEFS.map((d) => {
-    const p = toNED(d.along, d.across);
-    const lake: Lake = { ...d, north: p.north, east: p.east, level: 0, bound: Math.max(d.radiusA, d.radiusB) * LAKE_ZONE * 1.35 };
-    // Level: just below the lowest point of the terrain around the shoreline ellipse, so the basin holds water.
-    let minRim = Infinity;
-    const c = Math.cos(d.rotation);
-    const s = Math.sin(d.rotation);
-    for (let k = 0; k < 160; k++) {
-      const a = (k / 160) * Math.PI * 2;
-      // Offset of the unwarped ellipse point at radius 1 in this direction.
-      const ca = Math.cos(a) * d.radiusA;
-      const sa = Math.sin(a) * d.radiusB;
-      const dirN = ca * c - sa * s;
-      const dirE = ca * s + sa * c;
-      for (const rr of [1.0, 1.1, LAKE_ZONE]) {
-        // Scale the offset until the warped radius equals rr (fixed-point iteration converges in a few steps).
-        let t = rr;
-        for (let it = 0; it < 4; it++) t *= rr / lakeRadius(lake, p.north + dirN * t, p.east + dirE * t);
-        minRim = Math.min(minRim, natural(p.north + dirN * t, p.east + dirE * t));
-      }
+  return LAKE_DEFS.map((d) => lakeAt(natural, d, toNED(d.along, d.across)));
+}
+
+/** A lake shape placed anywhere (a seeded world's lakes, riverNetwork.ts), its level found as buildLakes finds it. */
+export function lakeAt(natural: (north: number, east: number) => number, d: Omit<Lake, 'level' | 'north' | 'east' | 'bound'>, p: { north: number; east: number }): Lake {
+  const lake: Lake = { ...d, north: p.north, east: p.east, level: 0, bound: Math.max(d.radiusA, d.radiusB) * LAKE_ZONE * 1.35 };
+  // Level: just below the lowest point of the terrain around the shoreline ellipse, so the basin holds water.
+  let minRim = Infinity;
+  const c = Math.cos(d.rotation);
+  const s = Math.sin(d.rotation);
+  for (let k = 0; k < 160; k++) {
+    const a = (k / 160) * Math.PI * 2;
+    // Offset of the unwarped ellipse point at radius 1 in this direction.
+    const ca = Math.cos(a) * d.radiusA;
+    const sa = Math.sin(a) * d.radiusB;
+    const dirN = ca * c - sa * s;
+    const dirE = ca * s + sa * c;
+    for (const rr of [1.0, 1.1, LAKE_ZONE]) {
+      // Scale the offset until the warped radius equals rr (fixed-point iteration converges in a few steps).
+      let t = rr;
+      for (let it = 0; it < 4; it++) t *= rr / lakeRadius(lake, p.north + dirN * t, p.east + dirE * t);
+      minRim = Math.min(minRim, natural(p.north + dirN * t, p.east + dirE * t));
     }
-    lake.level = Math.max(0.5, minRim - 1.5);
-    return lake;
-  });
+  }
+  lake.level = Math.max(0.5, minRim - 1.5);
+  return lake;
 }
 
 /**

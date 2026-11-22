@@ -1,0 +1,13 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+LM seed 1: 403375 points
+LM seed 42: 416433 points
+LM seed 777777: 428317 points
+LM seed 7: 476342 points
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  12:13:21
+   Duration  181.59s (tests 99%)
+

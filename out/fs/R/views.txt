@@ -1,0 +1,24 @@
+# round T repairs cameras (north,east,alt). Item 1: pond 602's outlet 2181 into river 232 (seed 1).
+r602-outlet seed=1&camPos=33200,41900,600&camLook=34500,40990,180
+# Item 2: seed 1 pond 602 and its inflow 1853 (verifyT2's cameras), and a filled-hollow pond on each other seed.
+x602-face seed=1&camPos=36100,41140,200&camLook=35880,41119,180&scenario=runway&tod=10
+x602-drown seed=1&camPos=35350,41650,480&camLook=35500,41070,185&scenario=runway&tod=10
+x602-1853 seed=1&camPos=36300,41420,330&camLook=35880,41119,178&scenario=runway&tod=10
+x602-mouth seed=1&camPos=37000,42100,480&camLook=36150,41100,180&scenario=runway&tod=10
+x602-face2 seed=1&camPos=36100,41140,230&camLook=35880,41119,185&scenario=runway&tod=10
+x2157-pond85 seed=777777&camPos=-49300,75100,480&camLook=-48474,74416,141&scenario=runway&tod=10
+x1265-pond87 seed=1&camPos=23300,-101000,1000&camLook=24131,-100038,754&scenario=runway&tod=10
+x729-pond85 seed=1&camPos=67700,-46900,360&camLook=66556,-47895,64&scenario=runway&tod=10
+s1-602 seed=1&camPos=37600,42900,750&camLook=35400,41000,180&scenario=runway&tod=10
+# Item 3: seed 777777 line 720 by KPMH (verifyT2's cameras), KHLT's 734, seed 42 KIVY's 692.
+777777-B720 seed=777777&camPos=-13202,31217,893&camLook=-13750,31259,513&scenario=runway&tod=10
+xB720-high seed=777777&camPos=-12000,31240,3200&camLook=-13750,31259,513&scenario=runway&tod=10
+xR720 seed=777777&camPos=-14000,31700,800&camLook=-14675,32426,406&scenario=runway&tod=10
+xR720-low seed=777777&camPos=-14300,31950,520&camLook=-14800,32550,404&scenario=runway&tod=10
+xR734 seed=777777&camPos=19400,31000,820&camLook=20002,31758,414&scenario=runway&tod=10
+xR692 seed=42&camPos=29300,14700,480&camLook=29940,15408,81&scenario=runway&tod=10
+fly7-abeam seed=777777&scenario=cruise&at=-14148,30856,300,135&tod=10
+fly7-final seed=777777&scenario=cruise&at=-12097,30078,250,135&tod=10
+x567-pond26 seed=7&camPos=-14330,124650,120&camLook=-13869,125231,22&scenario=runway&tod=10
+x729-shore seed=1&camPos=67000,-47330,160&camLook=66556,-47895,58&scenario=runway&tod=10
+x567-entry seed=7&camPos=-13760,125330,45&camLook=-14103,125095,15&scenario=runway&tod=10

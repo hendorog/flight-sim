@@ -9,7 +9,7 @@
 // no Math.random is used; and the base boards of seeds 0 and 7, days 1-3, every field, deep-equal
 // tests/career/boards.golden.json (FS_CAREER_BAKE=1 writes it afresh after a deliberate change to the stream).
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { blockHours, burnKg, basePricePerKg, flightTimeMin, fuelPlan, windComponents } from '../../src/career/costs';
 import { fitOffer, offerFuelPlan } from '../../src/career/fit';
 import { bearingDeg, distanceM } from '../../src/career/geo';
@@ -27,6 +27,8 @@ import { airfields, type Airfield } from '../../src/world/airfields';
 import { setEra } from '../../src/world/era/eraState';
 import '../../src/world/terrain/heightfield';
 import { setWorldSeed } from '../../src/world/worldSeed';
+// (Under a full parallel suite run the boards built in a beforeAll here took over the 10 s hook default: round T repairs.)
+vi.setConfig({ hookTimeout: 60_000 });
 
 // node:fs without the node type package (tests are type-checked with the DOM library only), as tests/golden has it.
 const fs = (await import(/* @vite-ignore */ 'node:fs' as string)) as {
@@ -383,5 +385,5 @@ describe('the golden boards', () => {
     }
     const golden = JSON.parse(fs.readFileSync(GOLDEN, 'utf8')) as typeof fresh;
     expect(JSON.parse(JSON.stringify(fresh))).toEqual(golden);
-  });
+  }, 60_000);
 });

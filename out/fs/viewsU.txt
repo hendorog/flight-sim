@@ -1,0 +1,10 @@
+777777-B720 seed=777777&camPos=-13202,31217,893&camLook=-13750,31259,513&scenario=runway&tod=10
+xB720-high seed=777777&camPos=-12000,31240,3200&camLook=-13750,31259,513&scenario=runway&tod=10
+xB720-tod17 seed=777777&camPos=-13202,31217,893&camLook=-13750,31259,513&scenario=runway&tod=17
+fly7-720 seed=777777&scenario=cruise&at=-12300,31200,400,185&tod=10
+s42-716 seed=42&camPos=128500,-121000,1000&camLook=132352,-123990,168&scenario=runway&tod=10
+x716-near seed=42&camPos=130200,-122400,700&camLook=132352,-123990,199&scenario=runway&tod=10
+x716-east seed=42&camPos=135000,-127500,900&camLook=132352,-123990,199&scenario=runway&tod=10
+fly42-716 seed=42&scenario=cruise&at=128500,-121500,450,322&tod=10
+x1-pond79 seed=1&camPos=-132800,-145400,800&camLook=-130875,-147188,239&scenario=runway&tod=10
+x716-outlet seed=42&camPos=134200,-119300,600&camLook=132800,-120600,199&scenario=runway&tod=10

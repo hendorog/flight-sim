@@ -32,6 +32,11 @@ export class WorkerPool {
     return free;
   }
 
+  /** Workers in the pool. */
+  get size(): number {
+    return this.workers.length;
+  }
+
   get busy(): boolean {
     return this.pending.size > 0;
   }
@@ -41,9 +46,16 @@ export class WorkerPool {
     for (const w of this.workers) w.postMessage(setup);
   }
 
-  run(job: WorkerJob): Promise<WorkerResult> {
+  /** Run a job on the least loaded worker, or on worker `prefer` (negative: from the last) while it has a free slot (a job that reuses what that
+   * worker kept from the last one: rills.ts's raster blocks). */
+  run(job: WorkerJob, prefer?: number): Promise<WorkerResult> {
     let best = 0;
     for (let i = 1; i < this.workers.length; i++) if (this.load[i] < this.load[best]) best = i;
+    if (prefer !== undefined) {
+      const n = this.workers.length;
+      const w = ((prefer % n) + n) % n;
+      if (this.load[w] < this.depth) best = w;
+    }
     const id = this.nextId++;
     this.load[best]++;
     return new Promise((resolve, reject) => {

@@ -1,0 +1,15 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+seed 1: 0 self-crossings
+seed 7: 0 self-crossings
+seed 42: 0 self-crossings
+seed 1234: 0 self-crossings
+seed 99991: 0 self-crossings
+seed 777777: 0 self-crossings
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  09:57:31
+   Duration  255.77s (tests 100%)
+

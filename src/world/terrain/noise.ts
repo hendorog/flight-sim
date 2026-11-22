@@ -149,6 +149,59 @@ export function gullies(x: number, y: number, dirX: number, dirY: number, d: Der
   return va * inv;
 }
 
+/** sin(2 pi t) for t in [-0.5, 0.5] (folded onto a quarter turn, then a Taylor series: within 4e-6). */
+function sinTurn(t: number): number {
+  const f = t > 0.25 ? 0.5 - t : t < -0.25 ? -0.5 - t : t;
+  const x = f * TWO_PI;
+  const x2 = x * x;
+  return x * (1 + x2 * (-1 / 6 + x2 * (1 / 120 + x2 * (-1 / 5040 + x2 * (1 / 362880 - x2 / 39916800)))));
+}
+
+/**
+ * gullies (the same kernels, weights and stripes) for a seeded world's terrain, faster: the stripes' sine and cosine
+ * from a series instead of Math.sin and Math.cos (to a few millionths), and the cells that cannot reach the point
+ * (their jittered point is always beyond the kernel's radius) skipped before they are hashed. Seed 0 keeps gullies.
+ */
+export function gulliesFast(x: number, y: number, dirX: number, dirY: number, d: Deriv): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  let va = 0;
+  let vx = 0;
+  let vy = 0;
+  let wt = 1e-6;
+  for (let i = -2; i <= 1; i++) {
+    // (A point's offset along x lies in [fx + i - 0.5, fx + i]: nearest 0 at the end closer to it.)
+    const ex = fx + i > 0 ? fx + i - 0.5 : fx + i < 0 ? -(fx + i) : 0;
+    const ex2 = ex > 0 ? ex * ex : 0;
+    if (ex2 >= 2.25) continue;
+    for (let j = -2; j <= 1; j++) {
+      const ey = fy + j > 0 ? fy + j - 0.5 : fy + j < 0 ? -(fy + j) : 0;
+      if (ex2 + (ey > 0 ? ey * ey : 0) >= 2.25) continue;
+      const h = hash2i(ix - i, iy - j);
+      const px = fx + i - (h & 0xffff) * (0.5 / 65536);
+      const py = fy + j - (h >>> 16) * (0.5 / 65536);
+      const q = 1 - (px * px + py * py) * (1 / 2.25);
+      if (q <= 0) continue;
+      const w = q * q * q;
+      const turns = px * dirY - py * dirX;
+      const t = turns - Math.round(turns);
+      const s = sinTurn(t);
+      const tc = t + 0.25;
+      const c = sinTurn(tc > 0.5 ? tc - 1 : tc);
+      va += c * w;
+      vx -= s * dirY * w;
+      vy += s * dirX * w;
+      wt += w;
+    }
+  }
+  const inv = 1 / wt;
+  d.dx = vx * inv;
+  d.dy = vy * inv;
+  return va * inv;
+}
+
 // Octave rotation (about 36.87 degrees, the 3-4-5 triangle) times the lacunarity; breaks grid alignment.
 const ROT_C = 0.8;
 const ROT_S = 0.6;
@@ -168,3 +221,40 @@ export function fbm(x: number, y: number, octaves: number, lacunarity = 2, gain 
   }
   return sum / norm;
 }
+
+/**
+ * fbm with its gradient (per unit of the input, into `d`): the same value as fbm, bit for bit (the same octaves summed
+ * in the same order), for a gradient of the fields built on it (seededLayout.ts macroGradAt).
+ */
+export function fbmGrad(x: number, y: number, octaves: number, d: Deriv, lacunarity = 2, gain = 0.5): number {
+  let sum = 0;
+  let amp = 1;
+  let norm = 0;
+  let gx = 0;
+  let gy = 0;
+  // The octave's coordinates' Jacobian against the input's (rotated and scaled each octave).
+  let jxx = 1;
+  let jxy = 0;
+  let jyx = 0;
+  let jyy = 1;
+  for (let o = 0; o < octaves; o++) {
+    sum += amp * gnoise(x, y, FD);
+    gx += amp * (FD.dx * jxx + FD.dy * jyx);
+    gy += amp * (FD.dx * jxy + FD.dy * jyy);
+    norm += amp;
+    amp *= gain;
+    const nx = (ROT_C * x - ROT_S * y) * lacunarity + 17.3;
+    y = (ROT_S * x + ROT_C * y) * lacunarity - 9.1;
+    x = nx;
+    const axx = (ROT_C * jxx - ROT_S * jyx) * lacunarity;
+    const axy = (ROT_C * jxy - ROT_S * jyy) * lacunarity;
+    jyx = (ROT_S * jxx + ROT_C * jyx) * lacunarity;
+    jyy = (ROT_S * jxy + ROT_C * jyy) * lacunarity;
+    jxx = axx;
+    jxy = axy;
+  }
+  d.dx = gx / norm;
+  d.dy = gy / norm;
+  return sum / norm;
+}
+const FD: Deriv = { dx: 0, dy: 0 };

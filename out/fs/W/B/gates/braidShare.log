@@ -1,0 +1,41 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+BS seed 1 classes A km2 0/30/100/300/1000/3000+
+BS seed 1 axis km             0   1794   2049   1267    534    259
+BS seed 1 pi > 1 km           0   1227   1301    725    262     62
+BS seed 1 V0 (F/B, big)       0      0      0     21     30     11
+BS seed 1 V1 (F/Ws, big)      0      0      0    166    145     22
+BS seed 1 V2 (F/Ws)           0   1071   1116    514    145     22
+BS seed 1 V3 (F/B, any A)      0    991    869    167     30     11
+BS seed 1 pi>1: F/B p10/50/90 0.63/1.26/1.88  F/Ws 7.58/16.25/25.00
+BS seed 42 classes A km2 0/30/100/300/1000/3000+
+BS seed 42 axis km             0   1832   1970   1196    540    104
+BS seed 42 pi > 1 km           0   1087   1160    574    152     10
+BS seed 42 V0 (F/B, big)       0      0      0     15     17      0
+BS seed 42 V1 (F/Ws, big)      0      0      0    121     83      3
+BS seed 42 V2 (F/Ws)           0    928    944    413     83      3
+BS seed 42 V3 (F/B, any A)      0    857    723    143     17      0
+BS seed 42 pi>1: F/B p10/50/90 0.69/1.29/1.95  F/Ws 8.31/16.78/25.97
+BS seed 777777 classes A km2 0/30/100/300/1000/3000+
+BS seed 777777 axis km             0   1982   2189   1269    597    328
+BS seed 777777 pi > 1 km           0   1331   1304    685    237     65
+BS seed 777777 V0 (F/B, big)       0      0      0     15     33     11
+BS seed 777777 V1 (F/Ws, big)      0      0      0    133    134     21
+BS seed 777777 V2 (F/Ws)           0   1138   1041    445    134     21
+BS seed 777777 V3 (F/B, any A)      0   1061    837    159     33     11
+BS seed 777777 pi>1: F/B p10/50/90 0.67/1.31/1.91  F/Ws 8.07/16.99/25.43
+BS seed 7 classes A km2 0/30/100/300/1000/3000+
+BS seed 7 axis km             0   1997   2125   1406    595    480
+BS seed 7 pi > 1 km           0   1493   1544    787    186     73
+BS seed 7 V0 (F/B, big)       0      0      0     18     30     11
+BS seed 7 V1 (F/Ws, big)      0      0      0    114     85     28
+BS seed 7 V2 (F/Ws)           0   1322   1312    519     85     28
+BS seed 7 V3 (F/B, any A)      0   1227   1062    228     30     11
+BS seed 7 pi>1: F/B p10/50/90 0.73/1.29/1.92  F/Ws 8.95/16.78/25.55
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  12:16:24
+   Duration  186.20s (tests 99%)
+

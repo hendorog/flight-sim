@@ -44,6 +44,7 @@
 // frame for the interior and exterior views so every shader variant is linked, and fade back in.
 
 import { setWorldSeed, worldSeed } from '../world/worldSeed';
+import { setSnowShift } from '../world/terrain/heightfield';
 import { disabled } from '../physics/damage';
 import * as THREE from 'three';
 import {
@@ -326,6 +327,8 @@ export class Simulator {
     // The era first: everything built from here on (weather, physics environment, airport, terrain and its
     // workers) reads it. Its weather preset goes under the URL's weather.
     setEra(chooseEra(this.params, this.store).id);
+    // Debug: the snow line moved (frozen-lake checks), before anything reads it.
+    setSnowShift(this.params.snowShift ?? 0);
     // The world seed with it, before anything is built from the terrain.
     setWorldSeed(chooseSeed(this.params, this.store).seed);
     setStartField(this.params.field);

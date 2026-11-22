@@ -9,7 +9,7 @@
 // scaled where the 30 m (98 ft) width needs it; the source is noted next to each constant.
 
 import { DEG, FT } from '../../core/math';
-import { AIRPORT, runwayCoords } from '../../core/world';
+import { AIRPORT, onHomeAirport, runwayCoords, SEED0_HOME } from '../../core/world';
 
 export interface LocalXY {
   u: number;
@@ -32,8 +32,10 @@ export interface NamedPosition extends NedXY {
   heading: number;
 }
 
-const COS_H = Math.cos(AIRPORT.runway.heading);
-const SIN_H = Math.sin(AIRPORT.runway.heading);
+// The runway's heading changes with the world seed (core/world.ts setHomeAirport): everything below is laid out in
+// the local frame, and the NED positions derived from it are re-derived in place (refreshNed at the end).
+let COS_H = Math.cos(AIRPORT.runway.heading);
+let SIN_H = Math.sin(AIRPORT.runway.heading);
 
 export function localToNed(u: number, v: number): NedXY {
   return {
@@ -117,7 +119,9 @@ const A_END = RUNWAY_HALF_LENGTH - 15;
 const UNDER_RUNWAY_V = -RUNWAY_HALF_WIDTH + 5;
 
 export const APRON_RECT: LocalRect = (() => {
-  const c = nedToLocal(AIRPORT.apron.north, AIRPORT.apron.east);
+  // Seed 0's apron centre (core/world.ts AIRPORT.apron) in the local frame: the same place in every world.
+  const h = SEED0_HOME.heading;
+  const c = { u: 260 * Math.cos(h) - 90 * Math.sin(h), v: -260 * Math.sin(h) - 90 * Math.cos(h) };
   return { u0: c.u - 165, u1: c.u + 165, v0: c.v - 50, v1: c.v + 50 };
 })();
 
@@ -131,12 +135,15 @@ export const TAXIWAYS: readonly TaxiwaySegment[] = [
   { name: 'B2', a: { u: 70, v: PARALLEL_TAXIWAY_V }, b: { u: 70, v: APRON_RECT.v1 - 5 }, width: TW },
 ];
 
-/** Connectors that cross a hold line onto the runway, with the runway end they normally serve. */
-export const RUNWAY_CONNECTORS: readonly { name: string; runway: '07' | '25' }[] = [
-  { name: 'A1', runway: '07' },
-  { name: 'A2', runway: '07' },
-  { name: 'A3', runway: '25' },
-  { name: 'A4', runway: '25' },
+/** A runway end: 0 the low-numbered one ('07' at seed 0, take-off toward +u), 1 the other. */
+export type RunwayEnd = 0 | 1;
+
+/** Connectors that cross a hold line onto the runway, with the runway end they normally serve (`runway`: its designator). */
+export const RUNWAY_CONNECTORS: readonly { name: string; end: RunwayEnd; runway: string }[] = [
+  { name: 'A1', end: 0, runway: AIRPORT.runway.ids[0] },
+  { name: 'A2', end: 0, runway: AIRPORT.runway.ids[0] },
+  { name: 'A3', end: 1, runway: AIRPORT.runway.ids[1] },
+  { name: 'A4', end: 1, runway: AIRPORT.runway.ids[1] },
 ];
 
 /** Apron taxilane along u, midway between the two parking rows. */
@@ -271,15 +278,15 @@ export const PARKING: NamedPosition = spotToNamed(
 export const PARKING_POSITIONS: readonly NamedPosition[] = PARKING_SPOTS.map(spotToNamed);
 
 /** Aircraft CG position when holding short: on the connector centreline, 4 m behind the hold line, facing the runway. */
-export const HOLD_SHORT: readonly (NamedPosition & { runway: '07' | '25' })[] = RUNWAY_CONNECTORS.map((c) => {
+export const HOLD_SHORT: readonly (NamedPosition & { end: RunwayEnd; runway: string })[] = RUNWAY_CONNECTORS.map((c) => {
   const t = TAXIWAYS.find((s) => s.name === c.name)!;
-  return { name: c.name, runway: c.runway, ...localToNed(t.a.u, HOLD_LINE_V - 4), heading: localHeading(0, 1) };
+  return { name: c.name, end: c.end, runway: c.runway, ...localToNed(t.a.u, HOLD_LINE_V - 4), heading: localHeading(0, 1) };
 });
 
 /** Runway line-up positions: on the centreline 20 m inside each threshold, facing the take-off direction. */
-export const LINE_UP: readonly (NamedPosition & { runway: '07' | '25' })[] = [
-  { name: 'RWY07', runway: '07', ...localToNed(-RUNWAY_HALF_LENGTH + 20, 0), heading: localHeading(1, 0) },
-  { name: 'RWY25', runway: '25', ...localToNed(RUNWAY_HALF_LENGTH - 20, 0), heading: localHeading(-1, 0) },
+export const LINE_UP: readonly (NamedPosition & { end: RunwayEnd; runway: string })[] = [
+  { name: `RWY${AIRPORT.runway.ids[0]}`, end: 0, runway: AIRPORT.runway.ids[0], ...localToNed(-RUNWAY_HALF_LENGTH + 20, 0), heading: localHeading(1, 0) },
+  { name: `RWY${AIRPORT.runway.ids[1]}`, end: 1, runway: AIRPORT.runway.ids[1], ...localToNed(RUNWAY_HALF_LENGTH - 20, 0), heading: localHeading(-1, 0) },
 ];
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -302,23 +309,26 @@ export interface PapiUnit extends NedXY {
   angle: number;
 }
 export interface Papi {
-  runway: '07' | '25';
+  end: RunwayEnd;
+  /** The designator of the runway end it serves. */
+  runway: string;
   /** Unit vector (local) from the lights toward the approaching aircraft. */
   facingU: 1 | -1;
   units: PapiUnit[];
 }
 
-export const PAPIS: readonly Papi[] = (['07', '25'] as const).map((runway) => {
-  const end = runway === '07' ? -1 : 1; // which end of u the threshold is at
+export const PAPIS: readonly Papi[] = ([0, 1] as const).map((rwEnd) => {
+  const runway = AIRPORT.runway.ids[rwEnd];
+  const end = rwEnd === 0 ? -1 : 1; // which end of u the threshold is at
   const distance = PAPI_TCH / Math.tan(PAPI_GLIDE_PATH);
   const u = end * (RUNWAY_HALF_LENGTH - distance);
   // Left of the landing direction: landing on 07 heads +u so left is -v; landing on 25 heads -u so left is +v.
-  const side = runway === '07' ? -1 : 1;
+  const side = rwEnd === 0 ? -1 : 1;
   const units = PAPI_ANGLES.map((angle, i) => {
     const v = side * (RUNWAY_HALF_WIDTH + 50 * FT + i * 30 * FT);
     return { u, v, ...localToNed(u, v), height: PAPI_LIGHT_HEIGHT, angle };
   });
-  return { runway, facingU: (runway === '07' ? -1 : 1) as 1 | -1, units };
+  return { end: rwEnd, runway, facingU: (rwEnd === 0 ? -1 : 1) as 1 | -1, units };
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -408,3 +418,48 @@ export const FLAT_ZONE: LocalRect = {
   v0: -RUNWAY_HALF_WIDTH - AIRPORT.flatMargin,
   v1: RUNWAY_HALF_WIDTH + AIRPORT.flatMargin,
 };
+
+// ---------------------------------------------------------------------------------------------------------------
+// Another world's home field (core/world.ts setHomeAirport): the same layout about the turned runway. The local
+// frame is unchanged; the NED positions and runway designators derived from it are re-derived in place, so modules
+// holding these objects see the new field.
+
+function refreshNed(): void {
+  COS_H = Math.cos(AIRPORT.runway.heading);
+  SIN_H = Math.sin(AIRPORT.runway.heading);
+  const ids = AIRPORT.runway.ids;
+  const ned = (o: NedXY, u: number, v: number): void => {
+    const p = localToNed(u, v);
+    o.north = p.north;
+    o.east = p.east;
+  };
+  for (const c of RUNWAY_CONNECTORS) c.runway = ids[c.end];
+  const spots = PARKING_SPOTS;
+  for (let i = 0; i < spots.length; i++) {
+    const p = PARKING_POSITIONS[i];
+    ned(p, spots[i].u, spots[i].v);
+    p.heading = localHeading(0, spots[i].facing);
+  }
+  const home = spots.find((x) => x.name === PARKING.name)!;
+  ned(PARKING, home.u, home.v);
+  PARKING.heading = localHeading(0, home.facing);
+  for (const h of HOLD_SHORT) {
+    const t = TAXIWAYS.find((x) => x.name === h.name)!;
+    ned(h, t.a.u, HOLD_LINE_V - 4);
+    h.heading = localHeading(0, 1);
+    h.runway = ids[h.end];
+  }
+  for (const l of LINE_UP) {
+    ned(l, l.end === 0 ? -RUNWAY_HALF_LENGTH + 20 : RUNWAY_HALF_LENGTH - 20, 0);
+    l.heading = localHeading(l.end === 0 ? 1 : -1, 0);
+    l.runway = ids[l.end];
+    l.name = `RWY${ids[l.end]}`;
+  }
+  for (const p of PAPIS) {
+    p.runway = ids[p.end];
+    for (const u of p.units) ned(u, u.u, u.v);
+  }
+  ned(TOWER, TOWER.u, TOWER.v);
+  ned(BEACON, BEACON.u, BEACON.v);
+}
+onHomeAirport(refreshNed);

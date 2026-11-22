@@ -1,0 +1,13 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+BG seed 1: bar points 115938 (no ribbon 2659); drawn wet 7478, ground wet 8420, both 7417: they agree on 87.5 % of the wet points (drawn only 61, ground only 1003)
+BG seed 42: bar points 96281 (no ribbon 2147); drawn wet 5912, ground wet 6651, both 5884: they agree on 88.1 % of the wet points (drawn only 28, ground only 767)
+BG seed 777777: bar points 117471 (no ribbon 2900); drawn wet 7045, ground wet 7785, both 6862: they agree on 86.1 % of the wet points (drawn only 183, ground only 923)
+BG seed 7: bar points 145352 (no ribbon 3313); drawn wet 8781, ground wet 9670, both 8641: they agree on 88.1 % of the wet points (drawn only 140, ground only 1029)
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  12:07:10
+   Duration  158.01s (tests 100%)
+

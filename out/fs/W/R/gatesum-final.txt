@@ -1,0 +1,35 @@
+wallsGate stream+chain valley > 30 m km: 111.2 / 98.2 / 113.9
+group class 2: 2 stream/chain on a floor beside a lower floor        2437 r   396.7 km  540>30 |  2477 r   401.4 km  500>30 |  2457 r   398.6 km  548>30
+group class 3: 3 tributary beside its receiver before the junction    287 r    40.6 km   80>30 |   256 r    32.8 km   50>30 |   281 r    39.6 km   73>30
+group class 5: 5 level over the natural ground at its centre           93 r    19.6 km   49>30 |    71 r    18.0 km   35>30 |   113 r    29.0 km   81>30
+drawnGate (i) corr: 0.689 / 0.682 / 0.686
+drawnGate (ii) thin: 0 / 0 / 0
+chkWetArea: 
+endsGate sinks now: 0 0 0 0; seed 7: 0
+endsGate DRY/dead lines: filled by the dead-end rule (FILL_DEAD_ENDS): none; pond outlets given their inflow 0 | filled by the dead-end rule (FILL_DEAD_ENDS): none; pond outlets given their inflow 0 | filled by the dead-end rule (FILL_DEAD_ENDS): none; pond outlets given their inflow 0 | filled by the dead-end rule (FILL_DEAD_ENDS): none; pond outlets given their inflow 0
+outletLoops: seed 1: outlets 18; loops 0; cycles through lakes and ponds 0 | seed 42: outlets 22; loops 0; cycles through lakes and ponds 0 | seed 777777: outlets 21; loops 0; cycles through lakes and ponds 0 | seed 7: outlets 12; loops 0; cycles through lakes and ponds 0
+cycles: seed 1: lines 6352 outlets 18 cycles 0 | seed 42: lines 6328 outlets 20 cycles 0 | seed 777777: lines 6669 outlets 20 cycles 0 | seed 7: lines 7744 outlets 12 cycles 0
+selfCross: seed 1: 0 self-crossings | seed 7: 0 self-crossings | seed 42: 0 self-crossings | seed 1234: 0 self-crossings | seed 99991: 0 self-crossings | seed 777777: 0 self-crossings
+headFeed dry heads: 24 / 17 / 16
+chkPitch: seed 1: pitch units shaped 824907 of 824907 found (100.0 %), samples inserted 357263; pitchOn km 12033 of which segment  | seed 42: pitch units shaped 810042 of 810042 found (100.0 %), samples inserted 339264; pitchOn km 11710 of which segment | seed 777777: pitch units shaped 886329 of 886329 found (100.0 %), samples inserted 384442; pitchOn km 12820 of which seg
+fieldBanks >2.5/>4 m: 840 m, > 4 m 30 / 1350 m, > 4 m 170 / 15830 m, > 4 m 540
+heldOver in reach >3 / >5: 777777: 3 / 1 | 1: 1 / 0 | 42: 5 / 0
+dryNear hidden m: 428 / 2385 / 922
+overGround >10 m points: 64 / 21 / 32
+waterWalls >2 m %: 4.65 / 4.70 / 4.52
+stepScan >100 m: 0 / 0 / 0
+lakeStats: seed 1: 73 ponds -> 71 lakes (2 left dry, 2 of them on a river) + 72 extra pools; water 711 km²; level lowered | seed 42: 74 ponds -> 74 lakes (0 left dry, 0 of them on a river) + 86 extra pools; water 632 km²; level lowere | seed 777777: 62 ponds -> 61 lakes (1 left dry, 0 of them on a river) + 60 extra pools; water 621 km²; level lo
+homeCheck ok: 8
+riverZero: 0 / 0 / 0
+worstN s1: WN seed 1 TOTAL step: across every line, steps over 50 m 14, over 100 m 0 (25 m samples) | WN seed 1 TOTAL poolcut: 189 falls; pool water under the ground 60 m beside it (lower side) p50 21.4 p90 54.7 max 66.8 m; over 5 m 180 | WN seed 1 TOTAL stepup: junction step-ups > 0.5 / 2 / 5 m 26 / 6 / 1 (in lakes and out) | WN seed 1 step #1: 81 m between 225 and 250 m from line 1062 (kind 1, water 787.2): 802.6 -> 884.1 at 22989,-86411 | w1-step1 seed=1&camPos=22989,-849 | WN seed 1 step #2: 68 m between 25 and 50 m from line 4036 (kind 1, water 830.2): 857.4 -> 925.5 at 36297,-99006 | w1-step2 seed=1&camPos=37797,-99006 | WN seed 1 step #3: 63 m between 25 and 50 m from line 3034 (kind 1, water 83
+worstN s42: WN seed 42 TOTAL step: across every line, steps over 50 m 8, over 100 m 0 (25 m samples) | WN seed 42 TOTAL poolcut: 290 falls; pool water under the ground 60 m beside it (lower side) p50 19.0 p90 50.9 max 66.0 m; over 5 m 281 | WN seed 42 TOTAL stepup: junction step-ups > 0.5 / 2 / 5 m 23 / 0 / 0 (in lakes and out) | WN seed 42 step #1: 66 m between 25 and 50 m from line 2803 (kind 1, water 648.1): 676.0 -> 741.6 at 18533,-17978 | w42-step1 seed=42&camPos=20033,-17 | WN seed 42 step #2: 64 m between 25 and 50 m from line 1782 (kind 1, water 1009.0): 1033.6 -> 1098.0 at -3234,-43998 | w42-step2 seed=42&camPos=-3234, | WN seed 42 step #3: 61 m between 25 and 50 m from line 3685 (kind 1, water
+worstN s777777: WN seed 777777 TOTAL step: across every line, steps over 50 m 95, over 100 m 2 (25 m samples) | WN seed 777777 TOTAL poolcut: 201 falls; pool water under the ground 60 m beside it (lower side) p50 21.4 p90 50.8 max 67.1 m; over 5 m 195 | WN seed 777777 TOTAL stepup: junction step-ups > 0.5 / 2 / 5 m 33 / 2 / 2 (in lakes and out) | WN seed 777777 step #1: 132 m between 425 and 450 m from line 0 (kind 0, water 220.9): 733.1 -> 600.7 at -172,15486 | w777777-step1 seed=777777&camPos | WN seed 777777 step #2: 75 m between 375 and 400 m from line 0 (kind 0, water 219.2): 353.3 -> 428.0 at 3422,20315 | w777777-step2 seed=777777&camPos= | WN seed 777777 step #3: 65 m between 25 and 50 m from line 14
+feedCount: seed 1: rivers 405, 7018 km; lines ending on a river (joins) 2013 = streams 473 + chains 1540: 2.87 per 10 river km; ending within 300 m of a river 20 | rivers 45-150 km² at the mouth: 86, 607 km; lines ending 2.65 per 10 km; gullies 127, no stream 13 | rivers 150-500 km² at the mouth: 152, 1722 km; lines ending 3.10 per 10 km; gullies 552, no stream 50 | rivers 500- km² at the mouth: 167, 4689 km; lines ending 2.81 per 10 km; gullies 1255, no stream 93 | seed 42: rivers 420, 6857 km; lines ending on a river (joins) 1991 = streams 490 + chains 1501: 2.90 per 10 river km; ending within 300 m of a river 2 | rivers 45-150 km² at the mouth: 117, 840 km; lines ending 2.12 per 10 km; gullies 86, n
+tr-owner: 
+beltOut: BO seed 1: rivers 5710 km; channel past the floor's edge less 70 m 3758.0 km, past the floor's edge (on no valley's floor) 2140.2  | BO seed 42: rivers 5544 km; channel past the floor's edge less 70 m 3733.5 km, past the floor's edge (on no valley's floor) 2174.6 | BO seed 777777: rivers 6175 km; channel past the floor's edge less 70 m 4032.8 km, past the floor's edge (on no valley's floor) 23
+fieldFaces: seed 1: streams in a field's blend 0 m; steepest bank face over 0.7 0 m, over 1 0 m | seed 42: streams in a field's blend 760 m; steepest bank face over 0.7 330 m, over 1 80 m | seed 777777: streams in a field's blend 310 m; steepest bank face over 0.7 100 m, over 1 10 m
+underLake: seed 1: trench under standing water > 3 m (> 1 m): rivers 0.34 (1.17) km, streams 0.00 (0.09) km; shore steps (line water under th | seed 42: trench under standing water > 3 m (> 1 m): rivers 0.49 (1.26) km, streams 0.03 (0.03) km; shore steps (line water under t | seed 777777: trench under standing water > 3 m (> 1 m): rivers 0.08 (0.80) km, streams 0.23 (0.40) km; shore steps (line water und | seed 7: trench under standing water > 3 m (> 1 m): rivers 0.00 (0.12) km, streams 0.00 (0.24) km; shore steps (line water under th
+presentGuard: 2 passed (2)
+suite: 749 passed (749)
+suite long:  Test Files  7 passed (7)       Tests  80 passed (80) 
+fields: 0 lines

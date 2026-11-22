@@ -1,0 +1,54 @@
+# What a pilot sees, per picture (round T). T0 = before (HEAD 64b3c61, code a26ee71).
+s7-789-along-T0: from 700 m looking NW down a farmed valley: the wooded stream forks into two, then three parallel dark channels side by side down the floor (789's wander trench beside the real course); a small pond near the far fork.
+s1-1414-end-T0: a long lake fills the valley; at its far (SW) end two straight parallel channels leave side by side (the outlet and 1414's trench); dark curved lines show under the water on the right; a short pale channel on the right shore.
+s1-1414-sw-T0: the same lake from further back: two thin dark lines curve across under the water, and a pale straight channel runs along the right shore into the lake.
+s1-602-T0: a ~1 km2 lake in farmland, a wooded stream coming in from the right (NE) along a straight trench; reads as a lake fed by a stream.
+s42-716-T0: from 4-5 km: a small pond (about 0.5 km2) on the plain at the foot of the hills; the dead end itself is not visible.
+s42-450-T0: lake 70 at 3 km; at its SE (near) shore a short pale curved channel and a parallel strip run off toward the forest edge and stop - easy to miss, but visible as a pale scar.
+s42-479-close-T0: a pale grass basin beside a 1 km2 lake, with concentric dark ring grooves round the basin's left half (line 479's 10 km wander).
+h42-438-T0: a grey stony cascade bed starts abruptly halfway up the forested mountainside with nothing above it, and a sawtooth grey bank edge runs along the valley channel in the foreground.
+floor-T0: the owner's valley from 1300 m: a grey river along the right of the floor on the shelf, the winding stream with wooded banks in the floor on the left; fields between; the 517 elbow is a small dark hook near the right river (needs the crop to see).
+v4-s42-517-elbow-T0: from 340 m AGL: the winding wooded stream comes down the floor (foreground) and, past the field, turns sharp right and hooks back to meet the grey braided river on the right: a visible elbow.
+wind-T0: the owner's calm winding stream down the middle of the floor, wooded banks, fields both sides, no white water; the grey river runs higher on the right.
+w42c-17-T0: tod 17 along the owner's valley: a row of identical rounded forested knolls down the valley side between the floor and the grey river; the stream runs straight down the left of the floor (stage B, not changed this round).
+B-s42-diag-T0: a ruler-straight dark trench (chain line 1214) runs from the bottom of the frame up the valley for km beside a natural grey braided river on the right: a canal, not a stream.
+D-s1-col-T0: a straight dark channel climbs the valley floor diagonally beside rectangular fields (chain 1158).
+F-s1-Vvalley-T0: a deep symmetric V whose floor carries a dead-straight light strip due north to its head.
+s1a-T0: a narrow forested V running away from the camera, its floor out of sight; s1b-T0: a forested face over a valley floor with a dark line along its foot and fields.
+42-V141-T0: a grey river with white rapids on a narrow shelf along the foot of the mountain wall; below it forest slopes down toward the camera to a dry pale hollow in the forest - the valley's real floor, with no river.
+1-V194-T0: a grey river ribbon on a shelf along the mountainside above forested slopes; its valley floor lower, out of the frame's left.
+777777-V239-T0: under a long grey cliff band, a pale river runs along a bench; forest below it, a dry clearing in the low ground in the foreground.
+777777-V215-T0: a pale braided river on a bench under the forested wall; the forested low ground and fields below, no river there.
+1-V181-T0: a thin grey stream along a shelf under a rock band, low and partly hidden by forest.
+777777-B720-T0: a dead-straight raised grey channel running diagonally with a translucent pale sheet hundreds of metres wide hanging over the fields and forest edge beside it.
+42-valley-head-T0: the owner's valley from its head: two rivers side by side - the winding wooded one (517) in the floor at the centre, a grey one (64) along the fields to the left, higher.
+42-V64-T0: river 64 as a thin grey line on a shelf along the forested mountainside under pale rock bands; the floor below out of frame.
+42-L2-head-T0: a big river (line 2) winding across its plain between fields and forest, a stream in the foreground: looks normal (the 21.9 m 'shelf' is not visible).
+# Step 2 (T2 = dead ends filled, outlet loops closed, lake 70/57 closed)
+s7-789-along-T2: the third, right-hand parallel channel (789's trench back up the valley) is gone; the stream now runs into a new narrow lake on the floor at mid-distance (0.5 km2). The left channel is another line, as before.
+s1-1414-end-T2: one outlet channel leaves the lake's far end; the second parallel channel, the dark lines under the water and the shore trench on the right are gone.
+s1-1414-sw-T2: a clean lake: no curved dark lines under the water, no pale channel along the right shore.
+s1-602-T2: nearly unchanged: a lake in farmland fed by a stream from the right; the channel that ran along the east shore into the lake is gone, the lake's far bay a little different.
+s42-716-T2: a new lake about 6 km long (9.7 km2) lies along the foot of the hills on the plain - the dominant feature from 4-5 km (owner decision 3: its sill stands 36 m over the pit, so the rule keeps it).
+s42-450-T2: lake 70 with no outlet: the pale curved channel and strip at its near (SE) shore are gone; the lake reads as a closed lake in forest and fields.
+s42-450-T2raise (LAKE_RAISE option): lake 70 raised 22 m to its real spill fills its basin, about 4.4 km2, a broad lake with a pale outlet scar leaving its SE end toward line 220 and the fields beside it.
+s42-479-close-T2: unchanged: the ring grooves round the pale basin remain (not fixed this round).
+h42-438-T2: unchanged: the stony cascade bed still starts mid-slope (unfed head, not fixed this round).
+# Step 3 (T3 = BARB_FIX and CURVE_FLOORS both ON - an option, NOT the shipped code; as shipped, with both off, floor,
+# v4-s42-517-elbow and wind render the same as T0: the checker's floor-V / v4-s42-517-elbow-V / wind-V, 0.14-0.24 % px)
+floor-T3: the hook into the grey river is gone: the stream now runs on straight down along the forest edge to the lower right instead of turning; a straight channel crosses the field below it. As shipped (T0 = V) the right-angle elbow and the hook are still there.
+v4-s42-517-elbow-T3: from 340 m AGL the hook to the right into the grey river is gone, but the owner's calm winding stream on the left is straightened and widened, white rapids run along it, a white fall shows at its turn, and a long straight dark channel runs the length of the middle field (lines 1075/1863 re-laid to the receiver's nearest sample). In this view the option fails the plan's wind rule (no new white water).
+wind-T3: the near reach looks the same (calm, wooded banks, fields both sides), but the far reach takes a visibly different line - it bends left near x 760, y 340 instead of right near x 800, y 360 - not a few metres.
+# Step 4 (T4 = streams held under the airfields' cut ground)
+777777-B720-T4: line 720 now drops to the floor of the generated airfield's approach instead of running level across it, but down the forested slope a raw bare scar about 40-60 m wide with a dark slot appears where it was lowered (its bed trimmed twice: the checker's cmp-B720-zoom). The pale translucent "sheet" is still there (the plan's pass rule, "no sheet", is not met).
+# Checker fixes (U = 09bd446: pond inflow, no loop through a lake, approaches trimmed before the carve; out/fs/shotsU,
+# cameras out/fs/viewsU.txt; "V" = 1ac0dc9 as handed in, the checker's renders in out/fs/verifyT1/pictures or shotsU/*-V)
+777777-B720-U: the bare scar and the wide dark slot on the slope are gone: 720 comes down the forest as a thin pale line with a short dark slot at the top, as before round T (T0), and runs into the approach's floor. The pale translucent sheet beside the straight floor reach is still there.
+777777-B720-Uap0 (debug tree, approach clear zone switched off, not shipped): the sheet is gone - forest covers the band and the fields on the left of the river - so the sheet is the approach's obstacle-clear zone (biome.ts: forest x (1 - approach)), its feathered edges the corridor's fade from halfW to 1.8 halfW; not water. Still visible, and a land-cover matter, not a stream one.
+xB720-high-U: from 3200 m the band hugs the straight reach because the reach runs inside the corridor, nearly along the runway's extended centreline (the field at -14572,32553, heading 135 deg; the reach heads 129 deg, 150 m off the centreline): the smooth pale oval in the forest beyond the band is, by its size and place, the field's grass flat. The slope scar of V is gone.
+xB720-tod17-U: at 17:00 the cleared zone reads as pale grass in shade beside the river; 720's slope reach a thin line in the forest; no scar.
+fly7-720-U: from the cockpit the pale band still shows over the forest beside the stream out of the left window (as V); with the clear zone off (fly7-720-Uap0) it is mostly forest. The zigzag square-cornered grey channel upstream is unchanged (square corners not fixed).
+x716-outlet-U (V, T0 the same camera): the 9.7 km2 lake's outlet now leaves its SW end as a visible blue channel into the wooded river (2250 drawn for 51 km2, half-width 7.6 m); in V it was a thin line (6.2 km2, 2.4 m). T0: a small pond far off.
+s42-716-U, x716-near-U, x716-east-U, fly42-716-U: as V - the ~6 km lake; from 2.7 km south (x716-near) its near shore is ruler-straight for ~4 km with rectangular fields and a poplar row parallel to it (looks man-made); from the SE (x716-east) and the cockpit it reads as a natural oval lake. Owner decision 3.
+x1-pond79-U (T0, V): seed 1 pond 79 (1.5 km2) and lake 48 from 1.6 km: no visible change between T0, V and U at this range - the loop (pond 79's outlet 2178 back into lake 48) was a short reach between the two; pond 79 is now closed.
+s1-1414-end-U, s1-1414-sw-U, s1-602-U, s7-789-along-U (U = 09bd446, rendered to check the widened outlets): look as T2 from these ranges - one outlet from the 1414 lake's far end, the 602 lake fed from the right, 789 ending in its lake; the outlets now carry their ponds' whole inflow (2188 41 -> 59 km2, 2181 27 -> 70, 2299 54 -> 64) and nothing new shows.

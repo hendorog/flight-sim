@@ -1,7 +1,8 @@
 // Which world seed a session is built from (worldSeed.ts; mirrors eraChoice.ts). Node-safe: tests/sim/seedChoice.test.ts
 // runs it with a fake store.
 //
-//   at boot     seed=<n> in the URL; else the stored preference ('fs.seed'); else 0, today's world. A seed given by
+//   at boot     a lesson (lesson= in the URL) always flies in today's world, seed 0, where the Flight School's route is;
+//               else seed=<n> in the URL; else the stored preference ('fs.seed'); else 0, today's world. A seed given by
 //               URL is not stored (dev and test links do not change the world the owner flies next). The Simulator
 //               constructor calls setWorldSeed() with the result right after the era.
 //   the menu    commands.setSeed stores the preference and reloads without the URL parameters that would undo the
@@ -20,11 +21,14 @@ export const RANDOM_SEED_MAX = 999999;
 
 export interface SeedChoice {
   seed: number;
-  source: 'url' | 'preference' | 'default';
+  source: 'lesson' | 'url' | 'preference' | 'default';
 }
 
 /** The seed this session is built from (see the header for the order). */
-export function chooseSeed(params: Pick<SimParams, 'seed'>, store: KeyValueStore | null): SeedChoice {
+export function chooseSeed(params: Pick<SimParams, 'seed'> & { school?: Pick<SimParams['school'], 'lesson'> }, store: KeyValueStore | null): SeedChoice {
+  // The Flight School's route (training/content/syllabus/route.ts) is laid out in today's world: a lesson always
+  // flies there, whatever the URL or the preference says (the preference is kept for the next free flight).
+  if (params.school?.lesson) return { seed: 0, source: 'lesson' };
   if (params.seed !== undefined) return { seed: params.seed, source: 'url' };
   let pref: string | null = null;
   try {
@@ -71,4 +75,20 @@ export function seedDevChoiceUrl(href: string, seed: number): string {
 /** How the menu names a seed. */
 export function seedLabel(seed: number): string {
   return seed === 0 ? "0 (today's world)" : String(seed);
+}
+
+/**
+ * The page a lesson started in a seeded world reloads into (TrainingSystem.start): the current URL without its seed
+ * and the start parameters a change of world drops, with lesson= (and phase=, brief=0, standard=) for this lesson.
+ * chooseSeed then builds seed 0 for it; the pilot's seed preference is left as it was.
+ */
+export function lessonSeedZeroUrl(href: string, lessonId: string, opts: { phase?: string; brief?: boolean; standard?: 'easa' | 'faa' } = {}): string {
+  const url = new URL(href);
+  url.searchParams.delete('seed');
+  for (const k of ERA_SWITCH_DROPS) if (k !== 'era') url.searchParams.delete(k);
+  url.searchParams.set('lesson', lessonId);
+  if (opts.phase !== undefined) url.searchParams.set('phase', opts.phase);
+  if (opts.brief === false) url.searchParams.set('brief', '0');
+  if (opts.standard !== undefined) url.searchParams.set('standard', opts.standard);
+  return url.toString();
 }

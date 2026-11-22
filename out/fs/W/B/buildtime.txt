@@ -1,0 +1,25 @@
+round 1 tree before load 0.59 0.81 5.18 12:49:16
+before JT seed 1: build 18403 ms; phases 35/7267/3241/155; form ms room 1104, lay 293, chan 1787, form 2799, streams 4308; net ms refine 98, shape 68, pitch 536, flow 141, index 136; rivers 405, streams 5962 (16275 km), too short for a thread 6, no form arrays 0
+before JT seed 42: build 19388 ms; phases 78/7945/3496/154; form ms room 1095, lay 269, chan 1727, form 3106, streams 4789; net ms refine 109, shape 48, pitch 568, flow 97, index 135; rivers 420, streams 6119 (17178 km), too short for a thread 7, no form arrays 0
+before JT seed 777777: build 22279 ms; phases 23/9181/4560/205; form ms room 1283, lay 313, chan 2039, form 3955, streams 5338; net ms refine 190, shape 83, pitch 830, flow 132, index 182; rivers 429, streams 6327 (17133 km), too short for a thread 5, no form arrays 0
+round 1 tree bat load 3.66 1.56 5.15 12:50:18
+bat JT seed 1: build 26145 ms; phases 43/9366/6219/217; form ms room 1456, lay 434, chan 2440, form 5711, streams 5753; net ms refine 142, shape 72, pitch 608, flow 134, index 193; rivers 405, streams 5961 (16255 km), too short for a thread 8, no form arrays 0
+bat JT seed 42: build 28717 ms; phases 93/13280/5448/212; form ms room 1158, lay 310, chan 1867, form 5041, streams 7844; net ms refine 141, shape 48, pitch 588, flow 103, index 166; rivers 420, streams 6118 (17171 km), too short for a thread 6, no form arrays 0
+bat JT seed 777777: build 22583 ms; phases 23/8496/5411/167; form ms room 1295, lay 333, chan 2105, form 4996, streams 5161; net ms refine 161, shape 46, pitch 622, flow 99, index 148; rivers 429, streams 6329 (17132 km), too short for a thread 7, no form arrays 0
+round 2 tree before load 6.52 3.11 5.41 12:51:37
+before JT seed 1: build 23054 ms; phases 44/9383/4284/204; form ms room 1678, lay 449, chan 2726, form 3728, streams 5650; net ms refine 119, shape 96, pitch 572, flow 165, index 181; rivers 405, streams 5962 (16275 km), too short for a thread 6, no form arrays 0
+before JT seed 42: build 24499 ms; phases 98/9992/4348/187; form ms room 1385, lay 342, chan 2189, form 3742, streams 6067; net ms refine 115, shape 97, pitch 599, flow 199, index 164; rivers 420, streams 6119 (17178 km), too short for a thread 7, no form arrays 0
+before JT seed 777777: build 25674 ms; phases 41/8937/3471/155; form ms room 2726, lay 661, chan 4316, form 3076, streams 4925; net ms refine 120, shape 46, pitch 587, flow 104, index 138; rivers 429, streams 6327 (17133 km), too short for a thread 5, no form arrays 0
+round 2 tree bat load 8.47 4.61 5.76 12:52:52
+bat JT seed 1: build 21182 ms; phases 36/7678/5160/174; form ms room 1139, lay 338, chan 1898, form 4654, streams 4701; net ms refine 103, shape 78, pitch 495, flow 143, index 153; rivers 405, streams 5961 (16255 km), too short for a thread 8, no form arrays 0
+bat JT seed 42: build 27789 ms; phases 140/10918/6945/266; form ms room 1672, lay 445, chan 2710, form 6416, streams 6434; net ms refine 164, shape 87, pitch 787, flow 128, index 208; rivers 420, streams 6118 (17171 km), too short for a thread 6, no form arrays 0
+bat JT seed 777777: build 32620 ms; phases 30/11771/8765/306; form ms room 1790, lay 499, chan 2943, form 7965, streams 7214; net ms refine 160, shape 61, pitch 770, flow 137, index 273; rivers 429, streams 6329 (17132 km), too short for a thread 7, no form arrays 0
+round 3 tree before load 9.56 5.83 6.08 12:54:15
+before JT seed 1: build 19824 ms; phases 37/7582/3271/198; form ms room 1148, lay 307, chan 1870, form 2841, streams 4573; net ms refine 117, shape 63, pitch 527, flow 110, index 175; rivers 405, streams 5962 (16275 km), too short for a thread 6, no form arrays 0
+before JT seed 42: build 20433 ms; phases 124/8437/3663/172; form ms room 1110, lay 270, chan 1746, form 3148, streams 5153; net ms refine 116, shape 106, pitch 550, flow 182, index 152; rivers 420, streams 6119 (17178 km), too short for a thread 7, no form arrays 0
+before JT seed 777777: build 28073 ms; phases 30/11341/4926/215; form ms room 1790, lay 422, chan 2822, form 4253, streams 6982; net ms refine 155, shape 65, pitch 784, flow 170, index 194; rivers 429, streams 6327 (17133 km), too short for a thread 5, no form arrays 0
+round 3 tree bat load 8.87 6.26 6.21 12:55:26
+bat JT seed 1: build 31713 ms; phases 50/10606/10143/187; form ms room 1523, lay 451, chan 2553, form 9471, streams 6452; net ms refine 110, shape 71, pitch 923, flow 242, index 152; rivers 405, streams 5961 (16255 km), too short for a thread 8, no form arrays 0
+bat JT seed 42: build 22711 ms; phases 89/8516/5366/158; form ms room 1130, lay 307, chan 1833, form 4859, streams 5253; net ms refine 104, shape 102, pitch 540, flow 181, index 139; rivers 420, streams 6118 (17171 km), too short for a thread 6, no form arrays 0
+bat JT seed 777777: build 26312 ms; phases 72/9138/8086/219; form ms room 1367, lay 369, chan 2239, form 7469, streams 5593; net ms refine 153, shape 47, pitch 664, flow 169, index 196; rivers 429, streams 6329 (17132 km), too short for a thread 7, no form arrays 0
+BUILDTIME-DONE

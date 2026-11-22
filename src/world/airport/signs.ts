@@ -61,7 +61,7 @@ function signDefs(): SignDef[] {
       u: t.a.u + TAXIWAY_WIDTH / 2 + 4,
       v: HOLD_LINE_V - 0.5,
       normal: 'v-',
-      front: [{ text: cn.name, style: 'location' }, { text: '25-07', style: 'mandatory' }],
+      front: [{ text: cn.name, style: 'location' }, { text: `${AIRPORT.runway.ids[1]}-${AIRPORT.runway.ids[0]}`, style: 'mandatory' }],
       back: [{ text: cn.name, style: 'location' }],
       height: H,
       base: 0.35,
@@ -226,7 +226,9 @@ const NORMAL_ROT: Record<Normal, number> = { 'v-': -Math.PI / 2, 'v+': Math.PI /
 export function createSigns(anisotropy: number): { mesh: THREE.Mesh; material: THREE.MeshStandardMaterial } {
   const defs = signDefs();
   const terminal = buildingByName('Terminal');
-  const boardFace: Face = [{ text: 'FABLE REGIONAL AIRPORT  ·  KFBL', style: 'board' }];
+  // 'FABLE REGIONAL AIRPORT · KFBL' at seed 0; a seeded world's own field ('PENHAVEN AIRPORT · KPNH').
+  const boardName = AIRPORT.name.toUpperCase();
+  const boardFace: Face = [{ text: `${boardName}${boardName.endsWith('AIRPORT') ? '' : ' AIRPORT'}  ·  ${AIRPORT.icao}`, style: 'board' }];
   const atlas = new Atlas(8);
   const faces = new GeometryBatch();
   const frames = new GeometryBatch();

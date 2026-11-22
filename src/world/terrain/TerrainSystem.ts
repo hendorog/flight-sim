@@ -11,7 +11,7 @@ import { worldSeed } from '../worldSeed';
 import * as THREE from 'three';
 import type { QualityLevel, SimContext, Subsystem } from '../../core/context';
 import { findTownSite } from '../airport/valley';
-import { terrainHeight } from './heightfield';
+import { hydrology, seededModel, snowShiftM, terrainHeight } from './heightfield';
 import { morphWindow, nodeKey, nodeSize, NodeRefPool, selectNodes, type LodSettings, type LodView, type NodeRef } from './quadtree';
 import { CANOPY_HEIGHT, createTerrainDepthMaterial, createTerrainMaterial, MAX_LEVELS, updateVillageUniforms, setTerrainDebug, setTerrainDetail, type TerrainUniforms } from './terrainMaterial';
 import { createTerrainTextures, type TerrainTextures } from './textures';
@@ -20,9 +20,12 @@ import { AirfieldGrass } from './vegetation/grass';
 import { createEraLayers, type EraLayer } from './eraLayers';
 import { updateEraUniforms } from './eraUniforms';
 import { VegetationSystem } from './vegetation/VegetationSystem';
+import { BoulderSystem, bouldersEnabled } from './vegetation/BoulderSystem';
+import { RillSystem } from './RillSystem';
+import { rillsOn } from './rillShader';
 import { setTownSite, townSite } from './townMask';
 import { era, isPresent } from '../era/eraState';
-import { createRiverGeometry, createWaterGeometry, createWaterMaterial, type WaterUniforms } from './water';
+import { createFallGeometries, createRiverGeometry, createRiverNetworkGeometries, createWaterGeometry, createWaterMaterial, SMALL_RIBBON_RANGE, type SmallRibbonChunk, type WaterUniforms } from './water';
 import { WorkerPool } from './workerPool';
 
 interface QualityPreset {
@@ -77,8 +80,21 @@ export class TerrainSystem implements Subsystem {
   private waterMaterial!: THREE.MeshStandardMaterial;
   private riverMaterial!: THREE.MeshStandardMaterial;
   private river!: THREE.Mesh;
+  private readonly riverNetwork: THREE.Mesh[] = [];
+  /** A seeded world's narrow streams' ribbon chunks (water.ts SMALL_RIBBON_HW), and the mesh of each built near the
+   * viewer (null: not built). */
+  private readonly smallRibbons: SmallRibbonChunk[] = [];
+  private readonly smallMeshes: Array<THREE.Mesh | null> = [];
+  private smallFrame = 0;
+  /** A seeded world's falls (curtains and pool foam, then spray) and their materials (water.ts createFallGeometries). */
+  private readonly falls: THREE.Mesh[] = [];
+  private readonly fallMaterials: THREE.Material[] = [];
   private indices!: THREE.BufferAttribute;
   private vegetation: VegetationSystem | null = null;
+  /** Boulder fields along fast water (a seeded world's only: it needs the channels' flow). */
+  private boulders: BoulderSystem | null = null;
+  /** A seeded world's hillside rills (rills.ts), streamed into the ground shader's texture. */
+  private rills: RillSystem | null = null;
   private grass: AirfieldGrass | null = null;
   /** The era's extra layers (eraLayers.ts; none in the present day). */
   private eraLayers: EraLayer[] = [];
@@ -149,9 +165,10 @@ export class TerrainSystem implements Subsystem {
     // findTownSite picks for this terrain); the workers need it before their first job.
     // (Not in an era without the town, whatever the option says.)
     if (this.options.town !== false && era().terrain.town) setTownSite(findTownSite(terrainHeight));
-    this.pool.broadcast({ kind: 'setup', town: townSite(), era: era().id, seed: worldSeed() });
+    this.pool.broadcast({ kind: 'setup', town: townSite(), era: era().id, seed: worldSeed(), snowShift: snowShiftM(), model: seededModel() });
     this.uploader = new GeometryUploader(ctx.renderer);
     this.textures = createTerrainTextures(ctx.renderer);
+    if (rillsOn()) this.rills = new RillSystem(this.pool);
     this.material = createTerrainMaterial(this.textures, this.uniforms);
     this.depthMaterial = createTerrainDepthMaterial(this.uniforms);
     this.waterMaterial = createWaterMaterial(this.textures.noise, this.waterUniforms, false);
@@ -159,6 +176,29 @@ export class TerrainSystem implements Subsystem {
     this.river = new THREE.Mesh(createRiverGeometry(), this.riverMaterial);
     this.river.name = 'river';
     this.waterGroup.add(this.river);
+    // A seeded world's other rivers (riverNetwork.ts), in chunks the renderer can cull.
+    for (const g of createRiverNetworkGeometries(this.smallRibbons)) {
+      const m = new THREE.Mesh(g, this.riverMaterial);
+      m.name = 'river-network';
+      this.riverNetwork.push(m);
+      this.waterGroup.add(m);
+    }
+    // Its falls, drawn after the rivers they pour into; the spray last, over them.
+    const fallGeo = createFallGeometries();
+    if (fallGeo.sheets.length) {
+      const sheetMat = createWaterMaterial(this.textures.noise, this.waterUniforms, true, 'sheet');
+      const sprayMat = createWaterMaterial(this.textures.noise, this.waterUniforms, true, 'mist');
+      this.fallMaterials.push(sheetMat, sprayMat);
+      for (const [list, mat, order, name] of [[fallGeo.sheets, sheetMat, 1, 'falls'], [fallGeo.spray, sprayMat, 2, 'falls-spray']] as const) {
+        for (const g of list) {
+          const m = new THREE.Mesh(g, mat);
+          m.name = name;
+          m.renderOrder = order;
+          this.falls.push(m);
+          this.waterGroup.add(m);
+        }
+      }
+    }
     ctx.scene.add(this.root);
     this.precompileWater(ctx);
 
@@ -176,6 +216,12 @@ export class TerrainSystem implements Subsystem {
         this.grass = new AirfieldGrass();
         this.grass.setQuality(ctx.quality);
         this.root.add(this.grass.mesh);
+      }
+      // Boulder fields along fast water: a world whose channels carry their flow (never seed 0).
+      if (hydrology.queryFlow && bouldersEnabled()) {
+        this.boulders = new BoulderSystem(this.pool);
+        this.boulders.init(ctx.quality);
+        this.root.add(this.boulders.root);
       }
       // Increment 2: the era's layers (WP6's near understorey), never in the present day.
       if (era().flora !== 'present') {
@@ -203,6 +249,9 @@ export class TerrainSystem implements Subsystem {
     this.waterUniforms.uSkyColor.value.copy(ctx.sky.skyColor);
     this.waterUniforms.uHazeColor.value.copy(ctx.sky.hazeColor);
     this.vegetation?.update(dt, ctx);
+    this.boulders?.update(ctx.camera);
+    this.rills?.update(ctx.camera);
+    if (this.smallRibbons?.length) this.updateSmallRibbons(ctx.camera);
     this.grass?.update(dt, ctx.camera);
     if (!isPresent()) {
       updateEraUniforms(dt, ctx.sky);
@@ -210,10 +259,48 @@ export class TerrainSystem implements Subsystem {
     }
   }
 
+  /** Build the narrow streams' ribbon chunks within SMALL_RIBBON_RANGE of the viewer (two a frame at most, nearest
+   * first) and drop those beyond it by 2 km more; looked at every eighth frame. */
+  private updateSmallRibbons(camera: THREE.Camera): void {
+    if (!this.smallRibbons.length || (this.smallFrame++ & 7) !== 0) return;
+    const e = camera.position.x;
+    const n = -camera.position.z;
+    const want: Array<{ i: number; d: number }> = [];
+    for (let i = 0; i < this.smallRibbons.length; i++) {
+      const c = this.smallRibbons[i];
+      const dn = Math.max(c.minN - n, 0, n - c.maxN);
+      const de = Math.max(c.minE - e, 0, e - c.maxE);
+      const d = Math.hypot(dn, de);
+      const m = this.smallMeshes[i];
+      if (m && d > SMALL_RIBBON_RANGE + 2000) {
+        this.waterGroup.remove(m);
+        m.geometry.dispose();
+        this.smallMeshes[i] = null;
+      } else if (m === null || m === undefined) {
+        if (d < SMALL_RIBBON_RANGE) want.push({ i, d });
+      }
+    }
+    want.sort((a, b) => a.d - b.d);
+    for (const { i } of want.slice(0, 2)) {
+      const g = this.smallRibbons[i].build();
+      if (!g) {
+        // (Nothing to draw: never asked again.)
+        this.smallMeshes[i] = new THREE.Mesh();
+        continue;
+      }
+      const m = new THREE.Mesh(g, this.riverMaterial);
+      m.name = 'river-network-small';
+      this.smallMeshes[i] = m;
+      this.waterGroup.add(m);
+    }
+  }
+
   dispose(): void {
     for (const u of this.unsubscribe) u();
     this.clearNodes();
     this.vegetation?.dispose();
+    this.boulders?.dispose();
+    this.rills?.dispose();
     this.grass?.dispose();
     for (const l of this.eraLayers) l.dispose();
     this.pool.dispose();
@@ -224,7 +311,26 @@ export class TerrainSystem implements Subsystem {
     this.waterMaterial.dispose();
     this.riverMaterial.dispose();
     this.river.geometry.dispose();
+    for (const m of this.riverNetwork) m.geometry.dispose();
+    this.riverNetwork.length = 0;
+    for (const m of this.smallMeshes) m?.geometry.dispose();
+    this.smallMeshes.length = 0;
+    this.smallRibbons.length = 0;
+    for (const m of this.falls) m.geometry.dispose();
+    this.falls.length = 0;
+    for (const m of this.fallMaterials) m.dispose();
+    this.fallMaterials.length = 0;
     this.root.removeFromParent();
+  }
+
+  /** The boulder fields' counts and last rebuild time (null without them). */
+  get boulderStats(): BoulderSystem['stats'] | null {
+    return this.boulders?.stats ?? null;
+  }
+
+  /** The rills' patch count, mean worker time per patch and last upload time (null without them). */
+  get rillStats(): RillSystem['stats'] | null {
+    return this.rills?.stats ?? null;
   }
 
   /**
@@ -288,6 +394,7 @@ export class TerrainSystem implements Subsystem {
     this.indices = new THREE.BufferAttribute(buildTileIndices(s.grid), 1);
     this.generation++;
     this.vegetation?.setQuality(q);
+    this.boulders?.setQuality(q);
   }
 
   private clearNodes(): void {
@@ -388,6 +495,8 @@ export class TerrainSystem implements Subsystem {
     g.setAttribute('aBiome', gpuOnly(new THREE.BufferAttribute(d.biome, 4, true)));
     g.setAttribute('aShape', gpuOnly(new THREE.BufferAttribute(d.shape, 4, true)));
     g.setAttribute('aRiver', gpuOnly(new THREE.BufferAttribute(d.river, 2, false)));
+    // A seeded world's channel steepness (bare rock along fast water; seed 0 has none).
+    if (d.flow) g.setAttribute('aFlow', gpuOnly(new THREE.BufferAttribute(d.flow, 1, true)));
     // Bounds include the geomorph range (coarse targets never leave the node's height span by much).
     const pad = 4 + this.uniforms.uSkirt.value[d.level];
     g.boundingBox = new THREE.Box3(new THREE.Vector3(0, d.minHeight - pad, -size), new THREE.Vector3(size, d.maxHeight + 4 + CANOPY_HEIGHT, 0));
@@ -406,7 +515,7 @@ export class TerrainSystem implements Subsystem {
 
     let water: THREE.Mesh | null = null;
     if (d.water) {
-      const wg = createWaterGeometry(d.water);
+      const wg = createWaterGeometry(d.water, d.shape);
       for (const a of Object.values(wg.attributes)) gpuOnly(a as THREE.BufferAttribute);
       if (wg.index) gpuOnly(wg.index);
       // Bounds from the water surface itself: over a lake bed the surface lies above all the ground.

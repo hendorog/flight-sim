@@ -43,7 +43,7 @@ import { TOWN_WOOD_FADE, TOWN_WOOD_MARGIN } from '../world/terrain/townMask';
 import { buildTreeCell, TREE_STRIDE, WALL_STRIDE, type TreeCellData } from '../world/terrain/vegetation/placement';
 import { worldSeed } from '../world/worldSeed';
 import { bearingDeg, compassName, nearestField, placeName, type NedPoint } from './geo';
-import { LAKE_NAMES } from './landmarks';
+import { lakeName } from './landmarks';
 import { COMPLETION_RULES, type Waypoint } from './types';
 
 /** What a site is beside. */
@@ -357,11 +357,13 @@ export function siteAnchors(): readonly SiteAnchor[] {
     const edge = Math.max(lake.radiusA, lake.radiusB);
     out.push({
       id: `lake-${i}`, kind: 'lake', north: lake.north, east: lake.east, prefix: 'Lake shore',
-      fixedName: LAKE_NAMES[i] ? `Shore of ${LAKE_NAMES[i]}` : undefined, candidates: () => rings(lake, edge),
+      fixedName: lakeName(i) ? `Shore of ${lakeName(i)}` : undefined, candidates: () => rings(lake, edge),
     });
   });
   const river = hydrology.river;
   stations(river, SITE_RULES.riverStepM).forEach((i, n) => {
+    // A seeded world's main river runs far beyond the fields: keep its banks within the landmarks' summit reach.
+    if (hydrology.rivers && Math.hypot(river.north[i], river.east[i]) > SEEDED_RIVER_REACH_M) return;
     out.push({
       id: `river-${n}`, kind: 'river', north: river.north[i], east: river.east[i], prefix: 'Riverbank',
       candidates: () => squareTo(river, i, RIVER_OFFSETS_M, river.halfWidth[i]),
@@ -373,6 +375,9 @@ export function siteAnchors(): readonly SiteAnchor[] {
 }
 
 // --------------------------------------------------------------------------------------------- sites
+
+/** How far from the home field a seeded world's riverbank sites go, m (landmarks.ts SUMMIT.reachM). */
+const SEEDED_RIVER_REACH_M = 50000;
 
 /** "3.2 NM north-east of Elmley" from the nearest field. */
 function relativeTo(p: NedPoint, fields: readonly Airfield[]): string {
@@ -394,7 +399,11 @@ export function siteOf(a: SiteAnchor, fields: readonly Airfield[]): HeliSite | n
   const key = `${era().id}|${worldSeed()}|${fields.map((f) => `${f.code}:${f.north}:${f.east}`).join(',')}`;
   let resolved = resolvedByWorld.get(key);
   if (!resolved) {
-    if (resolvedByWorld.size >= RESOLVED_WORLDS) resolvedByWorld.clear();
+    if (resolvedByWorld.size >= RESOLVED_WORLDS) {
+      resolvedByWorld.clear();
+      baseNames.clear();
+      runs.clear();
+    }
     resolved = new Map();
     resolvedByWorld.set(key, resolved);
   }
@@ -403,14 +412,40 @@ export function siteOf(a: SiteAnchor, fields: readonly Airfield[]): HeliSite | n
   let site: HeliSite | null = null;
   for (const p of a.candidates()) {
     if (siteRefusal(p, fields) !== null) continue;
+    let name = a.fixedName ?? `${a.prefix} ${relativeTo(p, fields)}`;
+    // In a seeded world two riverbank sites a station apart can read the same (the river swinging round a field at
+    // that distance): the later one is named further downstream.
+    if (a.kind === 'river' && worldSeed() !== 0) {
+      baseNames.set(`${key}|${a.id}`, name);
+      const run = riverRun(a, name, fields, key);
+      runs.set(`${key}|${a.id}`, run);
+      if (run === 1) name += ', downstream';
+      else if (run > 1) name += `, ${run} reaches downstream`;
+    }
     site = Object.freeze({
-      id: a.id, kind: a.kind, name: a.fixedName ?? `${a.prefix} ${relativeTo(p, fields)}`,
+      id: a.id, kind: a.kind, name,
       north: p.north, east: p.east, elevationM: terrainHeight(p.north, p.east),
     });
     break;
   }
   resolved.set(a.id, site);
   return site;
+}
+
+/** A seeded world's riverbank sites' names before the run suffix, and how many sites up the river read the same. */
+const baseNames = new Map<string, string>();
+const runs = new Map<string, number>();
+/** How many river stations above anchor `a` (back to the last with a site) have a site whose name reads `name`. */
+function riverRun(a: SiteAnchor, name: string, fields: readonly Airfield[], key: string): number {
+  const n = Number(a.id.slice('river-'.length));
+  const anchors = siteAnchors();
+  for (let m = n - 1; m >= 0; m--) {
+    const prev = anchors.find((x) => x.id === `river-${m}`);
+    if (!prev) return 0;
+    if (!siteOf(prev, fields)) continue;
+    return baseNames.get(`${key}|${prev.id}`) === name ? (runs.get(`${key}|${prev.id}`) ?? 0) + 1 : 0;
+  }
+  return 0;
 }
 
 /**

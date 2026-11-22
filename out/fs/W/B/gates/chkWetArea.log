@@ -1,0 +1,12 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+WA seed 1: pools 110, lakeStats sum 636 km²; drawn standing water over the ground (250 m grid) 621 km²
+WA seed 42: pools 137, lakeStats sum 585 km²; drawn standing water over the ground (250 m grid) 576 km²
+WA seed 777777: pools 113, lakeStats sum 623 km²; drawn standing water over the ground (250 m grid) 607 km²
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  09:57:31
+   Duration  123.64s (tests 99%)
+

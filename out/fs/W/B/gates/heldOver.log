@@ -1,0 +1,61 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+seed 777777: fieldHeld 4333 samples; walked in-zone 20828 (20 m steps), outside 2435625 (1 in 7 checked)
+  in airfield reach: water over both banks >1 37  >3 17  >5 9  >10 0 (20 m steps)
+  outside (1/7 sampled): >1 739  >3 194  >5 88  >10 12
+  lines in reach with water >3 m over both banks: 665 (7 x 20 m, worst 6.8 at 749,-4251); 244 (2 x 20 m, worst 5.7 at 2588,-7992); 680 (5 x 20 m, worst 5.5 at 2997,-8497); 809 (1 x 20 m, worst 4.4 at 1664,3177); 1549 (2 x 20 m, worst 4.2 at 27294,15730)
+   line 665 s 7881 at 749,-4251 (home) water 323.8 centre ground 323.3 banks 316.3/317.0 hw 6.9 -> over both banks 6.8 m
+   line 665 s 7872 at 742,-4257 (home) water 323.9 centre ground 323.5 banks 317.2/316.0 hw 6.9 -> over both banks 6.7 m
+   line 665 s 7890 at 756,-4246 (home) water 323.6 centre ground 323.2 banks 317.2/317.0 hw 6.9 -> over both banks 6.5 m
+   line 665 s 7901 at 765,-4240 (home) water 323.5 centre ground 323.1 banks 317.2/317.0 hw 6.9 -> over both banks 6.4 m
+   line 665 s 7918 at 780,-4231 (home) water 322.9 centre ground 322.5 banks 317.1/317.0 hw 6.9 -> over both banks 5.8 m
+   line 244 s 10251 at 2588,-7992 (home) water 429.8 centre ground 424.0 banks 424.0/424.1 hw 7.5 -> over both banks 5.7 m
+   line 680 s 1456 at 2997,-8497 (home) water 426.2 centre ground 415.4 banks 420.6/420.8 hw 4.1 -> over both banks 5.5 m
+   line 665 s 7936 at 795,-4222 (home) water 322.3 centre ground 322.0 banks 317.1/316.9 hw 6.9 -> over both banks 5.2 m
+   line 680 s 1472 at 2985,-8485 (home) water 426.2 centre ground 415.7 banks 421.0/421.2 hw 4.6 -> over both banks 5.0 m
+   line 680 s 1488 at 2974,-8474 (home) water 426.2 centre ground 416.1 banks 421.3/421.8 hw 5.0 -> over both banks 4.5 m
+   line 809 s 2775 at 1664,3177 (home) water 284.3 centre ground 279.8 banks 279.8/279.8 hw 1.7 -> over both banks 4.4 m
+   line 244 s 10261 at 2579,-7996 (home) water 429.7 centre ground 425.0 banks 424.7/425.4 hw 7.6 -> over both banks 4.3 m
+   line 1549 s 1842 at 27294,15730 (field 29629,18013) water 208.1 centre ground 203.4 banks 203.0/203.8 hw 3.2 -> over both banks 4.2 m
+   line 680 s 1504 at 2963,-8463 (home) water 426.2 centre ground 416.5 banks 416.3/422.2 hw 5.5 -> over both banks 4.0 m
+   line 665 s 7953 at 810,-4212 (home) water 320.8 centre ground 320.4 banks 317.1/316.9 hw 6.9 -> over both banks 3.7 m
+   line 1549 s 1856 at 27281,15735 (field 29629,18013) water 206.3 centre ground 202.6 banks 202.4/202.9 hw 3.2 -> over both banks 3.4 m
+   line 680 s 1523 at 2949,-8449 (home) water 426.2 centre ground 417.1 banks 422.0/422.8 hw 6.0 -> over both banks 3.4 m
+seed 1: fieldHeld 1591 samples; walked in-zone 12784 (20 m steps), outside 2301621 (1 in 7 checked)
+  in airfield reach: water over both banks >1 117  >3 3  >5 0  >10 0 (20 m steps)
+  outside (1/7 sampled): >1 710  >3 193  >5 92  >10 21
+  lines in reach with water >3 m over both banks: 5455 (2 x 20 m, worst 4.6 at 33964,29902); 4490 (1 x 20 m, worst 3.4 at 20631,34293)
+   line 5455 s 7166 at 33964,29902 (field 35596,27852) water 5.1 centre ground 0.2 banks 0.0/0.5 hw 5.4 -> over both banks 4.6 m
+   line 5455 s 7151 at 33978,29894 (field 35596,27852) water 5.2 centre ground 1.3 banks 1.1/1.6 hw 5.4 -> over both banks 3.6 m
+   line 4490 s 6612 at 20631,34293 (field 21732,37792) water 28.1 centre ground 24.3 banks 24.7/24.3 hw 5.4 -> over both banks 3.4 m
+seed 42: fieldHeld 4027 samples; walked in-zone 17916 (20 m steps), outside 2365786 (1 in 7 checked)
+  in airfield reach: water over both banks >1 40  >3 20  >5 8  >10 0 (20 m steps)
+  outside (1/7 sampled): >1 654  >3 215  >5 115  >10 32
+  lines in reach with water >3 m over both banks: 4892 (16 x 20 m, worst 9.4 at 40836,19250); 3537 (4 x 20 m, worst 5.9 at 46312,-2284)
+   line 4892 s 9779 at 40836,19250 (field 40034,21476) water 42.1 centre ground 32.4 banks 32.7/32.4 hw 7.7 -> over both banks 9.4 m
+   line 4892 s 9796 at 40853,19250 (field 40034,21476) water 42.1 centre ground 32.6 banks 32.9/32.6 hw 7.7 -> over both banks 9.2 m
+   line 4892 s 9812 at 40869,19250 (field 40034,21476) water 42.1 centre ground 32.9 banks 33.2/32.8 hw 7.7 -> over both banks 8.9 m
+   line 4892 s 9829 at 40886,19250 (field 40034,21476) water 42.1 centre ground 33.2 banks 33.5/33.1 hw 7.7 -> over both banks 8.6 m
+   line 4892 s 9846 at 40903,19250 (field 40034,21476) water 42.1 centre ground 33.6 banks 33.9/33.4 hw 7.7 -> over both banks 8.2 m
+   line 4892 s 9862 at 40919,19250 (field 40034,21476) water 42.1 centre ground 34.0 banks 34.3/33.8 hw 7.7 -> over both banks 7.8 m
+   line 3537 s 5358 at 46312,-2284 (field 43579,-3525) water 24.9 centre ground 18.7 banks 18.6/18.9 hw 3.6 -> over both banks 5.9 m
+   line 3537 s 5350 at 46314,-2292 (field 43579,-3525) water 24.9 centre ground 19.1 banks 18.9/19.4 hw 3.6 -> over both banks 5.4 m
+   line 4892 s 10014 at 41050,19300 (field 40034,21476) water 42.1 centre ground 37.1 banks 37.4/36.9 hw 7.8 -> over both banks 4.7 m
+   line 3537 s 5342 at 46315,-2300 (field 43579,-3525) water 24.9 centre ground 19.9 banks 19.6/20.2 hw 3.6 -> over both banks 4.7 m
+   line 4892 s 9696 at 40753,19250 (field 40034,21476) water 42.1 centre ground 32.6 banks 37.6/37.7 hw 7.6 -> over both banks 4.3 m
+   line 4892 s 10031 at 41062,19312 (field 40034,21476) water 42.1 centre ground 37.6 banks 37.8/37.5 hw 7.8 -> over both banks 4.3 m
+   line 4892 s 9762 at 40819,19250 (field 40034,21476) water 42.1 centre ground 32.3 banks 37.8/32.3 hw 7.7 -> over both banks 4.3 m
+   line 4892 s 9713 at 40770,19250 (field 40034,21476) water 42.1 centre ground 32.4 banks 37.8/37.5 hw 7.6 -> over both banks 4.3 m
+   line 4892 s 9729 at 40786,19250 (field 40034,21476) water 42.1 centre ground 32.3 banks 37.8/37.4 hw 7.6 -> over both banks 4.3 m
+   line 4892 s 9746 at 40803,19250 (field 40034,21476) water 42.1 centre ground 32.3 banks 37.9/37.3 hw 7.7 -> over both banks 4.2 m
+   line 4892 s 9680 at 40737,19250 (field 40034,21476) water 42.1 centre ground 32.9 banks 37.9/38.1 hw 7.6 -> over both banks 4.0 m
+   line 3537 s 5334 at 46313,-2307 (field 43579,-3525) water 24.9 centre ground 21.0 banks 20.8/21.2 hw 3.6 -> over both banks 3.7 m
+   line 4892 s 9663 at 40720,19250 (field 40034,21476) water 42.1 centre ground 33.3 banks 38.2/38.6 hw 7.6 -> over both banks 3.5 m
+   line 4892 s 9647 at 40704,19250 (field 40034,21476) water 42.1 centre ground 33.8 banks 38.7/39.0 hw 7.6 -> over both banks 3.0 m
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  10:16:16
+   Duration  169.48s (tests 99%)
+

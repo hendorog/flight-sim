@@ -148,7 +148,8 @@ float rectSD(vec2 p, vec4 r) {
 float sminF(float a, float b, float k) { float h = max(k - abs(a - b), 0.0) / k; return min(a, b) - h * h * k * 0.25; }
 `;
 
-const VERTEX_BEGIN = /* glsl */ `
+/** Built with the material: the field elevation is the current world's (core/world.ts AIRPORT). */
+const vertexBegin = (): string => /* glsl */ `
 int gi = gl_InstanceID % uGridSize;
 int gj = gl_InstanceID / uGridSize;
 ivec2 cellI = uGridOrigin + ivec2(gi, gj);
@@ -222,7 +223,7 @@ export class AirfieldGrass {
       // ivec2 uniforms: three uploads a Vector2 to an ivec2 as integers.
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\n${VERTEX_HEAD}`)
-        .replace('#include <begin_vertex>', VERTEX_BEGIN);
+        .replace('#include <begin_vertex>', vertexBegin());
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying float vTip;\nvarying float vTone;')
         // Blades are darker in the base of the tuft (self-shadowed), toned per tuft.

@@ -14,7 +14,8 @@
 
 import { computeBiome, CoverShapeField, makeBiome, makeCoverShape, SHAPE_LATTICE } from './biome';
 import { hydrology, makeSample, sampleTerrain, type TerrainSample } from './heightfield';
-import type { RiverHit } from './hydrology';
+import type { FlowHit, RiverHit } from './hydrology';
+import { ROCK_STEEP_LO } from './bedrock';
 
 export interface TileRequest {
   level: number;
@@ -63,6 +64,13 @@ export interface TileData {
    * far coarser than the river.
    */
   river: Int16Array;
+  /**
+   * A seeded world's flow per vertex (unorm8): the nearest channel's steepness (Hydrology.queryFlow, 0..1), which the
+   * ground shader turns into bare rock along fast water (bedrock.ts). Filled near channels only, and only where it is
+   * near or above where the rock starts (0 elsewhere, and in and by lakes). Null
+   * where the world has no flow data (seed 0), so its tiles and their vertex format stay as they were.
+   */
+  flow: Uint8Array | null;
   minHeight: number;
   maxHeight: number;
   water: WaterData | null;
@@ -123,7 +131,20 @@ export const RIVER_UNITS = 8;
 /** Signed river distances are clamped to this, m (also used where the river is out of reach). */
 export const RIVER_FAR = 4000;
 
-const riverScratch: RiverHit = { dist: Infinity, level: 0, halfWidth: 0, s: 0, side: 0, beyondSource: 0 };
+const riverScratch: RiverHit = { dist: Infinity, level: 0, halfWidth: 0, s: 0, side: 0, beyondSource: 0, bedFrame: true };
+const flowScratch: FlowHit = { dist: Infinity, side: 0, line: -1, kind: 0, index: 0, s: 0, level: 0, halfWidth: 0, gradient: 0, steepness: 0, regime: 0, speed: 0, dirN: 0, dirE: 0 };
+/**
+ * The flow attribute is filled out to this far beyond a channel's half-width (plus two vertex spacings), m: past the
+ * bare rock's reach (bedrock.ts ROCK_REACH_MAX) and the bank's gallery of trees (riparian.ts GALLERY_FAR), which thins
+ * along fast water, so no triangle carries it further.
+ */
+const FLOW_REACH = 60;
+/** Below this vertex spacing (m) the flow is queried once per 2 x 2 vertices. */
+const FLOW_FINE = 6;
+/** Steepness kept below bedrock.ts ROCK_STEEP_LO (where the rock starts), so it fades in across a triangle. */
+const FLOW_MARGIN = 0.15;
+/** No flow (bare rock) where standing water lies less than this below the ground, m: in a lake and on its shore. */
+const STILL_WATER = 1;
 
 /**
  * Fill the river attribute: signed distance and half-width per lattice vertex. Where the river is out of
@@ -161,6 +182,38 @@ function fillRiver(n: number, signed: Float64Array, width: Float64Array, known: 
   }
 }
 
+/** Vertex spacing from which a seeded world's river attribute is averaged over each vertex's footprint, m. */
+const RIVER_FILTER_SP = 4;
+/** filterRiver: only vertices this close to a bed (beyond its edge, m) - further out the value is a far distance. */
+const RIVER_FILTER_NEAR = 120;
+function filterRiver(n: number, signed: Float64Array, width: Float64Array, known: Uint8Array): void {
+  const s0 = Float64Array.from(signed);
+  const w0 = Float64Array.from(width);
+  for (let j = 0; j < n; j++)
+    for (let i = 0; i < n; i++) {
+      const v = j * n + i;
+      if (!known[v] || Math.abs(s0[v]) - w0[v] > RIVER_FILTER_NEAR) continue;
+      let ss = 0;
+      let sw = 0;
+      let c = 0;
+      for (let b = -1; b <= 1; b++)
+        for (let a = -1; a <= 1; a++) {
+          const ii = i + a;
+          const jj = j + b;
+          if (ii < 0 || jj < 0 || ii >= n || jj >= n) continue;
+          const q = jj * n + ii;
+          if (!known[q] || Math.abs(s0[q]) - w0[q] > RIVER_FILTER_NEAR) continue;
+          ss += s0[q];
+          sw += w0[q];
+          c++;
+        }
+      if (c >= 6) {
+        signed[v] = ss / c;
+        width[v] = sw / c;
+      }
+    }
+}
+
 /** A unit-range value as a normalised signed 16-bit integer. */
 const snorm16 = (x: number): number => Math.round(Math.max(-1, Math.min(1, x)) * 32767);
 
@@ -190,6 +243,10 @@ export function buildTile(req: TileRequest): TileData {
   const riverWidth = new Float64Array(n * n);
   const riverKnown = new Uint8Array(n * n);
   const approach = new Float64Array(n * n);
+  // (A seeded world's lake or pond: under its water no channel's bed, banks or bank trees are painted - its floor is
+  // silt, and a stream's painted bed showed through the water as a dark line across it: round T repairs, seed 1 pond
+  // 602's inflow.)
+  const lakeBed = !!hydrology.lakeMask;
   for (let gj = 0; gj < w; gj++) {
     const north = n0 + (gj - BORDER) * sp;
     for (let gi = 0; gi < w; gi++) {
@@ -207,13 +264,17 @@ export function buildTile(req: TileRequest): TileData {
         approach[v] = sample.approach;
         if (sample.airportBlend === 0) {
           // (sampleTerrain skips the river inside the flat airport zone; the ground shader still needs it.)
+          // (A seeded world's line: about the middle of its bed, channelForm.ts, its edges smoothed at the tile's
+          // vertex spacing on a coarse tile.)
+          const seeded = !!hydrology.queryFlow;
+          if (seeded) riverScratch.smooth = sp >= RIVER_FILTER_SP ? 2 * sp : 0;
           hydrology.queryRiver(north, east, riverScratch);
           if (riverScratch.side !== 0) {
-            riverSigned[v] = riverScratch.dist * riverScratch.side;
-            riverWidth[v] = riverScratch.halfWidth;
+            riverSigned[v] = riverScratch.dist * riverScratch.side - (seeded ? (riverScratch.bedShift ?? 0) : 0);
+            riverWidth[v] = seeded ? (riverScratch.bed ?? riverScratch.halfWidth) : riverScratch.halfWidth;
             riverKnown[v] = 1;
           }
-        } else if (Number.isFinite(sample.riverDist)) {
+        } else if (Number.isFinite(sample.riverDist) && !(lakeBed && sample.standing > 0.5 && sample.standing > sample.ground && !(sample.river > sample.ground))) {
           riverSigned[v] = sample.riverSigned;
           riverWidth[v] = sample.riverHalfWidth;
           riverKnown[v] = 1;
@@ -230,7 +291,43 @@ export function buildTile(req: TileRequest): TileData {
   const bio = new Uint8Array(count * 4);
   const form = new Uint8Array(count * 4);
   const riv = new Int16Array(count * 2);
+  // A seeded world's river beds change width and swing from side to side within a few of their widths
+  // (channelForm.ts): on a coarse tile, a vertex's value is the mean over its own footprint (its 3 x 3 neighbours), so
+  // the bed's painted edge, interpolated across the triangles, is not a saw-tooth of single vertices.
+  if (hydrology.queryFlow && sp >= RIVER_FILTER_SP) filterRiver(n, riverSigned, riverWidth, riverKnown);
   fillRiver(n, riverSigned, riverWidth, riverKnown, riv);
+  // A seeded world's flow (its steepness) near every channel; queried only where the bare rock can show, and on fine
+  // tiles once per 2 x 2 vertices (the steepness changes over a 200 m window along the channel, so a vertex takes that
+  // of its even neighbour, at most one spacing away).
+  let flow: Uint8Array | null = null;
+  const queryFlow = hydrology.queryFlow;
+  if (queryFlow) {
+    const lakes = hydrology.lakeMask;
+    flow = new Uint8Array(count);
+    const reach = FLOW_REACH + 2 * sp;
+    const half = sp < FLOW_FINE ? 1 : 0;
+    const steepAt = new Float32Array(n * n).fill(-1);
+    const steep = (i: number, j: number): number => {
+      const v = j * n + i;
+      if (steepAt[v] < 0) {
+        queryFlow(n0 + j * sp, e0 + i * sp, flowScratch);
+        steepAt[v] = flowScratch.line >= 0 ? Math.min(1, Math.max(0, flowScratch.steepness)) : 0;
+      }
+      return steepAt[v];
+    };
+    for (let j = 0; j < n; j++)
+      for (let i = 0; i < n; i++) {
+        const v = j * n + i;
+        // (None in a lake or the sea, nor on the banks a stream's carving leaves standing just out of a lake's water: a
+        // lake's floor and shore are silt, whatever its outlet does beyond.)
+        if (!riverKnown[v] || Math.abs(riverSigned[v]) > riverWidth[v] + reach || standing[v] > H(i, j) - STILL_WATER) continue;
+        const st = half ? steep(i - (i & 1), j - (j & 1)) : steep(i, j);
+        // Gentler flow than this shows nothing (bedrock.ts bedRock is 0 below ROCK_STEEP_LO): left at 0.
+        if (st < ROCK_STEEP_LO - FLOW_MARGIN) continue;
+        if (lakes && lakes.at(n0 + j * sp, e0 + i * sp) > -Infinity) continue;
+        flow[v] = Math.round(st * 255);
+      }
+  }
   // Parent-lattice normals at even vertices (x, z components; y is recovered in the shader).
   const cnx = new Float64Array(n * n);
   const cnz = new Float64Array(n * n);
@@ -271,6 +368,7 @@ export function buildTile(req: TileRequest): TileData {
       sample.river = river[v];
       sample.airportBlend = airport[v];
       sample.riverDist = riverDist[v];
+      if (hydrology.queryFlow) sample.riverHalfWidth = riverWidth[v];
       sample.approach = approach[v];
       if (fineShape) shapeField.at(n0 + j * sp, e0 + i * sp, shape);
       else {
@@ -281,7 +379,11 @@ export function buildTile(req: TileRequest): TileData {
       computeBiome(n0 + j * sp, e0 + i * sp, sample, shape.up, biome, shape.north);
       form[v * 4 + 3] = Math.round(Math.min(1, Math.max(0, shape.up)) * 255);
       form[v * 4] = Math.round(Math.min(1, Math.max(0, 0.5 + shape.curvature * CURVATURE_SCALE)) * 255);
-      bio[v * 4] = Math.round(biome.forest * 255);
+      // (A seeded world's channel bed has no canopy over it: a vertex whose footprint the bed crosses has the forest of
+      // the share of it off the bed - the canopy shell, lifted where the vertex is forest, would hide the ribbon's water
+      // and bars on a coarse tile, water.ts FLOW_BARS.)
+      const onBed = !!hydrology.queryFlow && riverKnown[v] === 1 && Math.abs(riverSigned[v]) < riverWidth[v] + 0.5 * sp ? Math.min(1, (2 * riverWidth[v]) / sp) : 0;
+      bio[v * 4] = Math.round(biome.forest * (1 - onBed) * 255);
       // Farmland, or marsh in an era with marsh and no farmland (biome.ts; marsh is 0 in the present day).
       bio[v * 4 + 1] = Math.round((biome.farmland + biome.marsh) * 255);
       bio[v * 4 + 2] = Math.round(biome.moisture * 255);
@@ -339,6 +441,7 @@ export function buildTile(req: TileRequest): TileData {
       form.copyWithin(dst * 4, src * 4, src * 4 + 4);
       form[dst * 4 + 2] += SKIRT_FLAG;
       riv.copyWithin(dst * 2, src * 2, src * 2 + 2);
+      if (flow) flow[dst] = flow[src];
     }
   }
 
@@ -352,6 +455,7 @@ export function buildTile(req: TileRequest): TileData {
     biome: bio,
     shape: form,
     river: riv,
+    flow,
     minHeight: minH,
     maxHeight: maxH,
     water: buildWater(grid, sp, positions, standing),

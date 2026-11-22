@@ -1,0 +1,42 @@
+== river
+/home/roger/github/fs-exp/round-v/out/fs/verifyA4p/gates/trees/A/out/fs/chk/VC/om: rivers 20774 km
+  wet W CV per km p50            0.401
+  bed W CV per 5 km p50          0.537
+  edge roughness / W p50         0.133
+  wet share p50 (p10-p90)        0.55 (0.30-0.93)
+  kinks R<W per 10 km            6.10
+  Rc p10 / W                     1.83
+  sinuosity 1 km p50 (p90)       1.084 (1.372)
+  lambda CV along a line p50     0.351 (1182 lines)
+  sharp bed corners per 10 km    82.81
+  white (steepness >= 0.5, rapids) on S < 0.02   0.1 %
+  running-water look (>= 0.2) on S < 0.02        3.3 %
+  longest straight / W p50 (p95) 8.5 (22.7)
+== stream
+/home/roger/github/fs-exp/round-v/out/fs/verifyA4p/gates/trees/A/out/fs/chk/VC/om: rivers 4989 km
+  wet W CV per km p50            0.467
+  bed W CV per 5 km p50          0.590
+  edge roughness / W p50         0.192
+  wet share p50 (p10-p90)        0.56 (0.31-0.89)
+  kinks R<W per 10 km            17.70
+  Rc p10 / W                     1.98
+  sinuosity 1 km p50 (p90)       1.105 (1.647)
+  lambda CV along a line p50     0.357 (1525 lines)
+  sharp bed corners per 10 km    157.21
+  white (steepness >= 0.5, rapids) on S < 0.02   0.3 %
+  running-water look (>= 0.2) on S < 0.02        0.6 %
+  longest straight / W p50 (p95) 17.0 (57.0)
+== chain
+/home/roger/github/fs-exp/round-v/out/fs/verifyA4p/gates/trees/A/out/fs/chk/VC/om: rivers 42766 km
+  wet W CV per km p50            0.435
+  bed W CV per 5 km p50          0.576
+  edge roughness / W p50         0.189
+  wet share p50 (p10-p90)        0.56 (0.30-0.78)
+  kinks R<W per 10 km            17.28
+  Rc p10 / W                     2.89
+  sinuosity 1 km p50 (p90)       1.071 (1.286)
+  lambda CV along a line p50     0.545 (14096 lines)
+  sharp bed corners per 10 km    157.26
+  white (steepness >= 0.5, rapids) on S < 0.02   0.2 %
+  running-water look (>= 0.2) on S < 0.02        0.8 %
+  longest straight / W p50 (p95) 81.0 (491.3)

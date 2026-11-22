@@ -57,6 +57,8 @@ import '../../src/world/terrain/heightfield';
 import { setWorldSeed } from '../../src/world/worldSeed';
 import { installFakeDom } from '../ui/fakeDom';
 import { CircuitPilot, FRAME_DT, shutDownPiston, startPiston, type PilotHost } from './headlessJob';
+// (Under a full parallel suite run its slowest test here takes up to about 22 s, over the 5 s default: round T repairs.)
+vi.setConfig({ testTimeout: 60_000 });
 
 const LONG = 300_000;
 const URL0: CareerBootUrl = { explicit: false, open: false, resume: null };

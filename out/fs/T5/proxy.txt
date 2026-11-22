@@ -1,0 +1,16 @@
+Round T step 5, item 1: the build-time flag for a targeted settle (PLAN-T.md). Pass: recall >= 80 % of the > 30 m
+shelf length, flagged length <= 1.5x the shelf length. River geometry is unchanged by steps 2-4 (they touch streams
+only), so the verifier's measurements at a26ee71 stand: out/fs/inv/vwalls/carvereg42.log, axisoff42.log,
+carvereg-axisoff-s1-s777777.log (points every 200 m of river axis; reach-weighted for shelf reaches).
+
+p1, the model's carve c more than 200 m off the axis (carve >= 10 m within 1 km):
+  recall on reaches > 30 m:   seed 42 2335/3108 = 75 %;  seed 777777 3569/4185 = 85 %;  seed 1 3274/4084 = 80 %
+  flagged, all river axis:    seed 42 5651 pts = 1130 km against W1 326.9 km = 3.5x;  seed 777777 8520 pts = 1704 km
+                              against 386.3 km = 4.4x;  seed 1 (32-39 % of 30164 pts) >= 1930 km against 427.5 km = 4.5x
+  -> fails (precision 3.5-4.5x, recall under 80 % on seed 42)
+p2, drawn coarse ground minus the lattice's filled height at the route node > 30 m:
+  shelf reaches (> 10 m): p25 18-27, p50 47-56 m -> about 65-75 % over 30 m: recall under 80 % on every seed
+  every river route node: p50 9-13, p75 37-51 m -> about 30-40 % of river length flagged, 1800-2600 km: 4-6x
+  -> fails both
+p1 AND p2: its recall can be no higher than p1's (75 % on seed 42) or p2's (65-75 %): under 80 % -> fails.
+No proxy passes: step 5 stops here (the plan's time box). No settle built; SETTLE not added; MODEL_VERSION stays ss6.

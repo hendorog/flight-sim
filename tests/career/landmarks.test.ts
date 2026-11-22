@@ -6,14 +6,15 @@
 // has every kind, seed 7 (no road network) has no villages or bridges; nothing outside the present day; the town
 // mask is left alone; nearestLandmark and landmarkWaypoint; and the strip's waypoint line shows a landmark's name.
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
-  AREA_NUDGE, LAKE_NAMES, landmarks, landmarkWaypoint, nearestLandmark, RIVER_BEND, SUMMIT, type Landmark,
+  AREA_NUDGE, LAKE_NAMES, lakeName, landmarks, landmarkWaypoint, nearestLandmark, RIVER_BEND, SUMMIT, type Landmark,
 } from '../../src/career/landmarks';
 import { BOARD_RULES, type JobStripModel } from '../../src/career/types';
 import { stripTargetText } from '../../src/career/ui/strip';
 import { WAYPOINTS } from '../../src/training/content/syllabus/route';
 import { airfields } from '../../src/world/airfields';
+import { placeName } from '../../src/career/geo';
 import { findTownSite } from '../../src/world/airport/valley';
 import { setEra } from '../../src/world/era/eraState';
 import { hydrology, terrainHeight } from '../../src/world/terrain/heightfield';
@@ -21,6 +22,8 @@ import { lakeRadius } from '../../src/world/terrain/hydrology';
 import { riverCrossings, villageSites } from '../../src/world/terrain/roads';
 import { townSite } from '../../src/world/terrain/townMask';
 import { setWorldSeed } from '../../src/world/worldSeed';
+// (Under a full parallel suite run its slowest test here takes up to about 25 s, over the 5 s default: round T repairs.)
+vi.setConfig({ testTimeout: 60_000 });
 
 const CLEAR = BOARD_RULES.scenicFieldClearM;
 
@@ -68,22 +71,31 @@ describe.each([0, 7])('the rules at seed %i', (seed) => {
     expect(new Set(list.map((l) => l.name)).size).toBe(list.length);
   });
 
-  it('names the lakes as the Flight School route does, on their water', () => {
+  it('names the lakes (at seed 0 as the Flight School route does), on their water', () => {
     const lakes = atSeed(seed).filter((l) => l.kind === 'lake');
-    expect(lakes.map((l) => l.name)).toEqual(LAKE_NAMES);
-    const byName = new Map(lakes.map((l) => [l.name, l]));
-    for (const [name, wp] of [['Valley Lake', WAYPOINTS.valleyLake], ['Foothill Lake', WAYPOINTS.foothillLake], ['Glacial Lake', WAYPOINTS.glacialLake]] as const) {
-      const l = byName.get(name)!;
-      expect(Math.hypot(l.north - wp.north, l.east - wp.east), name).toBeLessThan(5);
+    if (seed === 0) {
+      expect(lakes.map((l) => l.name)).toEqual(LAKE_NAMES);
+      const byName = new Map(lakes.map((l) => [l.name, l]));
+      for (const [name, wp] of [['Valley Lake', WAYPOINTS.valleyLake], ['Foothill Lake', WAYPOINTS.foothillLake], ['Glacial Lake', WAYPOINTS.glacialLake]] as const) {
+        const l = byName.get(name)!;
+        expect(Math.hypot(l.north - wp.north, l.east - wp.east), name).toBeLessThan(5);
+      }
+    } else {
+      // A seeded world's own lakes (riverNetwork.ts), each with its own generated name. (Since the macro model, its
+      // lowland lakes only: the mountain ones go until the ice stage, owner's decision 2026-11-08.)
+      expect(lakes.length).toBeGreaterThan(4);
+      for (const l of lakes) expect(l.name).toBe(lakeName(Number(l.id.slice('lake-'.length))));
     }
-    lakes.forEach((l, i) => expect(lakeRadius(hydrology.lakes[i], l.north, l.east)).toBeLessThan(AREA_NUDGE.lakeWater));
+    for (const l of lakes) expect(lakeRadius(hydrology.lakes[Number(l.id.slice('lake-'.length))], l.north, l.east)).toBeLessThan(AREA_NUDGE.lakeWater);
   });
 
   it('puts the town over its built-up core, and leaves the town mask alone', () => {
     const before = townSite();
     const town = atSeed(seed).find((l) => l.kind === 'town')!;
     const site = findTownSite(terrainHeight)!;
-    expect(town.name).toBe('Fable town');
+    // Named after the home field's place (a seeded world's own: 'Penhaven town' at seed 7).
+    expect(town.name).toBe(`${placeName(airfields()[0])} town`);
+    if (seed !== 0) expect(town.name).not.toBe('Fable town');
     expect(Math.hypot(town.north - site.north, town.east - site.east)).toBeLessThanOrEqual(AREA_NUDGE.town * site.radius);
     expect(townSite()).toBe(before);
   });
@@ -109,7 +121,7 @@ describe.each([0, 7])('the rules at seed %i', (seed) => {
     }
     // Highest first, and every one named with its height in feet.
     for (let i = 1; i < summits.length; i++) expect(summits[i].elevationM).toBeLessThanOrEqual(summits[i - 1].elevationM);
-    for (const s of summits) expect(s.name).toMatch(/^Summit \d{1,2},?\d{3} ft, \d+(\.\d)? NM [a-z-]+ of [A-Z][a-z]+$/u);
+    for (const s of summits) expect(s.name).toMatch(/^Summit (\d{1,2},?)?\d{3} ft, \d+(\.\d)? NM [a-z-]+ of [A-Z][a-z]+$/u);
   });
 });
 

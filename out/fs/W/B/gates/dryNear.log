@@ -1,0 +1,38 @@
+
+ RUN  v5.0.2 /tmp/claude-1000/-home-roger-github-fs/35202c87-f21f-4b3f-b88c-6985c9c4283f/scratchpad/trees/bat
+
+seed 777777 line 0 kind 0 field KPMF: in reach 7038 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 40 m
+seed 777777 line 1037 kind 1 field KTHR: in reach 594 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 80 m
+seed 777777 line 1128 kind 1 field KTHR: in reach 707 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 48 m
+seed 777777 line 4683 kind 1 field KLNG: in reach 4493 m, hidden 180 m (worst Infinity m under at 46452,-12232), water >3 m over centre ground 47 m
+seed 777777 line 5177 kind 1 field KLNG: in reach 713 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 38 m
+seed 777777 line 6646 kind 1 field KHLT: in reach 3781 m, hidden 223 m (worst Infinity m under at 41923,7000), water >3 m over centre ground 0 m
+seed 777777 TOTAL in reach 154749 m, hidden 404 m, water >3 m over centre ground 263 m
+seed 42 line 1 kind 0 field KASH: in reach 3162 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 3162 m
+seed 42 line 4 kind 0 field KIVY: in reach 750 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 750 m
+seed 42 line 40 kind 0 field KELM: in reach 9934 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 40 m
+seed 42 line 51 kind 0 field KIVY: in reach 4157 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 80 m
+seed 42 line 103 kind 0 field KASH: in reach 8196 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 842 m
+seed 42 line 3537 kind 1 field KASH: in reach 5366 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 40 m
+seed 42 line 3670 kind 1 field KNRC: in reach 2486 m, hidden 176 m (worst Infinity m under at 16294,15975), water >3 m over centre ground 0 m
+seed 42 line 4892 kind 1 field KTHR: in reach 7374 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 549 m
+seed 42 line 6159 kind 1 field KWSH: in reach 8691 m, hidden 712 m (worst Infinity m under at 19750,35354), water >3 m over centre ground 0 m
+seed 42 line 6160 kind 1 field KWSH: in reach 852 m, hidden 596 m (worst Infinity m under at 20196,36000), water >3 m over centre ground 0 m
+seed 42 line 6395 kind 1 field KELM: in reach 808 m, hidden 464 m (worst Infinity m under at 9844,46094), water >3 m over centre ground 0 m
+seed 42 TOTAL in reach 160014 m, hidden 1948 m, water >3 m over centre ground 5508 m
+seed 1 line 1 kind 0 field KMRH: in reach 14164 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 14164 m
+seed 1 line 8 kind 0 field KIVY: in reach 10022 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 5959 m
+seed 1 line 14 kind 0 field KMRH: in reach 13055 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 6808 m
+seed 1 line 41 kind 0 field KIVY: in reach 13068 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 1826 m
+seed 1 line 410 kind 1 field KTHR: in reach 1211 m, hidden 128 m (worst Infinity m under at 42777,21000), water >3 m over centre ground 0 m
+seed 1 line 4019 kind 1 field KDNS: in reach 8523 m, hidden 348 m (worst Infinity m under at 8223,30527), water >3 m over centre ground 0 m
+seed 1 line 4490 kind 1 field KIVY: in reach 2353 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 38 m
+seed 1 line 5362 kind 1 field KMRH: in reach 5166 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 63 m
+seed 1 line 5455 kind 1 field KMRH: in reach 7232 m, hidden 0 m (worst 0.0 m under at 0,0), water >3 m over centre ground 97 m
+seed 1 TOTAL in reach 133692 m, hidden 476 m, water >3 m over centre ground 28955 m
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  10:16:16
+   Duration  134.03s (tests 99%)
+

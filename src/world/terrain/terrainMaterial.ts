@@ -30,9 +30,11 @@ import { fieldsGlsl } from './fields';
 import { hashGlsl, ROT_GLSL } from './glsl';
 import { worldSeed } from '../worldSeed';
 import { riverStrip, TREE_LINE_ASPECT, treeLineBase } from './biome';
+import { BAR_FAR, BAR_NEAR, CORRIDOR_GLSL } from './channelForm';
 import { GALLERY_FAR } from './riparian';
 import { ERA_GROUND, PALETTES, type EraGroundPalette } from './eraPalette';
-import { snowLineBase } from './heightfield';
+import { hydrology, snowLineBase } from './heightfield';
+import { BEDROCK_GLSL, GALLERY_ROCK_THIN, ROCK_EDGE_GLSL, ROCK_HW, ROCK_SMALL } from './bedrock';
 import { era, isPresent } from '../era/eraState';
 import { ASH_REACH, VOLCANO_GLSL, VOLCANO_LAVA_GLSL, VOLCANO_LAVA_HEAD_GLSL, VOLCANO_PALETTE } from './volcano';
 import { ERA_TERRAIN_UNIFORMS_GLSL, ERA_UNIFORMS } from './eraUniforms';
@@ -46,6 +48,7 @@ import { LAYER, LAYER_COUNT, LAYER_ROUGHNESS, LAYER_TILE_M, type TerrainTextures
 import { OPEN_RANK } from './vegetation/placement';
 import { generatedAirfields, type Airfield } from '../airfields';
 import { AIRFIELD_COUNT } from './airfieldSiting';
+import { RILL_FINISH_GLSL, RILL_HEAD_GLSL, RILL_SAMPLE_GLSL, RILL_UNIFORMS, rillSplatGlsl, rillsEnabled, rillsOn, rillText } from './rillShader';
 
 export const MAX_LEVELS = 16;
 /**
@@ -114,6 +117,14 @@ const glslVec = (c: readonly number[]): string => `vec3(${c.map((x) => x.toFixed
 const eraText = (t: string): string => (isPresent() ? '' : t);
 /** Shader text for the present day only (forestry plantations: no other era has them). */
 const presentText = (t: string): string => (isPresent() ? t : '');
+/**
+ * Shader text for a world whose channels carry their flow (a seeded world: Hydrology.queryFlow, the tiles' aFlow):
+ * bare rock along fast water (bedrock.ts). '' at seed 0, whose shader text stays as it was.
+ */
+const flowText = (t: string): string => (hydrology.queryFlow ? t : '');
+/** The flow attribute and its varying (the colour material's vertex stage only: the depth pass has no use for it). */
+const FLOW_VERTEX_HEAD = 'attribute float aFlow;\nvarying float vFlow;\n';
+const FLOW_VERTEX = 'vFlow = aFlow;\n';
 
 /**
  * Increment 2 (WP0a): an era shader SLOT. Its text comes from the owning package's module (volcano.ts lava,
@@ -443,8 +454,8 @@ varying float vLiftK;
 varying float vCoverUp;
 // Signed distance from the river centreline and the channel half-width there, m (tileBuilder.ts).
 varying vec2 vRiver;
-${presentText('varying float vPlantation;\n')}${hashGlsl()}
-${ROT_GLSL}
+${flowText(`// The nearest channel's steepness, 0..1 (tileBuilder.ts flow; bedrock.ts).\nvarying float vFlow;\n${BEDROCK_GLSL}`)}${presentText('varying float vPlantation;\n')}${hashGlsl()}
+${ROT_GLSL}${flowText(ROCK_EDGE_GLSL + CORRIDOR_GLSL)}${rillText(RILL_HEAD_GLSL)}
 ${E('#if ERA_FARM\n')}${fieldsGlsl()}${presentText(PLANTATION_GLSL)}${presentText(ROADS_GLSL)}${presentText(FIELD_EDGE_GLSL)}
 ${E(`#endif\n${ERA_HEAD}${VOLCANO_HEAD}${ERA_TERRAIN_UNIFORMS_GLSL}`)}${eraSlot('lava', VOLCANO_LAVA_HEAD_GLSL, 'VOLCANO')}${eraSlot('speckle', UNDERSTOREY_HEAD_GLSL)}
 struct Mat { vec3 albedo; vec2 slope; float rough; float cavity; float height; };
@@ -688,7 +699,7 @@ vec4 sA = (nA - 0.5) * 2.5;
 vec4 sB = (nB - 0.5) * 2.5;
 vec4 sC = (nC - 0.5) * 2.5;
 vec4 sD = (nD - 0.5) * 2.5;
-
+${rillText(RILL_SAMPLE_GLSL)}
 #if NUM_DIR_LIGHTS > 0
 vec3 tSunW = normalize((vec4(directionalLights[0].direction, 0.0) * viewMatrix).xyz);
 #else
@@ -730,7 +741,10 @@ float fineN = 0.0;
 if ((tUpN > 0.55 && tUpN < 0.9) || (tBio.x > 0.1 && tBio.x < 0.7)) fineN = (texture(tNoise, rot2(tXZ, 5.3) * (1.0 / 13.0)).g - 0.5) * 2.5;
 float rockW = smoothstep(mix(0.70, 0.76, highZone) + rockShift, mix(0.60, 0.63, highZone) + rockShift, tUpN + 0.1 * fineN);
 rockW = max(rockW, smoothstep(snowLine - 200.0, snowLine + 150.0, tH + 120.0 * sB.g) * smoothstep(0.93 + rockShift, 0.84 + rockShift, tUp + 0.03 * sC.g));
-${E(VOLCANO_WEIGHTS)}// Scree: debris fans in the hollows below the rock on high ground, a fringe of broken rock around the
+${flowText(`// (A channel's bed and banks: steep only because the water cut them a metre or two into the ground, not rock faces -
+// gravel and earth (channelForm.ts), so no slope rock in them however coarse the triangles across them.)
+if (vRiver.y > 0.2) rockW *= smoothstep(1.2 * vRiver.y + 2.0, 1.2 * vRiver.y + 10.0, abs(vRiver.x));
+`)}${E(VOLCANO_WEIGHTS)}// Scree: debris fans in the hollows below the rock on high ground, a fringe of broken rock around the
 // outcrops, and stony patches in the thin alpine turf.
 float screeW = (1.0 - rockW) * smoothstep(0.9, 0.8, tUp + 0.04 * sC.a) * alpine * smoothstep(0.1, 0.5, concave + 0.3 * sC.b);
 screeW = max(screeW, smoothstep(0.05, 0.45, rockW) * (1.0 - smoothstep(0.55, 0.9, rockW)) * (0.4 + 0.6 * alpine));
@@ -892,7 +906,23 @@ ${presentText(`// Generated airfields: no crops or woods on their flat ground (t
 // channel, so the banks are placed right even on coarse tiles.
 float tRiverBank = 0.0;
 float tRiverBed = 0.0;
-if (vRiver.y > 1.0) {
+${flowText(`// Fast water (rapids, cascades, step-pools) scours its bed and banks down to bare rock (bedrock.ts): no silt,
+// gravel, reeds or bank grass there, and the bank's trees thin out (placement.ts reads the same steepness).
+float tRock = 0.0;
+float tRockWet = 0.0;
+if (vRiver.y > 0.5 && vFlow > 0.3) {
+  float rEdgeR = abs(vRiver.x) - vRiver.y;
+  float reach = rockReach(vRiver.y);
+  if (rEdgeR < reach * 1.5) {
+    // A ragged edge (bedrock.ts rockAtPoint, which the tree placement reads too): the rock gives way to soil in tongues
+    // and bays; the water's spray darkens it near the edge.
+    // (A small torrent's bed is a thin grey line among the slope's cover, a big one's a broad scoured strip: the rock's
+    // strength grows with the water's width, bedrock.ts ROCK_HW.)
+    tRock = bedRock(vFlow) * rockEdgeCover(rockReachAt(vRiver.y, vec2(tXZ.x, -tXZ.y)), rEdgeR) * mix(${ROCK_SMALL.toFixed(2)}, 1.0, smoothstep(${ROCK_HW[0].toFixed(1)}, ${ROCK_HW[1].toFixed(1)}, vRiver.y));
+    tRockWet = 1.0 - smoothstep(-0.5, 0.45 * reach + 0.8, rEdgeR + 0.15 * reach * sD.r);
+  }
+}
+`)}if (vRiver.y > 1.0) {
   float rEdge = abs(vRiver.x) - vRiver.y;
   if (rEdge < ${(riverStrip() + 24).toFixed(1)}) {
     float rFw = max(fwidth(vRiver.x), 0.05);
@@ -900,23 +930,38 @@ if (vRiver.y > 1.0) {
     float rN = 2.0 * sD.r + 1.2 * sC.g;
     tRiverBed = 1.0 - smoothstep(-rFw, rFw, rEdge + 0.5 * sD.b);
     tRiverBank = 1.0 - smoothstep(bankW - rFw, bankW + 1.5 + rFw, rEdge - rN);
-    float strip = 1.0 - smoothstep(${riverStrip().toFixed(1)}, ${(riverStrip() + 16).toFixed(1)}, rEdge + 5.0 * sC.g + 3.0 * sD.a);
-    farmW *= 1.0 - strip;
+${flowText(`    // (A small stream's gravel bed and bank are a thin thread among the slope's cover, not a pale strip: their tint
+    // grows with the water's width, bedrock.ts ROCK_HW, so a torrent reads fainter than a river from the air.)
+    float smallBed = mix(${ROCK_SMALL.toFixed(2)}, 1.0, smoothstep(${ROCK_HW[0].toFixed(1)}, ${ROCK_HW[1].toFixed(1)}, vRiver.y));
+    tRiverBed *= smallBed;
+    tRiverBank *= smallBed;
+    // (Far away the ribbon draws the bed's bars, its rows finer than these triangles: water.ts FLOW_BARS. Keep the
+    // terrain gravel painted until FLOW_LIFT has cleared the carved bar height so green paddock never pokes through.)
+    float tBarFar = 1.0 - smoothstep(${(BAR_NEAR + 200).toFixed(1)}, ${(BAR_FAR + 200).toFixed(1)}, tDist);
+    tRiverBed *= tBarFar;
+    tRiverBank *= tBarFar;
+`)}    float strip = 1.0 - smoothstep(${riverStrip().toFixed(1)}, ${(riverStrip() + 16).toFixed(1)}, rEdge + 5.0 * sC.g + 3.0 * sD.a);
+${flowText(`    // (A seeded world's corridor wanders in width, its trees in runs with gaps: channelForm.ts corridorFar, corridorRuns.)
+    vec2 tEN = vec2(tXZ.x, -tXZ.y);
+    float galFar = corridorFar(tEN, ${GALLERY_FAR.toFixed(1)});
+    float galRun = corridorRuns(tEN);
+    strip = 1.0 - smoothstep(galFar + 2.0, galFar + 18.0, rEdge + 5.0 * sC.g + 3.0 * sD.a);
+`)}${flowText('    strip *= smallBed;\n')}    farmW *= 1.0 - strip;
 ${presentText(`    // The wooded bank (riparian.ts GALLERY_FAR; placement.ts plants it): as its trees thin out with distance the
     // canopy shell stands in for them, so the river keeps its dark green margins from the air.
     float gallery = (1.0 - smoothstep(${(GALLERY_FAR - 6).toFixed(1)}, ${(GALLERY_FAR + 4).toFixed(1)}, rEdge + 5.0 * sC.g)) * smoothstep(0.0, 2.0, rEdge);
-    forestW += (1.0 - forestW) * 0.85 * gallery * (1.0 - tKeepOpen);
+${flowText('    gallery = (1.0 - smoothstep(galFar - 6.0, galFar + 4.0, rEdge + 5.0 * sC.g)) * smoothstep(0.0, 2.0, rEdge) * galRun;\n')}    forestW += (1.0 - forestW) * 0.85 * gallery * (1.0 - tKeepOpen)${flowText(` * (1.0 - tRock) * (1.0 - ${GALLERY_ROCK_THIN.toFixed(2)} * bedRock(vFlow))`)};
     farmW *= 1.0 - gallery;
 `)}    // Rough bankside vegetation: tussocky, olive and dark, with pale reed beds at the water's edge.
     float reeds = (1.0 - smoothstep(bankW + 1.0, bankW + 6.0, rEdge + 2.0 * sD.g)) * smoothstep(0.45, 0.6, nC.r);
-    vec3 rough = mix(${P.bankRoughA}, ${P.bankRoughB}, smoothstep(0.3, 0.7, nD.g)) * (0.85 + 0.3 * sD.b);
+${flowText('    reeds *= smallBed;\n')}    vec3 rough = mix(${P.bankRoughA}, ${P.bankRoughB}, smoothstep(0.3, 0.7, nD.g)) * (0.85 + 0.3 * sD.b);
     rough = mix(rough, ${P.reeds}, reeds * 0.7);
 ${presentText(`    // Under and between the bank trees the ground is overgrown: bramble, nettle and young growth, dark and lush.
     rough = mix(rough, vec3(0.026, 0.05, 0.016) * (0.8 + 0.4 * nD.g), 0.85 * (1.0 - 0.6 * reeds));
 `)}    meadow = mix(meadow, rough, strip);
   }
 }
-${presentText(`// Plantation estates (plantation.ts): the compartment here. A fresh clear-fell is bare brown ground strewn with
+${flowText('forestW *= 1.0 - tRock;\n')}${presentText(`// Plantation estates (plantation.ts): the compartment here. A fresh clear-fell is bare brown ground strewn with
 // slash, greening as the new planting takes; the canopy takes a conifer tone by stand age (below).
 vec4 tComp = vec4(${ROTATION_YEARS.toFixed(1)}, 0.0, 999999.0, 0.0);
 if (vPlantation > 0.01) {
@@ -1213,10 +1258,15 @@ if (tRiverBank > 0.001) {
   Mat g = layerTop(${LAYER.gravel}, tXZ, tDist);
   vec3 mud = mix(${P.mud}, ${P.mudLight} * g.albedo, smoothstep(0.6, 0.8, nD.b + 0.3 * g.height));
   mud = mix(mud, ${P.riverBed}, tRiverBed);
-  acc.albedo = mix(acc.albedo, mud, tRiverBank);
+${flowText(`  // A seeded world's river bed is wider than its water (channelForm.ts): cool greywacke gravel bars matching the
+  // ribbon's palette (water.ts FLOW_BARS), darker toward damp channels.
+  mud = mix(mud, mix(vec3(0.115, 0.132, 0.140), vec3(0.185, 0.208, 0.218), smoothstep(0.3, 0.7, nD.b + 0.3 * g.height)) * g.albedo, tRiverBed);
+`)}  acc.albedo = mix(acc.albedo, mud, tRiverBank);
   acc.slope = mix(acc.slope, g.slope * 0.5, tRiverBank);
   acc.rough = mix(acc.rough, 0.45, tRiverBank);
-  acc.cavity = mix(acc.cavity, 1.0, tRiverBank);
+${flowText(`  // (Its bars are dry gravel: rough, no sheen. The water over the bed is the ribbon's.)
+  acc.rough = mix(acc.rough, 0.9, tRiverBed);
+`)}  acc.cavity = mix(acc.cavity, 1.0, tRiverBank);
   tFoliageW *= 1.0 - tRiverBank;
 }
 
@@ -1278,7 +1328,35 @@ ${E(VOLCANO_ROCK)}  // Height-aware edge, broken up by noise at two scales so ou
   acc.cavity = mix(acc.cavity, r.cavity, w);
   acc.height = mix(acc.height, r.height, w);
 }
-${E(VOLCANO_CRATER)}if (snowW > 0.001) {
+${flowText(`// Bare rock along fast water: dark, wet and smooth by the water (the bed itself under it), drier and paler up the
+// bank, with moss in its joints; water-worn bumps (boulder tops, ledges) in its relief.
+if (tRock > 0.001) {
+  Mat r = layerTop(${LAYER.rock}, tXZ, tDist);
+  // Fine structure the far-fading layer cannot carry: blocks and slabs a few metres across with dark joints between
+  // them (two rotated noise scales), the joints damp and mossy away from the water.
+  vec4 nJ = texture(tNoise, rot2(tXZ, 0.6) * (1.0 / 9.0));
+  vec4 nK = texture(tNoise, rot2(tXZ, 2.3) * (1.0 / 3.1));
+  float joint = smoothstep(0.62, 0.8, abs(nJ.r - nK.g) * 2.2 + 0.25 * nK.b);
+  vec3 rk = mix(${P.rockA}, ${P.rockB}, smoothstep(0.25, 0.75, nD.g + 0.35 * (nJ.b - 0.5))) * r.albedo * (0.42 + 0.4 * nK.r) * (0.75 + 0.5 * smoothstep(0.3, 0.7, nJ.g));
+  // Lichen-pale tops of the dry rock, moss in its joints.
+  rk = mix(rk, rk * vec3(1.12, 1.1, 1.02), smoothstep(0.65, 0.85, nJ.a) * (1.0 - tRockWet) * 0.5);
+  rk = mix(rk, vec3(0.018, 0.03, 0.012), joint * (1.0 - tRockWet) * 0.5);
+  // Dry rock weathered grey-brown, not pale as a slab.
+  rk *= mix(0.78, 1.0, tRockWet);
+  rk *= 1.0 - 0.45 * joint * tRockWet;
+  // Wet by the water and under it: dark.
+  rk *= mix(1.0, 0.38, tRockWet);
+  rk = mix(rk, ${P.riverBed} * 0.9, tRiverBed * 0.5);
+  float rw = tRock * clamp(0.55 + 1.2 * r.height + 0.3 * sD.b, 0.0, 1.0);
+  rw = max(rw, tRock * tRockWet);
+  acc.albedo = mix(acc.albedo, rk, rw);
+  acc.slope = mix(acc.slope, r.slope * 1.3 + (nK.zw - 0.5) * 1.1 + (nJ.xy - 0.5) * 0.8, rw);
+  acc.rough = mix(acc.rough, mix(r.rough, 0.3, tRockWet), rw);
+  acc.cavity = mix(acc.cavity, r.cavity * (1.0 - 0.4 * joint), rw);
+  acc.height = mix(acc.height, r.height, rw);
+  tFoliageW *= 1.0 - rw;
+}
+`)}${rillText(rillSplatGlsl(P, LAYER.gravel, isPresent()))}${E(VOLCANO_CRATER)}if (snowW > 0.001) {
   Mat s = layerTop(${LAYER.snow}, tXZ, tDist);
   // Snow fills hollows first: height-aware blend against whatever lies beneath.
   float w = clamp((snowW * 1.6 - 0.3) + (0.5 - acc.height) * 0.6, 0.0, 1.0);
@@ -1311,7 +1389,7 @@ diffuseColor.rgb = vec3(tBio.x, tBio.y, snowW) * 0.3;
 diffuseColor.rgb = canopyLayer(tXZ, nC.b).albedo;
 #endif
 float tRough = clamp(acc.rough, 0.3, 1.0);
-vec3 tNormalW = normalize(tN + vec3(acc.slope.x, 0.0, acc.slope.y) * 0.35);
+${rillText(RILL_FINISH_GLSL)}vec3 tNormalW = normalize(tN + vec3(acc.slope.x, 0.0, acc.slope.y) * 0.35);
 #if TERRAIN_DEBUG == 4
 // Unlit albedo (x4), written as emissive in the output patch below.
 #endif
@@ -1426,6 +1504,9 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
   // Built now, in the era this thread was set in (never at module load).
   const head = fragmentHead();
   const splat = fragmentSplat();
+  // A seeded world's flow attribute (bare rock along fast water); nothing at seed 0.
+  const flowHead = flowText(FLOW_VERTEX_HEAD);
+  const flowVertex = flowText(FLOW_VERTEX);
   // The lava's emission (increment 2 slot; empty in the present day and in the stub).
   const lava = eraSlot('lava', VOLCANO_LAVA_GLSL, 'VOLCANO');
   Object.assign(uniforms, {
@@ -1449,12 +1530,14 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
   if (!isPresent() && V) Object.assign(uniforms, { uVolcano: { value: new THREE.Vector4(V.east, V.north, V.baseRadius, V.craterRadius) } });
   // Increment 2: the era's per-frame uniforms (eraUniforms.ts), shared by reference.
   if (!isPresent()) Object.assign(uniforms, ERA_UNIFORMS);
+  // A seeded world's hillside rills (rillShader.ts; RillSystem.ts fills them), shared by reference.
+  if (rillsOn()) Object.assign(uniforms, RILL_UNIFORMS);
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\n${vertexHead()}`)
+      .replace('#include <common>', `#include <common>\n${vertexHead()}${flowHead}`)
       .replace('#include <beginnormal_vertex>', VERTEX_NORMAL)
-      .replace('#include <begin_vertex>', vertexBegin());
+      .replace('#include <begin_vertex>', `${vertexBegin()}${flowVertex}`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${head}`)
       .replace('#include <map_fragment>', splat)
@@ -1471,7 +1554,7 @@ export function createTerrainMaterial(tex: TerrainTextures, uniforms: TerrainUni
       // Debug view 4: unlit albedo, scaled to be visible under the scene's exposure.
       .replace('#include <opaque_fragment>', `#if TERRAIN_DEBUG == 4\noutgoingLight = diffuseColor.rgb * 4000.0;\n#endif\n${lava}#include <opaque_fragment>`);
   };
-  const suffix = `${eraKeySuffix()}${worldSeed() === 0 ? '' : `-s${worldSeed()}`}`;
+  const suffix = `${eraKeySuffix()}${worldSeed() === 0 ? '' : `-s${worldSeed()}`}${hydrology.queryFlow && !rillsEnabled() ? '-norill' : ''}`;
   mat.customProgramCacheKey = () => `terrain-v5-${mat.defines?.TERRAIN_DETAIL}-${mat.defines?.TERRAIN_DEBUG}${suffix}`;
   return mat;
 }

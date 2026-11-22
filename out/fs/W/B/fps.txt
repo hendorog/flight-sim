@@ -1,0 +1,8 @@
+== before load 8.72
+[fps] 10.18 ms/frame (98.2 fps, drained throughput) at 1600x900; rAF interval 10.10 ms
+[gpu] post pipeline (scene + passes) p10 8.38 ms, p50 8.91 ms over 241 frames
+[shot] wrote /home/roger/github/fs-exp/round-w-braid/out/fs/W/B/pics/fps-before.png
+== after load 8.43
+[fps] 10.63 ms/frame (94.1 fps, drained throughput) at 1600x900; rAF interval 10.65 ms
+[gpu] post pipeline (scene + passes) p10 8.68 ms, p50 9.21 ms over 241 frames
+[shot] wrote /home/roger/github/fs-exp/round-w-braid/out/fs/W/B/pics/fps-after.png

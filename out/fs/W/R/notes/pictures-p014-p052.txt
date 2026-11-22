@@ -1,0 +1,63 @@
+Picture notes, before (b5f08fb, the checker's renders) | after (78e21c7). Sheets in out/fs/W/R/pictures-final/pairs.
+p42-58250: main river narrower, smoother bed edges; the side tributary is still a straight pale line across the floor (Part S).
+p777777-37000: the straight N-S stream and the shallow lake over paddocks are unchanged.
+p7-37750: the stream down the paddock wedge: one clear channel on the right edge; the doubled look is weaker but not gone.
+w1-step1: gravel stream in forest, smoother edges, same course.
+fr42-1979: angular bars and dark pools become a smooth dark ribbon; its middle reach is a run of similar tight loops (hairpin train).
+fr777777-2039: lake unchanged; the inflowing river is a darker narrow channel; the straight T lines on the far shore remain.
+w1-face3: the bare band is unchanged; the river becomes one smooth channel with even pale edges in regular bends: tidier, more ruled.
+w1-step2: smoother gravel bed; the Z-turn across the fields remains.
+w777777-poolcut3: the straight 2 km floor channel remains (Part S's course).
+g1-1: angular braided bars become one smoother gravel river; the slope stream at right is still a dashed line.
+g1-2, g1-3, g42-1, g42-2, g42-3, g777777-3, gJ777777-2: organic single-thread gravel rivers wandering their farmed floors; g42-1 crosses to the right side mid-distance.
+g777777-1: the river crosses the floor; the long straight tributary at right remains.
+g777777-2: the straight dark diagonal channels through the forest remain (Part S).
+gJ1-3: NEW DEFECT - bright white looping channels in the shallow pond margin at the bottom left (whitepx 27 -> 1345; already 1343 at 5e3599d); trees still stand in the wash; the river at right is a wider pale bed whose right edge shows small regular notches.
+gJ777777-3: smooth river; the straight tributary at top right remains.
+np1-big: the shallow margin now covers the foreground paddocks (pond area on seed 1 grew; B's fill and spill on the reshaped ground).
+np42-big, np42-deep: unchanged.
+x1-perched1: the constant-width canal with pale strips both sides becomes a narrower river with a one-sided, varying gravel strip; still a little ruled; sand plain inherited.
+x1-perched2: water narrower with point bars inside bends; less canal-like.
+x1-perched3: WORSE - the big meander loop is gone; the reach is straighter, wide, with pale strips on both banks that read as a canal.
+x1-step1, x1-step2, x1-face1, x1-face2: rivers narrower and smoother; scars and faces inherited.
+x1-face3: braided-looking angular bed becomes one smooth gravel river; the junction blends.
+x1-hidden1, x1-hidden2: smoother dark meanders; lakes unchanged.
+x1-poolcut1/2/3, x42-poolcut2/3, x777777-poolcut1/2/3, x777777-slot1, m1-3: straight V-axis streams unchanged (Part S).
+x42-poolcut1: a pale braided-looking tributary on the left is now more visible.
+x1-stepup1/2/3, x42-stepup2/3, x42-hidden1/2/3, x777777-hidden1/2/3, x777777-stepup1/2: lakes and their drowned margins unchanged.
+x42-perched1: FIXED - the saw-tooth tributary with stair corners becomes a smooth gravel bed of changing width; the junction blends.
+x42-perched2: inherited sand plain; the white dotted surf strips remain; the river is narrower with point bars and islands.
+x42-perched3: meanders kept; gravel on one side; the even pale rim is weaker.
+x42-step1: the river is a smooth wide pale bed with a central dark thread of even width (a little road-like); cliff face inherited.
+x42-face1/2/3: single smooth gravel rivers; faces inherited.
+x42-stepup1: single thread wandering a farmed floor. Pass.
+x777777-perched1: WORSE - the tight meander loop is gone; a straighter wide river with even pale strips (canal-like).
+x777777-perched2: meanders kept, smoother.
+x777777-perched3: NEW DEFECT - a straight-edged rectangular pale slab in the water near the junction (bottom of frame), with sun glare; already at 5e3599d (1.9 % of pixels differ from it).
+x777777-step1/2, face1/2: river 0 in the volcano valley is still a train of regular hairpins with pale lining (not fixed).
+x777777-face3: a glare-bright loop in the foreground; hairpins remain.
+x777777-step3: scars inherited.
+x777777-stepup3: river smoother; the tributary at top right is smoother-edged.
+m1-1: the straight stream line remains; a new pale bare strip appears left of it in the foreground.
+m1-2: unchanged.
+m1-3: straight white line down the V, before and after (cloud over the left third).
+l1-1: two winding wooded streams; after the right one is more visible with pale bars. Pass.
+l1-2: the winding gravel river becomes a thinner winding stream with less bar; still organic.
+m42-1, m42-2: straight V-axis streams, before and after (Part S).
+m42-3: angular gravel bed becomes a smooth single gravel river; the straight tributary at left remains.
+l42-1: inherited sand plain; the meandering stream across it is unchanged in form, its corridor paler.
+l42-2: organic meanders, smoother. Pass.
+m777777-1: gravel river on a farmed floor; after it swings to the right wall in the foreground and back. Pass.
+m777777-2: a gravel stream in a pale corridor; after narrower, with a parallel pale line on the left (the corridor edge).
+m777777-3: the short gravel strip mid-slope remains (a slip-scar look).
+l777777-1: WORSE - the big river below the confluence becomes a very wide even pale bed with a dark thread, its far reach a broad pale slab (the wide gravel bed on a big lowland river; reads as a dry wash).
+l777777-2: the river is narrower and darker; a tributary at right is a pale braided strip.
+af-42-KWSH, af-42-KTHR: flat farmland approaches, unchanged; KTHR shows a stream crossing the far fields.
+af-777777-home: the two straight grey lines meeting in a T on the grass (the checker's "road") are gone; not a line in the hydrology (the line dumps have no line there, before or after); a farm-track change, cause not traced.
+af-777777-KTHR: a wide pale river bend now enters the bottom left corner.
+bwA-1-82950: the saw-tooth tributary becomes a wide pale bed with a darker inner band whose edges are still stepped (stair-cornered) in the foreground: the saw-tooth is weaker but not gone at this junction.
+bwA-1-18572: the jagged saw-tooth tributary becomes a wide banded bed (pale outside, grey middle) with smooth but parallel edges; reads a little like a road with lanes.
+hd1-173, hd42-249: unchanged: the river still starts mid-plain (Part S's unfed heads).
+bwA-7-33475: NEW: a big tight loop (an oxbow-like hairpin) now in the foreground; smooth, with a pale inner rim. Organic but a near-cutoff.
+hd777777-114: the head on an inherited lake, unchanged.
+m1-3b: straight white line down the V, unchanged.

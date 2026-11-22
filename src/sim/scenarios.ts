@@ -10,7 +10,7 @@
 import { FT, KT, NM, DEG, clamp, wrapTwoPi } from '../core/math';
 import type { ScenarioId } from '../core/context';
 import type { ControlPatch, Environment, InitialConditions } from '../core/types';
-import { AIRPORT, runwayDirection, runwayThreshold } from '../core/world';
+import { AIRPORT, onHomeAirport, runwayDirection, runwayThreshold } from '../core/world';
 import { C172S_GEOMETRY } from '../aircraft/c172s/geometry';
 import { C172S_SIM } from '../aircraft/c172s/sim';
 import { C172S_CONTROLS } from '../aircraft/c172s/systems';
@@ -29,7 +29,10 @@ import type { LoadingRequest } from '../physics/interfaces';
 export const SCENARIO_IDS: readonly ScenarioId[] = ['runway', 'apron', 'final', 'cruise', 'downwind'];
 
 /** Pattern altitude, m MSL (1000 ft above the field). */
-export const PATTERN_ALTITUDE = AIRPORT.elevation + 1000 * FT;
+export let PATTERN_ALTITUDE = AIRPORT.elevation + 1000 * FT;
+onHomeAirport(() => {
+  PATTERN_ALTITUDE = AIRPORT.elevation + 1000 * FT;
+});
 /** Downwind leg offset from the runway centreline, m (left-hand traffic for 07: north-west of the runway). */
 export const DOWNWIND_OFFSET = 900;
 /**
@@ -219,7 +222,7 @@ export function buildScenario(id: ScenarioId, env: Environment, def: ScenarioAir
   if (field && (id === 'runway' || id === 'apron' || id === 'final')) return fieldScenario(id, field, env, def);
   switch (id) {
     case 'runway': {
-      const p = LINE_UP.find((l) => l.runway === '07')!;
+      const p = LINE_UP.find((l) => l.end === 0)!;
       return {
         id,
         title: isPresent() ? 'Runway 07, ready for take-off' : 'The Flats, heading 070, ready for take-off',
@@ -253,15 +256,24 @@ export function buildScenario(id: ScenarioId, env: Environment, def: ScenarioAir
       // airfield passing 2.6 km to the right after ~2.5 min. Terrain within 5 NM of the track stays below
       // 630 m (at least 2400 ft of clearance) for the first 55 km (over 15 minutes at 110 KIAS); the same
       // start heading 015 (as before) meets 1400 m ridges 17.5 km out.
-      const heading = 100 * DEG;
-      const ic: InitialConditions = { position: { x: 4000, y: -8000, z: -alt }, heading, airspeed: kiasToTas(sc.cruiseKias, alt, env), onGround: false, engineRunning: true };
+      let heading = 100 * DEG;
+      let pos = { x: 4000, y: -8000, z: -alt };
+      // Dev: ?scenario=cruise&at=north,east,agl[,heading]: start over that point (NED metres), agl metres above the
+      // ground there, heading degrees true (default 100). For flying a terrain spot found with camPos.
+      const atArg = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('at') : null;
+      const atV = atArg?.split(',').map(Number) ?? [];
+      if (atV.length >= 3 && atV.slice(0, 3).every(Number.isFinite)) {
+        if (Number.isFinite(atV[3])) heading = wrapTwoPi(atV[3] * DEG);
+        pos = { x: atV[0], y: atV[1], z: -(terrainHeight(atV[0], atV[1]) + atV[2]) };
+      }
+      const ic: InitialConditions = { position: pos, heading, airspeed: kiasToTas(sc.cruiseKias, -pos.z, env), onGround: false, engineRunning: true };
       if (retractable) ic.gearDown = false;
       return {
         id,
         title: `Cruise at ${sc.cruiseAltFt} ft along the Alps`,
         ic,
         controls: presets.airborne,
-        autoflight: { kind: 'hold', heading, altitude: alt, kias: sc.cruiseKias },
+        autoflight: { kind: 'hold', heading, altitude: -pos.z, kias: sc.cruiseKias },
       };
     }
     case 'safari': {

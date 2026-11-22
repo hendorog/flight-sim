@@ -1,13 +1,15 @@
 // Generated airfields (src/world/airfields.ts, terrain/airfieldSiting.ts): sited per seed in the present day, flat,
 // dry and spaced apart, with the terrain levelled under them and paved runways felt by the wheels.
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { regionalRoads } from '../../src/world/terrain/roads';
 import { airfieldAccess, airfields, airfieldSurface, fieldCoords, generatedAirfields, HOME_AIRFIELD, runwayIds } from '../../src/world/airfields';
 import { setEra } from '../../src/world/era/eraState';
 import { AIRFIELD_COUNT, AIRFIELD_RING } from '../../src/world/terrain/airfieldSiting';
 import { makeSample, sampleTerrain } from '../../src/world/terrain/heightfield';
 import { setWorldSeed } from '../../src/world/worldSeed';
+// (Under a full parallel suite run its slowest test here takes up to about 24 s, over the 5 s default: round T repairs.)
+vi.setConfig({ testTimeout: 60_000 });
 
 afterAll(() => {
   setWorldSeed(0);

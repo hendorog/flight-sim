@@ -1,0 +1,12 @@
+
+ RUN  v5.0.2 /home/roger/github/fs-exp/round-w-rs
+
+RW seed 1: river axis samples 52688; belt off its course 45983 (87 %); with a floor beyond its bed 51780; kept off a side falling away 8118; floor read past its bank by its slope 52573; form samples 1913342, wide gravel bed 7262, white 1265499; junction blends 6097; pitch units 824907, shaped 824907, samples put in 357263; ended where they first reach their receiver's bed 3210 lines (197.8 km cut); mouths ramped down to their receiver 1108 (48.6 km)
+RW seed 42: river axis samples 50524; belt off its course 44206 (87 %); with a floor beyond its bed 49872; kept off a side falling away 8112; floor read past its bank by its slope 50383; form samples 1927379, wide gravel bed 5334, white 1229301; junction blends 6018; pitch units 810042, shaped 810042, samples put in 339264; ended where they first reach their receiver's bed 3172 lines (183.5 km cut); mouths ramped down to their receiver 1082 (48.1 km)
+RW seed 777777: river axis samples 56782; belt off its course 49642 (87 %); with a floor beyond its bed 55570; kept off a side falling away 8953; floor read past its bank by its slope 56445; form samples 2012074, wide gravel bed 6829, white 1349024; junction blends 6441; pitch units 886329, shaped 886329, samples put in 384442; ended where they first reach their receiver's bed 3393 lines (208.7 km cut); mouths ramped down to their receiver 1213 (55.7 km)
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  14:45:35
+   Duration  46.71s (tests 99%, transform 1%, import 1%)
+

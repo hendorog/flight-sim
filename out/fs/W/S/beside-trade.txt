@@ -1,0 +1,13 @@
+beside=1   gullies (pass channels >= 1.5 km², 43827 nodes) meeting a river: 1862, with no drawn stream within 200 m 227 (12.2 %); 1.5-10 km²
+beside=1   gullies (pass channels >= 1.5 km², 44144 nodes) meeting a river: 1921, with no drawn stream within 200 m 242 (12.6 %); 1.5-10 km²
+beside=1 seed 42: kind-1 lines 6119; side-by-side runs > 500 m (pairs) 219, 253.9 km; > 1 km 98
+beside=1 seed 1: kind-1 lines 5962; side-by-side runs > 500 m (pairs) 208, 210.2 km; > 1 km 78
+beside=2   gullies (pass channels >= 1.5 km², 43827 nodes) meeting a river: 1862, with no drawn stream within 200 m 226 (12.1 %); 1.5-10 km²
+beside=2   gullies (pass channels >= 1.5 km², 44144 nodes) meeting a river: 1921, with no drawn stream within 200 m 242 (12.6 %); 1.5-10 km²
+beside=2 seed 42: kind-1 lines 6119; side-by-side runs > 500 m (pairs) 219, 253.9 km; > 1 km 98
+beside=2 seed 1: kind-1 lines 5962; side-by-side runs > 500 m (pairs) 208, 210.2 km; > 1 km 78
+beside=0   gullies (pass channels >= 1.5 km², 43827 nodes) meeting a river: 1867, with no drawn stream within 200 m 149 (8.0 %); 1.5-10 km² 
+beside=0   gullies (pass channels >= 1.5 km², 44144 nodes) meeting a river: 1923, with no drawn stream within 200 m 132 (6.9 %); 1.5-10 km² 
+beside=0 seed 42: kind-1 lines 6119; side-by-side runs > 500 m (pairs) 1020, 1591.8 km; > 1 km 633
+beside=0 seed 1: kind-1 lines 5962; side-by-side runs > 500 m (pairs) 1085, 1774.2 km; > 1 km 708
+BESIDE-DONE
