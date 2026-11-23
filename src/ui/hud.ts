@@ -129,6 +129,11 @@ export class Hud {
     this.root.classList.toggle('hidden', !v);
   }
 
+  /** Right edge of the bottom-left lever / read-out block in CSS px (0 when hidden or unlaid-out). */
+  get controlsRight(): number {
+    return (this.controls.offsetLeft ?? 0) + (this.controls.offsetWidth ?? 0);
+  }
+
   /** The type flown: rebuilds the lever bars when its UiProfile differs, and redraws the speed tape. */
   setAircraft(aircraft: HudAircraft): void {
     if (aircraft.ui !== this.aircraft.ui) this.buildControls(aircraft.ui);

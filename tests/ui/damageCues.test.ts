@@ -8,6 +8,7 @@ import { defaultControls, defaultWeather, type AircraftState } from '../../src/c
 import { emptyDamage, type DamageItem, type DamageSeverity, type DamageState } from '../../src/physics/damage';
 import { UISystem } from '../../src/ui/uiSystem';
 import { FlightCues } from '../../src/ui/flightCues';
+import { RadioCaptions } from '../../src/ui/school/captions';
 import { Annunciators, damageCue } from '../../src/ui/status';
 import { Toasts } from '../../src/ui/overlays';
 import { FakeElement, installFakeDom } from './fakeDom';
@@ -91,5 +92,64 @@ describe('landing damage in the UI', () => {
     expect(chip).toBeDefined();
     expect(chip!.classList.contains('hidden')).toBe(false);
     expect(chip!.classList.contains('alert')).toBe(true);
+  });
+});
+
+describe('external-view HUD clearance for status and radio captions', () => {
+  it('marks #fsui with has-hud and --hud-cues-left in external views, and clears has-hud in cockpit or with HUD off', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const parent = new FakeElement('div');
+    const ctx = {
+      state: makeMockState({ heightAGL: 100, tas: 55 }), env: makeMockEnvironment(), controls: defaultControls(C172S_DEFINITION),
+      weather: defaultWeather(), simTime: 1, timeScale: 1, cameraMode: 'cockpit', quality: 'high', events: createEventBus(), commands: {},
+      renderer: { domElement: new FakeElement('canvas') },
+    } as unknown as SimContext;
+    const ui = new UISystem({ bindings: [], parent: parent as unknown as HTMLElement, hints: 'never' });
+    ui.init(ctx);
+    const fsui = parent.children[0];
+    const hudControls = fsui.findAll('controls')[0] as FakeElement & { offsetLeft?: number; offsetWidth?: number };
+    hudControls.offsetLeft = 24;
+    hudControls.offsetWidth = 268;
+
+    ui.update(1 / 60, ctx);
+    expect(fsui.classList.contains('has-hud')).toBe(false);
+
+    ctx.cameraMode = 'chase';
+    ui.update(1 / 60, ctx);
+    expect(fsui.classList.contains('has-hud')).toBe(true);
+    expect(fsui.style['--hud-cues-left']).toBe('306px');
+
+    ui.toggleHud();
+    ui.update(1 / 60, ctx);
+    expect(fsui.classList.contains('has-hud')).toBe(false);
+
+    ui.toggleHud();
+    ctx.cameraMode = 'cockpit';
+    ui.update(1 / 60, ctx);
+    expect(fsui.classList.contains('has-hud')).toBe(false);
+    ui.dispose();
+  });
+
+  it('tracks the flight-cues top edge on the same frame when camera views switch', () => {
+    let cuesTop = 920;
+    const cues = {
+      isConnected: true,
+      getBoundingClientRect: () => ({ top: cuesTop, height: 66 }),
+    };
+    const host = new FakeElement('div') as FakeElement & { ownerDocument?: unknown; offsetParent?: unknown };
+    host.ownerDocument = { querySelector: (sel: string) => (sel === '#fsui .flight-cues' ? cues : null) };
+    const radio = new RadioCaptions(host as unknown as HTMLElement);
+    const rRoot = radio.root as unknown as FakeElement & { ownerDocument?: unknown; offsetParent?: unknown };
+    rRoot.ownerDocument = host.ownerDocument;
+    rRoot.offsetParent = { getBoundingClientRect: () => ({ bottom: 1000 }) };
+
+    radio.show({ id: 'r1', actor: 'tower', channel: 'radio', text: 'Runway two seven, cleared for take-off.', atWall: 1, atSim: 1, spoken: true }, 1);
+    radio.update(1.0);
+    expect(radio.root.style.bottom).toBe('88px');
+
+    // Switching to Chase raises .flight-cues from bottom 14px to bottom 22px; RadioCaptions follows without a 250 ms delay.
+    cuesTop = 912;
+    radio.update(1.016);
+    expect(radio.root.style.bottom).toBe('96px');
   });
 });

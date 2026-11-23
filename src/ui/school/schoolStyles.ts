@@ -360,6 +360,8 @@ export const SCHOOL_CSS = /* css */ `
 #fsui .sc-caption.safety em { background: var(--alert); color: #fff; }
 #fsui .sc-caption.student-line { font-style: italic; color: #d6dde4; }
 #fsui .sc-radio-captions { position: absolute; left: 14px; bottom: 14px; width: min(420px, calc(100vw - 28px)); display: flex; flex-direction: column; align-items: flex-start; gap: 4px; pointer-events: none; }
+#fsui.has-hud .sc-radio-captions { left: var(--hud-cues-left, 316px); bottom: 22px; width: min(380px, calc(100vw - var(--hud-cues-left, 316px) - 214px)); }
+@media (max-width: 760px) { #fsui.has-hud .sc-radio-captions { left: 14px; width: min(420px, calc(100vw - 28px)); } }
 #fsui .sc-radio-captions .sc-caption { font-size: 13px; line-height: 1.35; padding: 6px 10px; border-radius: 9px; background: rgba(6,9,14,.86); transition: opacity .8s; }
 #fsui .sc-radio-captions .sc-caption em { font-size: 10px; }
 #fsui .sc-ring { position: absolute; left: 0; top: 0; border-radius: 50%; border: 3px solid var(--sc-amber); box-shadow: 0 0 14px rgba(255,178,36,.7), inset 0 0 10px rgba(255,178,36,.35);

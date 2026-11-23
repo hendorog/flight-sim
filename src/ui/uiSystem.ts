@@ -352,13 +352,22 @@ export class UISystem implements Subsystem, MenuHost {
     const school = this.schoolUi;
     // A school screen (home, briefing, debrief...) or a Career page is modal like the menu: no flight cues over it.
     const schoolModal = !!school?.screen || this.careerScreen;
-    if (school) school.update(dt);
-    this.checklist.update(ctx, menuOpen || schoolModal || this.crash.isOpen);
-    this.flightCues.update(ctx.state, menuOpen || schoolModal || this.crash.isOpen);
     const showHud = !this.demoFlying && this.hudOn && ctx.cameraMode !== 'cockpit' && !menuOpen && !schoolModal;
     this.hud.visible = showHud;
+    this.root.classList.toggle('has-hud', showHud);
+    if (showHud) {
+      this.hud.update(dt, ctx);
+      const right = this.hud.controlsRight;
+      const cuesLeft = right > 0 ? `${right + 14}px` : '';
+      if (cuesLeft && cuesLeft !== this.hudCuesLeft) {
+        this.hudCuesLeft = cuesLeft;
+        this.root.style.setProperty('--hud-cues-left', cuesLeft);
+      }
+    }
+    this.checklist.update(ctx, menuOpen || schoolModal || this.crash.isOpen);
+    this.flightCues.update(ctx.state, menuOpen || schoolModal || this.crash.isOpen);
+    if (school) school.update(dt);
     this.hud.topOffset = school?.stripVisible ? STRIP_CLEARANCE : this.careerModal?.stripVisible?.() ? CAREER_STRIP_CLEARANCE : 0;
-    if (showHud) this.hud.update(dt, ctx);
     // Cockpit (or HUD off): the HUD's annunciations still matter.
     const showAnnunc = !showHud && !menuOpen && !schoolModal;
     this.annunciators.visible = showAnnunc;
@@ -416,6 +425,7 @@ export class UISystem implements Subsystem, MenuHost {
 
   /** The loading screen has been hidden once (boot finished): later starts give their own wind advice. */
   private loaded = false;
+  private hudCuesLeft = '';
 
   /**
    * The Flats have no windsock: at each start on the ground (after boot and after each reset), say which way the wind blows and which way to

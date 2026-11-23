@@ -127,7 +127,7 @@ const RADIO_GAP_PX = 8;
 export class RadioCaptions {
   readonly root: HTMLElement;
   private lines: { box: HTMLElement; hideAt: number }[] = [];
-  private nextLayout = 0;
+  private cuesEl: Element | null = null;
 
   constructor(parent: HTMLElement) {
     this.root = el('div', 'sc-radio-captions', parent);
@@ -141,7 +141,6 @@ export class RadioCaptions {
     el('span', '', box, c.text);
     this.lines.push({ box, hideAt: nowS + captionHoldS(c.text) + FADE_AFTER_S });
     while (this.lines.length > RADIO_LINES) this.lines.shift()!.box.remove();
-    this.nextLayout = 0;
   }
 
   clear(): void {
@@ -157,12 +156,12 @@ export class RadioCaptions {
       for (const l of gone) l.box.remove();
       this.lines = this.lines.filter((l) => !gone.includes(l));
     }
-    if (nowS < this.nextLayout || !this.lines.length) return;
-    this.nextLayout = nowS + 0.25;
-    const cues = this.root.ownerDocument.querySelector('#fsui .flight-cues');
-    const r = cues?.getBoundingClientRect();
-    const host = this.root.offsetParent?.getBoundingClientRect();
-    const bottom = r && r.height > 0 && host ? Math.round(host.bottom - r.top + RADIO_GAP_PX) : 14;
+    if (!this.lines.length) return;
+    const cues = this.cuesEl?.isConnected ? this.cuesEl : (this.cuesEl = this.root.ownerDocument?.querySelector('#fsui .flight-cues') ?? null);
+    const r = cues?.getBoundingClientRect?.();
+    const host = this.root.offsetParent?.getBoundingClientRect?.();
+    const fallback = this.root.closest?.('#fsui.has-hud') ? 22 : 14;
+    const bottom = r && r.height > 0 && host ? Math.round(host.bottom - r.top + RADIO_GAP_PX) : fallback;
     const px = `${bottom}px`;
     if (this.root.style.bottom !== px) this.root.style.bottom = px;
   }

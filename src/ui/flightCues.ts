@@ -78,6 +78,8 @@ export class FlightCues {
 
 export const FLIGHT_CUES_CSS = /* css */ `
 #fsui .flight-cues { position:absolute;left:14px;bottom:14px;width:min(350px,calc(100vw - 28px));background:rgba(10,17,24,.92);border:1px solid #435969;border-radius:7px;padding:7px 10px;font:12px/1.4 system-ui;color:#c7d4de;pointer-events:auto; }
+#fsui.has-hud .flight-cues { left:var(--hud-cues-left,316px);bottom:22px;width:min(350px,calc(100vw - var(--hud-cues-left,316px) - 214px)); }
+@media (max-width:760px) { #fsui.has-hud .flight-cues { left:14px;bottom:206px;width:min(350px,calc(100vw - 28px)); } }
 #fsui .flight-warnings { white-space:pre-line;font-weight:650; }
 #fsui .flight-warnings.warning { color:#ffd1a3; }
 #fsui .flight-damage { white-space:pre-line;font-weight:650;color:#ffd1a3;margin-top:3px;padding-top:3px;border-top:1px solid #ffffff1a; }
