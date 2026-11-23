@@ -416,8 +416,8 @@ const COCKPIT: CockpitDef = {
   /** Default view: 7 degrees nose-down from level, over the glareshield. */
   defaultPitchDeg: -7,
   // Instrument focus (Q): the main instruments centred, the glareshield ~25 % down the frame, the 3-1/8 in dials
-  // 125-131 px across on a 991 px high view (scripts/cockpit-focus.mjs).
-  focus: { yawDeg: 0, pitchDeg: -19, fovDeg: 46 },
+  // ~130 px across on a 991 px high view (scripts/cockpit-focus.mjs).
+  focus: { yawDeg: 0, pitchDeg: -22.5, fovDeg: 47.5 },
   enclosure: 'cabin',
   panel: { x: PANEL_X, zTop: PANEL_ZTOP, width: PANEL_WIDTH },
   floor: { z: FLOOR_Z, x0: 0.95, x1: -2.1 },
@@ -438,11 +438,11 @@ const COCKPIT: CockpitDef = {
     ],
     halfWidth: 0.505,
   },
-  // Front seats slid to where the pilot eye (x -0.18) sits over the rear of the cushion; the rear bench is two
-  // places wide. x is the cushion's front edge, z its top.
+  // Front seats raised and slid forward on the inclined tracks so the pilot eye (x -0.15, z -0.46) sits over the rear
+  // of the cushion; the rear bench is two places wide. x is the cushion's front edge, z its top.
   seats: [
-    { x: 0.14, y: -SEAT_Y, kind: 'front', width: 0.44, depth: 0.44, z: 0.3 },
-    { x: 0.14, y: SEAT_Y, kind: 'front', width: 0.44, depth: 0.44, z: 0.3 },
+    { x: 0.17, y: -SEAT_Y, kind: 'front', width: 0.44, depth: 0.44, z: 0.26 },
+    { x: 0.17, y: SEAT_Y, kind: 'front', width: 0.44, depth: 0.44, z: 0.26 },
     { x: -0.92, y: 0, kind: 'bench', width: 0.94, depth: 0.4, z: 0.3 },
   ],
   consoles: [

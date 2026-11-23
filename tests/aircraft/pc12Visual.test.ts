@@ -159,26 +159,24 @@ describe('Pilatus PC-12/47 airframe visual', () => {
     // The documented height and station (PC12_VISUAL_HEIGHTS; requested for geometry.ts's PC12_EYE).
     expect(heightOf(eye[2])).toBeCloseTo(PC12_VISUAL_HEIGHTS.eye, 9);
     expect(6.0 - eye[0]).toBeCloseTo(PC12_VISUAL_HEIGHTS.eyeStation, 9);
-    // 0.25-0.36 m under the top line (the windscreen over the seat), 1.0-1.25 m above the floor.
+    // 0.22-0.36 m under the top line (the windscreen over the seat), 1.0-1.25 m above the floor.
     const top = outer.section(eye[0]).zTop;
-    expect(eye[2] - top).toBeGreaterThan(0.25);
+    expect(eye[2] - top).toBeGreaterThan(0.22);
     expect(eye[2] - top).toBeLessThan(0.36);
     expect(c.floor.z - eye[2]).toBeGreaterThan(1.0);
     expect(c.floor.z - eye[2]).toBeLessThan(1.25);
     // Over the windscreen's sill (a view over the nose) and over the glareshield.
     expect(eye[2]).toBeLessThan(PC12_VISUAL.glazing.windscreen!.sillC[1]);
     expect(eye[2]).toBeLessThan(c.panel.zTop - 0.1);
-    // The panel's top no more than 16 deg under the eye (the C208's is 13 deg): with the default -8 deg view pitch the
-    // whole primary T and the engine instruments are on screen over the glareshield (look review: at 0.27 m / 24 deg
-    // only the top row showed).
+    // Seated higher for over-the-nose visibility, the panel's top sits ~19 deg below the eye (Q brings the full panel in view).
     const topDeg = (Math.atan2(c.panel.zTop - eye[2], c.panel.x - eye[0]) * 180) / Math.PI;
-    expect(topDeg).toBeLessThan(16);
+    expect(topDeg).toBeLessThan(20);
     // 0.70-0.85 m above the seat cushion; inside the cabin's side.
     expect(c.seats[0].z! - eye[2]).toBeGreaterThan(0.7);
     expect(c.seats[0].z! - eye[2]).toBeLessThan(0.85);
     expect(Math.abs(eye[1])).toBeLessThan(sectionHalfWidth(outer, eye[0], eye[2]) - 0.15);
   });
-  it("geometry.ts adopted the 3V cockpit: the eye equals PC12_EYE (station 4.20, 2.33 m up) within 3 cm", () => {
+  it("geometry.ts adopted the 3V cockpit: the eye equals PC12_EYE (station 4.20, 2.39 m up) within 3 cm", () => {
     const eye = PC12_VISUAL.cockpit.pilotEye;
     expect(Math.hypot(eye[0] - PC12_EYE.x, eye[1] - PC12_EYE.y, eye[2] - PC12_EYE.z)).toBeLessThan(0.03);
   });

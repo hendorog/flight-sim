@@ -177,7 +177,7 @@ export const PA38_GEOMETRY: AircraftGeometry = {
      * z: WL 59, 0.22 m under the canopy crown (0.70 m above the thrust line) and 0.28 m above the window sill
      * (0.20 m above it) [3V; s.12].
      */
-    pilotEye: { x: sta(89.0), y: -0.27, z: wl(59.0) },
+    pilotEye: { x: sta(89.0), y: -0.27, z: wl(60.8) },
   },
 
   // --- Landing gear: tyre contact points with struts fully extended (fixed tricycle, 6.00-6 on all three) ---

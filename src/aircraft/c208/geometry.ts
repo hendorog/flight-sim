@@ -116,7 +116,7 @@ export const C208_GEOMETRY: AircraftGeometry = {
     /** Belly to cabin roof at mid-cabin (3V; the cabin is 54 in high inside). */
     maxHeight: 2.0,
     /** Pilot eye point, left seat: 3V, the seat FS ahead of the wing leading edge, about 0.8 m above the cabin floor. */
-    pilotEye: { x: 1.35, y: -0.38, z: T - 0.62 },
+    pilotEye: { x: 1.35, y: -0.38, z: T - 0.68 },
   },
 
   // --- Landing gear: tyre contact points with struts fully extended ---

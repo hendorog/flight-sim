@@ -47,9 +47,10 @@ const GAW1: SectionShape = { m: 0.024, p: 0.5, t: 0.17 };
 /** Symmetric tail sections, about NACA 0011 (s.2.4). */
 const NACA0011: SectionShape = { m: 0, p: 0.4, t: 0.11 };
 
-/** Metres per inch, and the body x of a Piper fuselage station (as geometry.ts converts it). */
+/** Metres per inch, and body x / z of a Piper fuselage station / water line (as geometry.ts converts them). */
 const IN = 0.0254;
 const sta = (station: number): number => (77.25 - station) * IN;
+const wl = (waterLine: number): number => (36.5 - waterLine) * IN;
 
 // --- Wing: one constant-chord panel, low, rounded down-turned tips, no strut ------------------------------------
 
@@ -413,15 +414,14 @@ const LAMPS: readonly LampVisualDef[] = ((): LampVisualDef[] => {
 
 // --- Cockpit ---------------------------------------------------------------------------------------------------------
 
-// The cockpit is fitted to the pilot's eye of the geometry: the panel top 0.15 m below it, the seat cushion 0.70 m
-// below it, so the view over the glareshield is the same whatever the eye height. The fuselage, the windshield and
-// the cabin box are the airframe's and do not move with it.
+// Seat cushions sit 0.70 m below the pilot's eye; the panel, glareshield, fuselage, windshield and cabin box are the
+// airframe's and stay fixed when the seat height is raised.
 /**
  * Instrument panel face: vertical, facing aft, centred on the centre line (panel.ts), at about STA 64 (s.2.7: the
  * instruments' arms at 61-62 lie ahead of it, the panel frame at 63).
  */
 const PANEL_X = 0.34;
-const PANEL_ZTOP = EYE.z + 0.15;
+const PANEL_ZTOP = wl(59.0) + 0.15;
 const PX = PA38_PANEL_PX_PER_M;
 const PANEL_ZB = PANEL_ZTOP + PA38_PANEL_PX_RECT.h / PX;
 /** A point of the panel canvas, px, on the face (FRD y, z). */
@@ -471,7 +471,7 @@ const COCKPIT: CockpitDef = {
   defaultPitchDeg: -9,
   // Instrument focus (Q): the main instruments centred, the glareshield ~25 % down the frame, the 3-1/8 in dials
   // 127-133 px across on a 991 px high view (scripts/cockpit-focus.mjs).
-  focus: { yawDeg: 0, pitchDeg: -20.5, fovDeg: 48 },
+  focus: { yawDeg: 0, pitchDeg: -23.5, fovDeg: 48 },
   enclosure: 'cabin',
   panel: {
     x: PANEL_X, zTop: PANEL_ZTOP, width: PA38_PANEL_PX_RECT.w / PX, pxRect: PA38_PANEL_PX_RECT,

@@ -71,7 +71,7 @@ const WING_ROOT_PLANE_H = 1.05;
  * Pilot's eye: 0.30 m under the windscreen's top line over the seat (station 4.2: 2.63 m), at the middle of the cockpit
  * side window (3V 2.19-2.52 m), 1.15 m above the floor.
  */
-const EYE_H = 2.33;
+const EYE_H = 2.39;
 /**
  * Station of the eye: 4.20, 0.13 m aft of the W&B pilot arm (160.27 in = 4.071 m, the occupant's centre of gravity).
  * geometry.ts has 4.00: there the windscreen glass would stand 0.25 m in front of the face (3V top line 2.51 m).
@@ -565,7 +565,7 @@ const PX = PC12_PANEL_PX_PER_M;
 // wide inside, 47E 1-8).
 const PX_RECT = PC12_PANEL_PX_RECT;
 const PANEL_X = EYE.x + 0.6;
-const PANEL_ZTOP = EYE.z + 0.15;
+const PANEL_ZTOP = hz(2.18);
 const PANEL_W = PX_RECT.w / PX;
 const PANEL_ZB = PANEL_ZTOP + PX_RECT.h / PX;
 /** A point of the panel canvas, px, on the face (FRD y, z). */
@@ -615,7 +615,7 @@ const COCKPIT: CockpitDef = {
   defaultPitchDeg: -8,
   // Instrument focus (Q): the main instruments centred, the glareshield ~25 % down the frame, the 3-1/8 in dials
   // 126-137 px across on a 991 px high view (scripts/cockpit-focus.mjs).
-  focus: { yawDeg: 2, pitchDeg: -19.5, fovDeg: 50 },
+  focus: { yawDeg: 2, pitchDeg: -24, fovDeg: 50 },
   enclosure: 'cabin',
   panel: { x: PANEL_X, zTop: PANEL_ZTOP, width: PANEL_W, pxRect: PX_RECT },
   floor: { z: FLOOR_Z, x0: FIREWALL_X - 0.04, x1: CABIN_REAR_X + 0.05 },

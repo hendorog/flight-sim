@@ -254,7 +254,7 @@ export const DA20_GEOMETRY: AircraftGeometry = {
      * y: a quarter of the 1.07 m cabin width. z: 0.48 m above FRL, 0.21 m under the canopy apex (0.69 m) and
      * 0.3 m above the sill (0.17-0.20 m) [s.12 fuselage station 6, canopy].
      */
-    pilotEye: { x: da20NoseX(2.2), y: -0.27, z: da20FrlZ(0.48) },
+    pilotEye: { x: da20NoseX(2.2), y: -0.27, z: da20FrlZ(0.54) },
   },
   gear: {
     // Tyre contact points, legs unloaded: under the axles, the mains half the track out, below the ground line

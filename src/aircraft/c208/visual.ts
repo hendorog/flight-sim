@@ -414,11 +414,11 @@ const LAMPS: readonly LampVisualDef[] = ((): LampVisualDef[] => {
 
 // --- Cockpit ---------------------------------------------------------------------------------------------------------
 
-// The cockpit is fitted to the pilot's eye of the geometry: the panel top 0.15 m below it and 0.67 m ahead of it.
-// The fuselage, the windscreen and the cabin box are the airframe's and do not move with it.
+// Crew seat cushions sit 0.78 m below the pilot's eye; the panel, glareshield, fuselage, windscreen and cabin box are
+// the airframe's and stay fixed when the crew seats are raised.
 /** Instrument panel face: vertical, facing aft, centred on the centre line (panelLayout.ts: 1.46 x 0.46 m). */
 const PANEL_X = EYE.x + 0.67;
-const PANEL_ZTOP = EYE.z + 0.15;
+const PANEL_ZTOP = T - 0.62 + 0.15;
 const PX = C208_PANEL_PX_PER_M;
 const PANEL_W = C208_PANEL_PX_RECT.w / PX;
 const PANEL_ZB = PANEL_ZTOP + C208_PANEL_PX_RECT.h / PX;
@@ -455,7 +455,7 @@ const COCKPIT: CockpitDef = {
   defaultPitchDeg: -8,
   // Instrument focus (Q): the main instruments centred, the glareshield ~25 % down the frame, the 3-1/8 in dials
   // 128-135 px across on a 991 px high view (scripts/cockpit-focus.mjs).
-  focus: { yawDeg: 0, pitchDeg: -20.5, fovDeg: 46 },
+  focus: { yawDeg: 0, pitchDeg: -24.5, fovDeg: 46 },
   enclosure: 'cabin',
   panel: { x: PANEL_X, zTop: PANEL_ZTOP, width: PANEL_W, pxRect: C208_PANEL_PX_RECT },
   floor: { z: FLOOR_Z, x0: FIREWALL_X - 0.04, x1: CABIN_REAR_X + 0.05 },

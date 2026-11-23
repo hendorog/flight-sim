@@ -146,7 +146,7 @@ export const C152_GEOMETRY: AircraftGeometry = {
      * seated eye 0.70-0.80 m above the cushion. -0.40 is 0.19 m above the windshield sill and 0.19 m under the
      * headliner.
      */
-    pilotEye: { x: -0.09, y: -0.24, z: -0.4 },
+    pilotEye: { x: -0.09, y: -0.24, z: -0.44 },
   },
 
   // --- Landing gear: tyre contact points with struts fully extended ---

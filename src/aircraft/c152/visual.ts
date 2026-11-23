@@ -415,12 +415,11 @@ const LAMPS: readonly LampVisualDef[] = ((): LampVisualDef[] => {
 
 // --- Cockpit ---------------------------------------------------------------------------------------------------------
 
-// The cockpit is fitted to the pilot's eye of the geometry: the panel top 0.15 m below it (the C172S: 0.14), the
-// seat cushion 0.70 m below it, so the view over the glareshield and the cowling is the same whatever the eye
-// height. The fuselage, the windshield and the cabin box are the airframe's and do not move with it.
+// Seat cushions sit 0.70 m below the pilot's eye; the panel, glareshield, fuselage, windshield and cabin box are the
+// airframe's and stay fixed when the seat height is raised.
 /** Instrument panel face: vertical, facing aft, centred on the aircraft centreline, 0.40 m tall (panel.ts). */
 const PANEL_X = 0.45;
-const PANEL_ZTOP = EYE.z + 0.15;
+const PANEL_ZTOP = -0.25;
 const PX = C152_PANEL_PX_PER_M;
 const PANEL_ZB = PANEL_ZTOP + C152_PANEL_PX_RECT.h / PX;
 /** A point of the panel canvas, px, on the face (FRD y, z). */
@@ -447,7 +446,7 @@ const COCKPIT: CockpitDef = {
   defaultPitchDeg: -9,
   // Instrument focus (Q): the main instruments centred, the glareshield ~25 % down the frame, the 3-1/8 in dials
   // 133-141 px across on a 991 px high view (scripts/cockpit-focus.mjs).
-  focus: { yawDeg: 0, pitchDeg: -22, fovDeg: 52 },
+  focus: { yawDeg: 0, pitchDeg: -25, fovDeg: 52 },
   enclosure: 'cabin',
   panel: { x: PANEL_X, zTop: PANEL_ZTOP, width: C152_PANEL_PX_RECT.w / PX, pxRect: C152_PANEL_PX_RECT },
   // The cabin floor ends at the baggage shelf, where the belly line rises above it.

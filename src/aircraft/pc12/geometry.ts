@@ -147,7 +147,7 @@ export const PC12_FUSELAGE = {
  * Pilot's eye, LEFT seat (single-pilot PIC): station 4.20, 0.13 m aft of the W&B pilot arm (160.27 in = 4.071 m, the
  * occupant's CG), 0.40 m left of the centreline, 2.33 m above the ground (1.15 m above the floor; 3V, P2).
  */
-export const PC12_EYE = { x: S(4.2), y: -0.4, z: H(2.33) } as const;
+export const PC12_EYE = { x: S(4.2), y: -0.4, z: H(2.39) } as const;
 
 /** Reference point above the ground at rest on the wheels, m (geometry.restHeight). */
 export const PC12_REST_HEIGHT = REF_H;

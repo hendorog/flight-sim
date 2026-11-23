@@ -38,7 +38,7 @@ import type {
   WheelVisualDef,
   WingVisualDef,
 } from '../types';
-import { PA34_GEOMETRY, pa34StationX } from './geometry';
+import { PA34_GEOMETRY, pa34HeightZ, pa34StationX } from './geometry';
 import { PA34_PANEL_CENTRE_PX, PA34_PANEL_PARTS, PA34_PANEL_PX_PER_M, PA34_PANEL_PX_RECT } from './panel';
 
 const W = PA34_GEOMETRY.wing;
@@ -150,7 +150,7 @@ const REF_LINE_Z = PA34_GEOMETRY.restHeight - 1.31;
  * geometry's estimate), not from s.12's 1.02 m section height: the pilot must look over the glareshield to the
  * nose, as in the aeroplane.
  */
-const SCREEN_SILL_Z = EYE.z + 0.09;
+const SCREEN_SILL_Z = pa34HeightZ(0.95) + 0.09;
 /** The windscreen's top edge (the roof's front edge) on the centre line, about FS 83 (s.12). */
 const SCREEN_TOP_X = pa34StationX(80);
 /** Window sill and window top along the cabin sides. */
@@ -555,11 +555,11 @@ const LAMPS: readonly LampVisualDef[] = ((): LampVisualDef[] => {
 
 // --- Cockpit ---------------------------------------------------------------------------------------------------------
 
-// The cockpit is fitted to the pilot's eye of the geometry: the panel top 0.15 m below it, the seat cushion 0.70 m
-// below it. The fuselage, the windscreen and the cabin box are the airframe's and do not move with it.
+// Front seat cushions sit 0.70 m below the pilot's eye; the panel, glareshield, fuselage, windscreen and cabin box are
+// the airframe's and stay fixed when the front seats are raised.
 /** Instrument panel face: vertical, facing aft, centred on the centre line (panel.ts), 0.64 m ahead of the eye. */
 const PANEL_X = EYE.x + 0.64;
-const PANEL_ZTOP = EYE.z + 0.15;
+const PANEL_ZTOP = pa34HeightZ(0.95) + 0.15;
 const PX = PA34_PANEL_PX_PER_M;
 const PANEL_W = PA34_PANEL_PX_RECT.w / PX;
 const PANEL_ZB = PANEL_ZTOP + PA34_PANEL_PX_RECT.h / PX;
@@ -613,7 +613,7 @@ const COCKPIT: CockpitDef = {
   defaultPitchDeg: -8,
   // Instrument focus (Q): the main instruments centred, the glareshield ~25 % down the frame, the 3-1/8 in dials
   // 127-133 px across on a 991 px high view (scripts/cockpit-focus.mjs).
-  focus: { yawDeg: 0, pitchDeg: -17.5, fovDeg: 48 },
+  focus: { yawDeg: 0, pitchDeg: -21, fovDeg: 48 },
   enclosure: 'cabin',
   panel: { x: PANEL_X, zTop: PANEL_ZTOP, width: PANEL_W, pxRect: PA34_PANEL_PX_RECT },
   floor: { z: FLOOR_Z, x0: BULKHEAD_X - 0.01, x1: CABIN_REAR_X + 0.05 },
@@ -637,10 +637,10 @@ const COCKPIT: CockpitDef = {
   seats: [
     { x: EYE.x + 0.31, y: -SEAT_Y, kind: 'front', width: 0.46, depth: 0.46, z: EYE.z + 0.7, reclineDeg: 13 },
     { x: EYE.x + 0.31, y: SEAT_Y, kind: 'front', width: 0.46, depth: 0.46, z: EYE.z + 0.7, reclineDeg: 13 },
-    { x: pa34StationX(118.1) + 0.3, y: -0.3, kind: 'front', width: 0.44, depth: 0.44, z: EYE.z + 0.72, reclineDeg: 15 },
-    { x: pa34StationX(118.1) + 0.3, y: 0.3, kind: 'front', width: 0.44, depth: 0.44, z: EYE.z + 0.72, reclineDeg: 15 },
-    { x: pa34StationX(155.7) + 0.3, y: -0.28, kind: 'front', width: 0.42, depth: 0.42, z: EYE.z + 0.72, reclineDeg: 16 },
-    { x: pa34StationX(155.7) + 0.3, y: 0.28, kind: 'front', width: 0.42, depth: 0.42, z: EYE.z + 0.72, reclineDeg: 16 },
+    { x: pa34StationX(118.1) + 0.3, y: -0.3, kind: 'front', width: 0.44, depth: 0.44, z: pa34HeightZ(0.95) + 0.72, reclineDeg: 15 },
+    { x: pa34StationX(118.1) + 0.3, y: 0.3, kind: 'front', width: 0.44, depth: 0.44, z: pa34HeightZ(0.95) + 0.72, reclineDeg: 15 },
+    { x: pa34StationX(155.7) + 0.3, y: -0.28, kind: 'front', width: 0.42, depth: 0.42, z: pa34HeightZ(0.95) + 0.72, reclineDeg: 16 },
+    { x: pa34StationX(155.7) + 0.3, y: 0.28, kind: 'front', width: 0.42, depth: 0.42, z: pa34HeightZ(0.95) + 0.72, reclineDeg: 16 },
   ],
   consoles: [
     // Structure under the lower edge of the panel, toward the forward bulkhead (knee room under it).

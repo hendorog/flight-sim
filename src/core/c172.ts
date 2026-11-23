@@ -63,8 +63,8 @@ export const C172 = {
     tailX: -6.03,
     maxWidth: 1.06,
     maxHeight: 1.22,
-    /** Pilot eye point (left seat). */
-    pilotEye: { x: -0.18, y: -0.27, z: -0.42 },
+    /** Pilot eye point (left seat, raised for over-the-nose visibility). */
+    pilotEye: { x: -0.15, y: -0.27, z: -0.46 },
   },
 
   // --- Landing gear: tyre contact points with struts fully extended ---

@@ -175,7 +175,7 @@ export const PA34_GEOMETRY: AircraftGeometry = {
     // Pilot eye point (left seat). EST: the data sheet has the seat only (s.2.5: arm FS 85.5 = x 0.22, y 0.28).
     // The eye is taken 0.08 m behind the seat arm, as on the C172S, and 0.95 m above the origin: 0.30 m under
     // the outside of the cabin roof (1.93 m above the ground, s.12).
-    pilotEye: { x: 0.14, y: -0.28, z: pa34HeightZ(0.95) },
+    pilotEye: { x: 0.14, y: -0.28, z: pa34HeightZ(1.0) },
   },
 
   // --- Landing gear: tyre contact points with struts fully extended, gear down ---
