@@ -1,7 +1,7 @@
 // Voice selection (spec 1.4) and personas, plus the speech audio cues (AudioSystem.setDuck / chime, 3.7.2).
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { pickVoice, voiceGender, type VoiceInfo } from '../../src/training/speech/voices';
+import { pickRadioVoice, pickStationVoice, pickTrafficVoice, pickVoice, voiceGender, type VoiceInfo } from '../../src/training/speech/voices';
 import { PERSONAS, signatureFor } from '../../src/training/content/personas';
 import { AudioSystem, DUCK_RAMP_S, duckGain, synthChime } from '../../src/audio/AudioSystem';
 
@@ -71,6 +71,79 @@ describe('pickVoice', () => {
   it('with no English voice the default voice is used in the persona language', () => {
     expect(pickVoice([], 'instructor', null, SETTINGS)).toEqual({ voiceURI: null, lang: 'en-GB', rate: 1, pitch: 1, volume: 0.9 });
     expect(pickVoice([v('de', 'Anna', 'de-DE')], 'examiner', null, SETTINGS)).toMatchObject({ voiceURI: null, pitch: 0.85 });
+  });
+
+  it('skips macOS novelty voices when real speech voices exist', () => {
+    const mac = [v('nov-1', 'Pipe Organ', 'en-US'), v('nov-2', 'Zarvox', 'en-US'), v('gb-m', 'Daniel', 'en-GB'), v('au-f', 'Karen', 'en-AU')];
+    expect(pickVoice(mac, 'instructor', null, SETTINGS).voiceURI).toBe('au-f');
+    expect(pickVoice(mac, 'examiner', null, SETTINGS).voiceURI).toBe('gb-m');
+  });
+});
+
+describe('ATC station and aircraft traffic voice variety', () => {
+  const CHROME_THREE = [
+    v('g-us', 'Google US English', 'en-US', true),
+    v('g-gb-f', 'Google UK English Female', 'en-GB'),
+    v('g-gb-m', 'Google UK English Male', 'en-GB'),
+  ];
+
+  it('identifies Chrome Google US English as female', () => {
+    expect(voiceGender('Google US English')).toBe('female');
+  });
+
+  it('gives Tower, Ground and ATIS distinct voices or cadences across multi-voice and 3-voice sets', () => {
+    const winTower = pickStationVoice(WINDOWS, SETTINGS, 'tower');
+    const winGround = pickStationVoice(WINDOWS, SETTINGS, 'ground');
+    const winAtis = pickStationVoice(WINDOWS, SETTINGS, 'atis');
+    expect(winTower.voiceURI).toBe('us-david');
+    expect(winGround.voiceURI).toBe('gb-george');
+    expect(winAtis.voiceURI).toBe('us-zira');
+    expect(new Set([winTower.voiceURI, winGround.voiceURI, winAtis.voiceURI]).size).toBe(3);
+    expect(pickRadioVoice(WINDOWS, SETTINGS)).toEqual(winTower);
+
+    // On 3-voice Chrome, Tower is male UK, Ground is US, and ATIS uses a deeper automated broadcast cadence.
+    const chTower = pickStationVoice(CHROME_THREE, SETTINGS, 'tower');
+    const chGround = pickStationVoice(CHROME_THREE, SETTINGS, 'ground');
+    const chAtis = pickStationVoice(CHROME_THREE, SETTINGS, 'atis');
+    expect(chTower.voiceURI).toBe('g-gb-m');
+    expect(chGround.voiceURI).toBe('g-us');
+    expect(`${chAtis.voiceURI}:${chAtis.rate}:${chAtis.pitch}`).not.toBe(`${chTower.voiceURI}:${chTower.rate}:${chTower.pitch}`);
+  });
+
+  it('keeps male voices in circuit traffic even when only one male TTS voice exists (Chrome 3-voice)', () => {
+    const slots = Array.from({ length: 8 }, (_, i) => pickTrafficVoice(CHROME_THREE, SETTINGS, i));
+    const maleCount = slots.filter((s) => s.voiceURI === 'g-gb-m').length;
+    const femaleCount = slots.filter((s) => s.voiceURI !== 'g-gb-m').length;
+    expect(maleCount).toBeGreaterThanOrEqual(4);
+    expect(femaleCount).toBeGreaterThanOrEqual(2);
+    // Consecutive home-circuit aircraft (0, 1, 2, 3) have distinct voice/rate/pitch signatures.
+    const sigs = slots.slice(0, 5).map((s) => `${s.voiceURI}@${s.rate.toFixed(3)}/${s.pitch.toFixed(2)}`);
+    expect(new Set(sigs).size).toBe(5);
+  });
+
+  it('spreads traffic voices across regional English accents and ignores novelty voices', () => {
+    const multi = [
+      v('nov', 'Bubbles', 'en-US'),
+      v('us-m1', 'Microsoft Guy Online (Natural)', 'en-US'),
+      v('us-m2', 'Microsoft Davis Online (Natural)', 'en-US'),
+      v('gb-m1', 'Microsoft Ryan Online (Natural)', 'en-GB'),
+      v('au-m1', 'Microsoft William Online (Natural)', 'en-AU'),
+      v('ie-m1', 'Microsoft Connor Online (Natural)', 'en-IE'),
+      v('gb-f1', 'Microsoft Sonia Online (Natural)', 'en-GB'),
+      v('us-f1', 'Microsoft Jenny Online (Natural)', 'en-US'),
+      v('au-f1', 'Microsoft Natasha Online (Natural)', 'en-AU'),
+      v('ie-f1', 'Microsoft Emily Online (Natural)', 'en-IE'),
+    ];
+    const slots = Array.from({ length: 8 }, (_, i) => pickTrafficVoice(multi, SETTINGS, i));
+    expect(slots.every((s) => s.voiceURI !== 'nov')).toBe(true);
+    const langs = new Set(slots.map((s) => s.lang));
+    expect(langs.size).toBeGreaterThanOrEqual(3);
+    expect(new Set(slots.map((s) => s.voiceURI)).size).toBeGreaterThanOrEqual(6);
+  });
+
+  it('differentiates rate, pitch and fallback language even when no browser voices are listed', () => {
+    const emptySlots = Array.from({ length: 6 }, (_, i) => pickTrafficVoice([], SETTINGS, i));
+    expect(new Set(emptySlots.map((s) => `${s.lang}@${s.rate.toFixed(2)}/${s.pitch.toFixed(2)}`)).size).toBe(6);
   });
 });
 

@@ -65,7 +65,7 @@ import { normalisedError } from './grading/accumulators';
 import { STANDARDS } from './grading/standards';
 import { CaptionBackend } from './speech/captionBackend';
 import { SpeechScheduler } from './speech/scheduler';
-import { pickRadioVoice, pickTrafficVoice, pickVoice, type VoiceInfo } from './speech/voices';
+import { pickStationVoice, pickTrafficVoice, pickVoice, type VoiceInfo } from './speech/voices';
 import { WebSpeechBackend } from './speech/webSpeech';
 import { Telemetry } from './telemetry/telemetry';
 import {
@@ -73,7 +73,7 @@ import {
   type AuthorityId, type BriefingModel, type Caption, type CardModel, type ChallengeDef, type CheckpointBlob, type CueRef,
   type CalloutModel, type DebriefModel, type LandingData, type Lesson, type PointTarget, type TaxiGuideModel, type LessonResult, type LessonStripModel, type RunnerCommand, type SchoolCommand,
   type SpeechRequest, type StartOptions, type StartSpec, type StepController, type TaskStep, type TelemetrySources,
-  type TraceData, type TrainingResumeBlock, type TrainingSave, type TrainingUiPort, type WeatherSpec,
+  type TraceData, type TrainingResumeBlock, type TrainingSave, type TrainingUiPort, type VoiceProfile, type WeatherSpec,
   type AircraftTypeDef, type AircraftTypeId,
 } from './types';
 
@@ -1077,7 +1077,12 @@ export class TrainingSystem implements Subsystem {
         const web = this.web;
         if (!web) return;
         void web.ready().then((ok) => {
-          if (!ok && this.web === web) this.downgradeToCaptions();
+          if (this.web !== web) return;
+          if (!ok) this.downgradeToCaptions();
+          else {
+            this.voiceForPersona(this.session?.lesson.persona ?? 'instructor');
+            this.refreshCareer();
+          }
         });
       }, VOICE_GRACE_MS);
     };
@@ -1097,6 +1102,14 @@ export class TrainingSystem implements Subsystem {
       if (web.available) {
         web.onDowngrade = () => this.downgradeToCaptions();
         this.web = web;
+        // Voices arrive asynchronously in Chrome/Edge/Safari (`voiceschanged`): refresh actor voices and the
+        // settings dropdown as soon as they populate so radio and traffic never stick on the empty-list fallback.
+        void web.ready().then((ok) => {
+          if (ok && this.web === web) {
+            this.voiceForPersona(this.session?.lesson.persona ?? 'instructor');
+            this.refreshCareer();
+          }
+        });
       } else {
         this.noVoices();
       }
@@ -1128,10 +1141,26 @@ export class TrainingSystem implements Subsystem {
   /** Voice per actor: the instructor's or the examiner's persona, the player's choice, rate and volume. */
   private voiceForPersona(persona: Lesson['persona']): void {
     const settings = this.save?.settings.voice ?? defaultSettings().voice;
-    const voices = this.voices();
-    const radio = pickRadioVoice(voices, settings);
+    let voices: VoiceInfo[] = [];
+    let lastCount = -1;
+    let tower!: VoiceProfile;
+    let ground!: VoiceProfile;
+    let atis!: VoiceProfile;
+    const sync = (): void => {
+      const rawCount = this.web?.voices().length ?? 0;
+      if (rawCount === lastCount) return;
+      lastCount = rawCount;
+      voices = this.voices();
+      tower = pickStationVoice(voices, settings, 'tower');
+      ground = pickStationVoice(voices, settings, 'ground');
+      atis = pickStationVoice(voices, settings, 'atis');
+    };
+    sync();
     this.speech.voiceFor = (actor, variant) => {
-      if (actor === 'tower' || actor === 'ground' || actor === 'atis') return radio;
+      sync();
+      if (actor === 'tower') return tower;
+      if (actor === 'ground') return ground;
+      if (actor === 'atis') return atis;
       if (actor === 'traffic') return pickTrafficVoice(voices, settings, variant ?? 0);
       const who = actor === 'examiner' ? 'examiner' : actor === 'instructor' ? 'instructor' : persona;
       return pickVoice(voices, who, settings[who], settings);
@@ -1139,7 +1168,6 @@ export class TrainingSystem implements Subsystem {
   }
 
   private onSpeechEvent(e: 'start' | 'end', r: SpeechRequest, result?: 'done' | 'interrupted' | 'dropped'): void {
-    void result;
     const audio = this.shell.audio;
     if (e === 'start') {
       // The caption appears when the line starts (the scheduler has just put it in the transcript).
@@ -1150,9 +1178,17 @@ export class TrainingSystem implements Subsystem {
         const captions = this.speech.backendKind === 'captions';
         if (!captions) audio?.chime('intercom');
         else if (r.priority <= Priority.Instruction) audio?.chime('caption');
+      } else if (r.channel === 'radio' && r.actor !== 'student') {
+        audio?.setDuck(0.6);
+        if (this.speech.backendKind !== 'captions') audio?.chime('intercom');
       }
-    } else if (this.speech.idle()) {
-      audio?.setDuck(0);
+    } else {
+      if (result === 'done' && r.channel === 'radio' && r.actor !== 'student' && this.speech.backendKind !== 'captions') {
+        audio?.chime('radio');
+      }
+      if (this.speech.idle()) {
+        audio?.setDuck(0);
+      }
     }
   }
 

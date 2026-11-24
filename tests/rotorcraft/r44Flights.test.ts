@@ -147,10 +147,41 @@ describe('R44 engine, drivetrain and flight integration', () => {
     expect(r.fm.state.groundSpeed).toBeLessThan(0.1);
   }, 120000);
 
-  it('detects hard skid landings and tail-disc strikes using the frozen R44 geometry', () => {
+  it('absorbs firm level and flared touchdowns on the cross tubes while still detecting destructive skid impacts and tail strikes', () => {
+    const levelHard = rig();
+    levelHard.c.collective = 0; levelHard.c.rudder = 0; levelHard.c.aileron = 0; levelHard.c.elevator = 0;
+    levelHard.fm.setKinematics({ position: { x: 0, y: 0, z: -d.skids.z - 0.08 }, orientation: quat.identity(),
+      velocity: { x: 0, y: 0, z: 4.5 }, angularVelocity: v3.zero() });
+    for (let i = 0; i < 1.5 / DT && !levelHard.fm.state.crashed; i++) levelHard.fm.step(DT, levelHard.c, env);
+    expect(levelHard.fm.state.crashReason).toBe('');
+    expect(levelHard.fm.state.onGround).toBe(true);
+
+    const bankedHard = rig();
+    bankedHard.c.collective = 0; bankedHard.c.rudder = 0; bankedHard.c.aileron = 0; bankedHard.c.elevator = 0;
+    bankedHard.fm.setKinematics({ position: { x: 0, y: 0, z: -d.skids.z - 0.08 }, orientation: quat.fromEuler(4 * DEG, 3 * DEG, 0),
+      velocity: { x: 0, y: 0, z: 4.0 }, angularVelocity: v3.zero() });
+    for (let i = 0; i < 1.5 / DT && !bankedHard.fm.state.crashed; i++) bankedHard.fm.step(DT, bankedHard.c, env);
+    expect(bankedHard.fm.state.crashReason).toBe('');
+    expect(bankedHard.fm.state.onGround).toBe(true);
+
+    const fastDescent = rig(0, true, 12);
+    const pilot = new ScriptedPilot(observePilot(fastDescent.fm.state, d), fastDescent.c);
+    let touchedSink = 0;
+    for (let i = 0; i < 12 / DT && !fastDescent.fm.state.crashed; i++) {
+      const obs = observePilot(fastDescent.fm.state, d);
+      if (obs.onGround) fastDescent.c.collective = Math.max(0, fastDescent.c.collective! - 0.3 * DT);
+      else pilot.step(DT, obs, fastDescent.c, 0, -4.2);
+      fastDescent.fm.step(DT, fastDescent.c, env);
+      for (const touch of fastDescent.fm.touchdowns) touchedSink = Math.max(touchedSink, touch.sinkRate);
+      if (obs.onGround && fastDescent.c.collective === 0) break;
+    }
+    expect(fastDescent.fm.state.crashReason).toBe('');
+    expect(fastDescent.fm.state.onGround).toBe(true);
+    expect(touchedSink).toBeGreaterThan(3.5);
+
     const hard = rig();
     hard.fm.setKinematics({ position: { x: 0, y: 0, z: -d.skids.z - 0.05 }, orientation: quat.identity(),
-      velocity: { x: 0, y: 0, z: 5 }, angularVelocity: v3.zero() });
+      velocity: { x: 0, y: 0, z: 7 }, angularVelocity: v3.zero() });
     for (let i = 0; i < 20; i++) hard.fm.step(DT, hard.c, env);
     expect(hard.fm.state.crashed).toBe(true); expect(hard.fm.state.crashReason).toContain('skid');
     const tail = rig();

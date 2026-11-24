@@ -406,17 +406,17 @@ export class TrafficSystem implements Subsystem {
     const path = circuitPath(field, runwayInUse(field, w.windDirectionDeg, w.windSpeedKt));
     const leg = 1 + (h >>> 4) % 4;
     const state = placeOnLeg(path, leg, ((h >>> 8) % 100) / 100 * 0.8 + 0.1);
-    this.push(field, type, trafficRegistration(field.code, this.authority), path, state, null);
+    this.push(field, type, trafficRegistration(field.code, this.authority), path, state, null, (i * 3 + (h % 3)) % 16);
   }
 
-  private push(field: Airfield, type: (typeof TYPES)[number], registration: string, path: CircuitPath, state: TrafficState, ops: HomeOps | null): Aircraft {
+  private push(field: Airfield, type: (typeof TYPES)[number], registration: string, path: CircuitPath, state: TrafficState, ops: HomeOps | null, voice = (hash(registration) >>> 11) % 16): Aircraft {
     const mesh = buildTrafficMesh(type.icao);
     const model = this.models.get(type.id);
     if (model && model !== 'loading') mesh.attach(model);
     mesh.root.visible = false;
     this.group.add(mesh.root);
     const a: Aircraft = {
-      field, typeId: type.id, type: type.icao, registration, voice: (hash(registration) >>> 11) % 16, path, state, mesh, pilot: null, physics: false, exterior: null,
+      field, typeId: type.id, type: type.icao, registration, voice, path, state, mesh, pilot: null, physics: false, exterior: null,
       drawn: { pos: new THREE.Vector3(), step: new THREE.Vector3(), quat: new THREE.Quaternion(), from: null }, blend: null,
       said: new Set(), nextEnd: null, ops, contacted: new Set(),
     };
@@ -449,7 +449,7 @@ export class TrafficSystem implements Subsystem {
       target: null, cleared: false, apron: false, calls: new Set(),
     };
     const path = circuitPath(HOME_AIRFIELD, end);
-    return this.push(HOME_AIRFIELD, type, trafficRegistration(`${HOME_AIRFIELD.code}${n}`, this.authority), path, placeOnLeg(path, 2, 0), ops);
+    return this.push(HOME_AIRFIELD, type, trafficRegistration(`${HOME_AIRFIELD.code}${n}`, this.authority), path, placeOnLeg(path, 2, 0), ops, n % 16);
   }
 
   /** The home traffic to begin with: one in the circuit, one about to depart, one inbound; then arrivals now and then. */

@@ -206,6 +206,28 @@ export function airportSurface(north: number, east: number): 'runway' | 'taxiway
   return pavedSD(u, v) <= 0 ? 'taxiway' : null;
 }
 
+function edgeRamp(sd: number, rampM: number): number {
+  if (sd <= 0) return 1;
+  if (sd >= rampM) return 0;
+  const t = sd / rampM;
+  return 1 - t * t * (3 - 2 * t);
+}
+
+/**
+ * Contact-height lift of the home airport's pavement above the flat airfield (`runwayH` on the runway, `taxiwayH` on
+ * taxiways and the apron), feathered smoothly to 0 across a `rampM`-wide shoulder outside each edge so wheels and
+ * skids roll onto pavement without hitting the z-fighting height offset as a vertical step.
+ */
+export function airportPavementLift(north: number, east: number, runwayH: number, taxiwayH: number, rampM: number): number {
+  const { u, v } = nedToLocal(north, east);
+  const m = FILLET_RADIUS + rampM;
+  if (u < PAVED_BOUNDS.u0 - m || u > PAVED_BOUNDS.u1 + m || v < PAVED_BOUNDS.v0 - m || v > PAVED_BOUNDS.v1 + m) return 0;
+  const r = edgeRamp(rectSD(u, v, RUNWAY_RECT), rampM) * runwayH;
+  if (r >= runwayH) return runwayH;
+  const t = edgeRamp(pavedSD(u, v), rampM) * taxiwayH;
+  return r > t ? r : t;
+}
+
 /** Taxiway centreline curves at junctions: quarter circles joining the parallel taxiway to each connector. */
 export interface CentrelineArc {
   /** Circle centre. */

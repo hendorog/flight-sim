@@ -75,10 +75,12 @@ export const R44_ROTORCRAFT: RotorcraftDefinition = {
     tailcone: { front: { x: -0.35, y: 0, z: -0.38 }, rear: { ...TAIL_HUB, y: 0 }, frontRadius: 0.205, rearRadius: 0.065 },
     cabin: { centre: { x: 0.95, y: 0, z: -0.20 }, radii: { x: 1.5, y: 0.64135, z: 0.75 } } },
   skids: { halfTrack: SKID_HALF_TRACK, front: SKID_CONTACT_FRONT_X,
-    rear: SKID_CONTACT_REAR_X, z: SKID_Z, stiffness: 110000, damping: 3600, friction: 0.5, maxSink: 3.5,
-    // ESTIMATED bilinear gear: existing elastic K/C, ~3 g yield load at gross, 10% hardening.
+    rear: SKID_CONTACT_REAR_X, z: SKID_Z, stiffness: 110000, damping: 3600, friction: 0.5, maxSink: 6.0,
+    // ESTIMATED bilinear cross-tube gear: existing elastic K/C and ~3 g yield load (caps pitch-down whip on
+    // rear-first touchdowns), moderate post-yield hardening and 0.44 m usable stroke (within the 0.49 m belly
+    // clearance) so firm, flared and banked touchdowns spread the cross tubes instead of crashing prematurely.
     suspension: 'cross-tube',
-    flexure: { yieldForce: 8500, hardening: 11000, maxStroke: 0.25, spread: 0.5 },
+    flexure: { yieldForce: 8500, hardening: 18000, maxStroke: 0.44, spread: 0.5 },
     terrain: { tubeRadius: 0.03, toe: SKID_FRONT_X, heel: SKID_REAR_X, toeRise: 0.10,
       edgeStiffness: 80000, edgeDamping: 1800,
       soil: { grass: { bearing: 500000, passive: 60000 }, dirt: { bearing: 800000, passive: 90000 },

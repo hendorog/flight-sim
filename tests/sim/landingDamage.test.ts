@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { quat } from '../../src/core/math';
+import { localHeading, localToNed, PARALLEL_TAXIWAY_V, RUNWAY_HALF_WIDTH } from '../../src/world/airport/layout';
 import { createEventBus, type SimEvents } from '../../src/core/context';
 import { defaultWeather, type WeatherSettings } from '../../src/core/types';
 import { loadAircraft } from '../../src/aircraft/registry';
@@ -171,5 +172,61 @@ describe('landing damage in SimPhysics', () => {
       expect(seen).toEqual([]);
       expect(disabled(p.state.damage)).toBe(false);
     }
+  }, 60000);
+
+  it('taxiing from grass onto a taxiway or runway causes no gear damage or skid crash', async () => {
+    // Fixed-wing tricycle gear (C172S) rolling at ~16 kt from grass across the +5 cm taxiway edge and +9 cm runway edge.
+    for (const [edgeV, dirV, targetSurface] of [
+      [RUNWAY_HALF_WIDTH + 8, -1, 'runway'],
+      [PARALLEL_TAXIWAY_V - 18, 1, 'taxiway'],
+    ] as const) {
+      const r = rig();
+      const p = r.p;
+      p.reset('runway');
+      const start = localToNed(0, edgeV);
+      const hdg = localHeading(0, dirV);
+      p.fm.reset({ position: { x: start.north, y: start.east, z: 0 }, heading: hdg, airspeed: 0, onGround: true, engineRunning: true }, p.env);
+      p.fm.setKinematics({
+        position: { ...p.state.position },
+        orientation: { ...p.state.orientation },
+        velocity: { x: 8 * Math.cos(hdg), y: 8 * Math.sin(hdg), z: 0 },
+        angularVelocity: { x: 0, y: 0, z: 0 },
+      });
+      p.controls.throttle = 0.35;
+      p.controls.parkingBrake = false;
+      expect(p.env.surface(start.north, start.east)).toBe('grass');
+      let reachedPavement = false;
+      for (let i = 0; i < 40; i++) {
+        p.step(0.1);
+        if (p.env.surface(p.state.position.x, p.state.position.y) === targetSurface) reachedPavement = true;
+      }
+      expect(reachedPavement).toBe(true);
+      expect(r.damage).toEqual([]);
+      expect(r.crashes).toEqual([]);
+      expect(p.state.damage!.events).toEqual([]);
+      expect(p.state.crashed).toBe(false);
+    }
+
+    // Skid helicopter (R44) sliding onto the runway from the grass across the pavement edge.
+    const weather = defaultWeather();
+    const events = createEventBus();
+    const crashes: string[] = [];
+    events.on('crash', (e) => crashes.push(e.reason));
+    const heli = new SimPhysics({ weather, events, aircraft: await loadAircraft('r44') });
+    heli.reset('runway');
+    const start = localToNed(0, RUNWAY_HALF_WIDTH + 6);
+    const hdg = localHeading(0, -1);
+    heli.fm.reset({ position: { x: start.north, y: start.east, z: 0 }, heading: hdg, airspeed: 0, onGround: true, engineRunning: true }, heli.env);
+    heli.fm.setKinematics({
+      position: { ...heli.state.position },
+      orientation: { ...heli.state.orientation },
+      velocity: { x: 6 * Math.cos(hdg), y: 6 * Math.sin(hdg), z: 0 },
+      angularVelocity: { x: 0, y: 0, z: 0 },
+    });
+    heli.controls.collective = 0;
+    heli.step(2.5);
+    expect(heli.env.surface(heli.state.position.x, heli.state.position.y)).toBe('runway');
+    expect(crashes).toEqual([]);
+    expect(heli.state.crashed).toBe(false);
   }, 60000);
 });

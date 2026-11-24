@@ -140,3 +140,44 @@ export function airfieldSurface(north: number, east: number): 'runway' | 'taxiwa
   }
   return null;
 }
+
+function boxSD(u: number, v: number, u0: number, u1: number, v0: number, v1: number): number {
+  const du = Math.abs(u - (u0 + u1) * 0.5) - (u1 - u0) * 0.5;
+  const dv = Math.abs(v - (v0 + v1) * 0.5) - (v1 - v0) * 0.5;
+  const ou = du > 0 ? du : 0, ov = dv > 0 ? dv : 0;
+  return Math.hypot(ou, ov) + Math.min(Math.max(du, dv), 0);
+}
+
+function rampWeight(sd: number, rampM: number): number {
+  if (sd <= 0) return 1;
+  if (sd >= rampM) return 0;
+  const t = sd / rampM;
+  return 1 - t * t * (3 - 2 * t);
+}
+
+/** Smoothly ramped pavement contact height at generated sealed airfields (`runwayH` / `taxiwayH` inside, 0 beyond `rampM`). */
+export function airfieldPavementLift(north: number, east: number, runwayH: number, taxiwayH: number, rampM: number): number {
+  if (generated.length === 0 || !isPresent()) return 0;
+  for (const f of generated) {
+    if (f.kind !== 'sealed') continue;
+    const dn = north - f.north, de = east - f.east;
+    const bound = f.length / 2 + 100 + rampM;
+    if (dn * dn + de * de > bound * bound) continue;
+    const { along, across } = fieldCoords(f, north, east);
+    const w = f.width / 2;
+    const rSd = boxSD(along, across, -f.length / 2, f.length / 2, -w, w);
+    if (rSd <= 0) return runwayH;
+    const a = along - f.apronAlong;
+    const tSd = Math.min(boxSD(a, across, -6, 6, w, w + 28), boxSD(a, across, -35, u1Apron(), w + 28, w + 58));
+    if (rSd < rampM || tSd < rampM) {
+      const rr = rampWeight(rSd, rampM) * runwayH;
+      const tr = rampWeight(tSd, rampM) * taxiwayH;
+      return rr > tr ? rr : tr;
+    }
+  }
+  return 0;
+}
+
+function u1Apron(): number {
+  return 35;
+}

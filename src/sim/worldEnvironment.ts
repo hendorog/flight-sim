@@ -6,8 +6,8 @@
 import type { Vec3 } from '../core/math';
 import type { SurfaceType, WeatherSettings } from '../core/types';
 import { createEnvironment, type SimEnvironment, type TerrainProvider } from '../physics';
-import { airportSurface } from '../world/airport/layout';
-import { airfieldSurface, airfields, generatedAirfields, type Airfield } from '../world/airfields';
+import { airportPavementLift, airportSurface } from '../world/airport/layout';
+import { airfieldPavementLift, airfieldSurface, airfields, generatedAirfields, type Airfield } from '../world/airfields';
 import type { ReferenceSite } from '../physics/weather/orography/sites';
 import { setTerrainTag } from '../physics/weather/orography/orographyField';
 import { RUNWAY_HEIGHT, TAXIWAY_HEIGHT } from '../world/airport/pavement';
@@ -30,20 +30,40 @@ function flatsSurface(north: number, east: number): SurfaceType {
   return sampleTerrain(north, east, scratch).airportBlend === 0 ? era().world.flatSurface : t;
 }
 
+/** Graded shoulder width (m) over which the +5 cm / +9 cm z-fighting pavement offsets feather into the grass. */
+export const PAVEMENT_SHOULDER_M = 2.0;
+
+function pavementLift(north: number, east: number): number {
+  return (
+    airportPavementLift(north, east, RUNWAY_HEIGHT, TAXIWAY_HEIGHT, PAVEMENT_SHOULDER_M) ||
+    airfieldPavementLift(north, east, RUNWAY_HEIGHT, TAXIWAY_HEIGHT, PAVEMENT_SHOULDER_M)
+  );
+}
+
 /**
  * Ground under a horizontal NED position as the wheels feel it: the drawn pavement is raised above the
  * flat airfield (runway +9 cm, taxiways and apron +5 cm, to avoid z-fighting), so the contact height
- * follows it and the tyres sit on the painted surface instead of a few centimetres inside it.
+ * follows it on pavement and feathers smoothly across a 2 m shoulder into the surrounding grass.
  */
 export const worldTerrain: TerrainProvider = {
   height(north: number, east: number): number {
-    if (noAirport()) return terrainHeight(north, east);
-    const paved = airportSurface(north, east) ?? airfieldSurface(north, east);
     const h = terrainHeight(north, east);
-    return paved === 'runway' ? h + RUNWAY_HEIGHT : paved === 'taxiway' ? h + TAXIWAY_HEIGHT : h;
+    if (noAirport()) return h;
+    return h + pavementLift(north, east);
   },
   normal(north: number, east: number): Vec3 {
-    return terrainNormal(north, east);
+    if (noAirport()) return terrainNormal(north, east);
+    const lift = pavementLift(north, east);
+    if (lift === 0 || lift === RUNWAY_HEIGHT) return terrainNormal(north, east);
+    const dN = (pavementLift(north + 0.05, east) - pavementLift(north - 0.05, east)) / 0.1;
+    const dE = (pavementLift(north, east + 0.05) - pavementLift(north, east - 0.05)) / 0.1;
+    if (dN === 0 && dE === 0) return terrainNormal(north, east);
+    const base = terrainNormal(north, east);
+    const nz = -base.z || 1;
+    const gx = -base.x / nz + dN;
+    const gy = -base.y / nz + dE;
+    const inv = 1 / Math.hypot(gx, gy, 1);
+    return { x: -gx * inv, y: -gy * inv, z: -inv };
   },
   surface(north: number, east: number): SurfaceType {
     if (noAirport()) return flatsSurface(north, east);
