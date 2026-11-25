@@ -41,8 +41,8 @@ export type CareerStoreKind = 'local' | 'mem' | 'session';
 
 // --------------------------------------------------------------------------------------------- aircraft
 
-/** The types the Career flies: every AircraftId but the da42 (a C172S placeholder) and the ah56 (military; maybe a late display flight). */
-export type CareerAircraftId = Exclude<AircraftId, 'da42' | 'ah56'>;
+/** The types the Career flies: every AircraftId but the da42 (a C172S placeholder), the ah56 (military) and the 1903 Pearse flyer. */
+export type CareerAircraftId = Exclude<AircraftId, 'da42' | 'ah56' | 'pearse'>;
 
 /** Career types in market order (fixed wing by size, then helicopters by size). */
 export const CAREER_AIRCRAFT_IDS = [

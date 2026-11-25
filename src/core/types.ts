@@ -13,8 +13,8 @@ import type { Quat, Vec3 } from './math';
 // ---------------------------------------------------------------------------------------------- identity
 export const ROTORCRAFT_IDS = ['r22', 'r44', 's269', 'md500', 'bo105', 'ah56'] as const;
 export type RotorcraftId = typeof ROTORCRAFT_IDS[number];
-export type AircraftId = 'c172s' | 'c152' | 'pa38' | 'da20' | 'pa34' | 'da42' | 'c208' | 'pc12' | RotorcraftId;
-export const AIRCRAFT_IDS: readonly AircraftId[] = ['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', 'c208', 'pc12', ...ROTORCRAFT_IDS];
+export type AircraftId = 'c172s' | 'c152' | 'pa38' | 'da20' | 'pa34' | 'da42' | 'c208' | 'pc12' | 'pearse' | RotorcraftId;
+export const AIRCRAFT_IDS: readonly AircraftId[] = ['c172s', 'c152', 'pa38', 'da20', 'pa34', 'da42', 'c208', 'pc12', 'pearse', ...ROTORCRAFT_IDS];
 /** Node-safe identity check for snapshot validation before aircraft definitions are loaded. */
 export const isRotorcraftId = (v: unknown): v is RotorcraftId => ROTORCRAFT_IDS.includes(v as RotorcraftId);
 export const DEFAULT_AIRCRAFT_ID: AircraftId = 'c172s';

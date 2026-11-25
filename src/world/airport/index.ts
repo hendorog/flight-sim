@@ -5,3 +5,15 @@ export { RUNWAY_HEIGHT, TAXIWAY_HEIGHT } from './pavement';
 export * from './layout';
 export { injectFloodlight, type SharedUniforms } from './shared';
 export { estimateExposure } from './AirportSystem';
+export { buildInfrastructure, type InfrastructureResult } from './infrastructure';
+export {
+  obstacleClearOfAirfields,
+  planInfrastructure,
+  type ConductorSpan,
+  type InfrastructurePlan,
+  type MastKind,
+  type PylonKind,
+  type PylonSite,
+  type RadioMastSite,
+  type SubstationSite,
+} from './infrastructurePlan';

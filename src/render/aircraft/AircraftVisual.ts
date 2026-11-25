@@ -24,6 +24,7 @@ import { r44ExteriorVisualClass } from '../../aircraft/r44/exterior';
 import { md500ExteriorVisualClass } from '../../aircraft/md500/exterior';
 import { bo105ExteriorVisualClass } from '../../aircraft/bo105/exterior';
 import { ah56ExteriorVisualClass } from '../../aircraft/ah56/exterior';
+import { buildPearseExterior, type PearseExterior } from '../../aircraft/pearse/exteriorDetails';
 import { FuselageShape } from './fuselageShape';
 import { sectionHalfWidth } from './fuselage';
 import { C172S_PANEL } from '../../aircraft/c172s/panel';
@@ -123,6 +124,7 @@ export class AircraftVisual implements Subsystem {
   /** The airframe this is the model of. */
   private readonly def: AirframeVisualDef;
   private helicopter: RotorcraftVisual | null = null;
+  private pearseExterior: PearseExterior | null = null;
   private materials!: AircraftMaterials;
   private fuselage!: FuselageParts;
   private wings!: WingParts;
@@ -195,6 +197,18 @@ export class AircraftVisual implements Subsystem {
     // The blade materials' opacity follows the rpm: every propeller after the first has its own.
     this.propellers = def.props.map((p, i) => new Propeller(mat, p, i > 0));
     for (const p of this.propellers) this.root.add(p.group);
+    if (def.id === 'pearse') {
+      // Open Waitohi tubular spaceframe: replace enclosed fuselage shells, generic GA gear legs/tyres and twisted prop
+      // with Pearse's open grid-wing lattice, tubular undercarriage, thin bicycle wheels and diamond-paddle airscrew.
+      for (const part of [this.fuselage.skin, this.fuselage.glass, this.fuselage.lining, this.fuselage.fittings, this.gear.group, ...this.propellers.map((p) => p.group)]) {
+        part.visible = false;
+        part.traverse((o) => {
+          if ((o as THREE.Mesh).isMesh) o.castShadow = false;
+        });
+      }
+      this.pearseExterior = buildPearseExterior(def);
+      this.root.add(this.pearseExterior.group);
+    }
     if (def.nacelles.length > 0 || (def.fairings?.length ?? 0) > 0) {
       this.nacelles = buildNacelles(mat, this.root, def.nacelles, def.fairings);
       this.root.add(this.nacelles.group);
@@ -237,7 +251,7 @@ export class AircraftVisual implements Subsystem {
     const cowlFlaps: THREE.Mesh[] = [];
     for (const flap of this.nacelles?.cowlFlaps ?? []) cowlFlaps.push(...(flap.hinge.object.children as THREE.Mesh[]));
     const proxies = buildShadowProxies(this.root, {
-      moving: [...hinges.map((h) => h.object), ...gear.moving, ...cockpit.moving, ...this.propellers.map((p) => p.group)],
+      moving: [...hinges.map((h) => h.object), ...gear.moving, ...cockpit.moving, ...this.propellers.map((p) => p.group), ...(this.pearseExterior?.moving ?? [])],
       keep: gear.keep,
       none: [...gear.none, ...cockpit.none, ...cowlFlaps],
     });
@@ -376,6 +390,7 @@ export class AircraftVisual implements Subsystem {
     this.tail.rudder.setAngle(s.rudder);
     this.tail.rudderTab?.setAngle(s.rudderTrim);
     this.gear.update(st.wheels, st.gear.extension);
+    this.pearseExterior?.update(st.wheels, st.propellers[0]);
     for (let i = 0; i < this.propellers.length; i++) {
       // A state with fewer propellers than the airframe (a visual shown over a placeholder definition) leaves
       // the others stopped.
@@ -425,6 +440,8 @@ export class AircraftVisual implements Subsystem {
     this.lights.dispose();
     this.cockpit.dispose();
     for (const m of this.occupants?.materials ?? []) m.dispose();
+    for (const t of this.pearseExterior?.textures ?? []) t.dispose();
+    for (const m of this.pearseExterior?.materials ?? []) m.dispose();
     this.materials.dispose();
     for (const m of this.cabinClones) m.dispose();
   }

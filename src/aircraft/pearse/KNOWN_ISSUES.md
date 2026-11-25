@@ -1,0 +1,6 @@
+# Richard Pearse 1903 Monoplane — Known Simplifications
+
+1. **Waitohi Memorial & NZ Patent No. 21476 layout:** Dimensions (~7.62 m x 2.00 m flat grid-framed wing, inset outer ailerons within the wings, rear-edge wing-mounted all-moving elevator, tall rectangular vertical sail in the centre of the wing, wing-front two-cylinder engine + cylindrical tank, two-vane diamond-paddle airscrew and open vertical tubular-steel tricycle undercarriage) follow NZ Patent No. 21476 (1906) and the Richard Pearse Memorial reconstruction at Waitohi.
+2. **Double-acting horizontal twin:** Pearse's two-cylinder engine fired on both sides of each piston (four power strokes every two revolutions). It is modelled on the four-chamber spark-piston cycle (`cylinders: 4`) with asymmetric per-chamber gains and firing offsets.
+3. **Two-vane variable-pitch paddle airscrew:** Pearse's tubular-arm diamond-vane variable-pitch airscrew is modelled visually with its pitch-linkage rods and represented aerodynamically at a 68 in geometric pitch matched to 1,150 rpm.
+4. **Compact pioneer gauge cluster:** A small instrument board and 12 V accumulator circuit are fitted low on the forward frame so cockpit view, Q-focus, checklists and HUD readouts integrate cleanly.

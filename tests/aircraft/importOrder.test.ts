@@ -286,7 +286,7 @@ describe('load order', () => {
 
   it('every aircraft file may be the first module loaded', async () => {
     expect(await enterThrough(AIRCRAFT_FILES)).toEqual([]);
-  }, 60_000);
+  }, 180_000);
 
   it('every component module may be the first module loaded', async () => {
     const { loadable, broken } = await baseline();

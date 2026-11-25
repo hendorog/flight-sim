@@ -14,6 +14,7 @@ const LOADERS: Readonly<Record<string, () => Promise<{ default: AirframeVisualDe
   da42: () => import('./da42/visual'),
   c208: () => import('./c208/visual'),
   pc12: () => import('./pc12/visual'),
+  pearse: () => import('./pearse/visual'),
   r22: () => import('./r22/visual'),
   r44: () => import('./r44/visual'),
   s269: () => import('./s269/visual'),

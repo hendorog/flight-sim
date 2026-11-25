@@ -28,6 +28,7 @@ import { createSharedUniforms, FLOOD_COLOR, FLOOD_INTENSITY, floodIlluminance, S
 import { createSigns } from './signs';
 import { makeAsphaltTexture, makeBuildingTextures, makeConcreteTexture, makeCrackTexture, makeNoiseTexture } from './textures';
 import { buildValley } from './valley';
+import { buildInfrastructure } from './infrastructure';
 import { buildSegmentedCircle, Windsocks } from './windsock';
 import { airfieldLights, airfieldWindsocks, buildAirfieldScenery } from './airfieldScenery';
 import { generatedAirfields } from '../airfields';
@@ -147,6 +148,11 @@ export class AirportSystem implements Subsystem {
       this.disposables.push(valleyRoad, track, ...valley.materials, ...valley.textures);
       lights.push(...valley.lights);
       this.root.add(valley.group);
+
+      const infra = buildInfrastructure(this.options.heightAt);
+      this.disposables.push(...infra.materials);
+      lights.push(...infra.lights);
+      this.root.add(infra.group);
     }
 
     (this as { lights: readonly LightSpec[] }).lights = lights;
