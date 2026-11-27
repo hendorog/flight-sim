@@ -9,6 +9,7 @@
 // them. Seed 0 has no flow data and gets none.
 
 import { hydrology, makeSample, sampleTerrain } from '../heightfield';
+import { reservoirLevelAt } from '../corridorMask';
 import { hash2i } from '../noise';
 import { rockReach } from '../bedrock';
 import { BIG_ACROSS, BIG_ALONG, bigStoneAt, clumpAt, grainToUnit, pitchWeight, sizeLaw, STONE_ALONG, STONE_ACROSS, STONE_IN, stoneAt, unitToGrain, type ChannelStone, type StonePitch } from '../channelStones';
@@ -121,8 +122,9 @@ export function buildBoulderCell(req: BoulderCellRequest): BoulderCellData {
 
 /** Whether a stone may stand at the sample just taken: never in a lake or the sea, nor on its shore. */
 function onOpenGround(north: number, east: number): boolean {
-  // Never in a lake or the sea, nor on its shore (within a metre of its water).
+  // Never in a lake or the sea, nor on its shore (within a metre of its water), nor drowned in a hydro reservoir.
   if (sample.standing > sample.ground - 1 || sample.airportBlend < 1) return false;
+  if (reservoirLevelAt(north, east) > -Infinity) return false;
   // (Nor on the banks a stream's carving leaves standing in a lake.)
   return (hydrology.lakeMask?.at(north, east) ?? -Infinity) === -Infinity;
 }

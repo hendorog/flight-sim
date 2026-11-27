@@ -1464,11 +1464,6 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
   // its edge (the river joining two arms), and none faded in toward the edge.
   if (maskLevel > -Infinity) open = Math.min(open, Math.max(smooth(maskLevel - 0.5, maskLevel + 1.5, h), 1 - smooth(0, 10, maskField)));
   const nc = open > 0 ? nc0 : 0;
-  // The highest water whose banks the point lies within (and the line it is), and the highest of the other lines'
-  // (a stream's carving keeps the ground over another channel's water there).
-  let keep1 = -Infinity;
-  let keep2 = -Infinity;
-  let keepLine = -1;
   // (And the lines whose water covers the point: no line's bank or levee is raised over another line's water - two
   // rivers running side by side into their junction, 30-45 m apart, the one's levee stood up to 2 m over the other's
   // water, hiding it, about 20 km of river on each seed.)
@@ -1480,13 +1475,6 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
       if (wetLine >= 0 && wetLine !== o.line) wet2 = true;
       else wetLine = o.line;
     }
-    if (!(o.dist < (o.wet !== undefined ? o.bed : o.halfWidth) + CHANNEL_BANK + 20)) continue;
-    const v = o.level + BANK_HEIGHT;
-    if (v > keep1) {
-      keep2 = keep1;
-      keep1 = v;
-      keepLine = o.line;
-    } else if (v > keep2) keep2 = v;
   }
   for (let j = 0; j < nc; j++) {
     const c = channelNear[j];
@@ -1494,10 +1482,19 @@ function carveNetwork(north: number, east: number, h: number, out: TerrainSample
     const wetOther = wet2 || (wetLine >= 0 && wetLine !== c.line);
     // Every line alike (channelForm.ts formSection): its broad breach first (a rim or sill worn down), then its own wet
     // bed, the bar out to its bed's edge and its bank, faded in from its source over three of its bed's widths. Neither
-    // takes the ground under another channel's water within that channel's banks (a stream running down beside a river
-    // held up on its valley floor would leave the river's water standing over a hollow), nor beside a lake standing
-    // higher (its domain and a raster point round it, LakeMask.holds).
-    let keep = keepLine === c.line ? keep2 : keep1;
+    // takes the ground under another channel's water within that channel's banks when that channel stands higher (a
+    // stream running down beside a river held up on its valley floor would leave the river's water standing over a
+    // hollow); at a same-level confluence (`o.level ≈ c.level`) `holdH` drops to 0.18 m so both joining channels cleanly
+    // carve their low gravel confluence bars instead of leaving a +1.3 m vegetated ridge wall between them.
+    let keep = -Infinity;
+    for (let q = 0; q < nc; q++) {
+      if (q === j) continue;
+      const o = channelNear[q];
+      if (o.line === c.line || !(o.dist < (o.wet !== undefined ? o.bed : o.halfWidth) + CHANNEL_BANK + 20)) continue;
+      const holdH = Math.min(BANK_HEIGHT, 0.18 + 0.9 * Math.max(0, o.level - c.level));
+      const v = o.level + holdH;
+      if (v > keep) keep = v;
+    }
     if (c.breach > 0 && mask && mask.holds(north, east) > 0) keep = Math.max(keep, mask.holdLevel + 0.5);
     // (Faded out over the last fifth of its reach, where its walls should long since have met the ground.)
     if (c.breach > 0) h += (Math.max(Math.min(h, keep), smin(h, breachLift(c.level + breachProfile(d, c.breach), h, d, c.reach, c.cut, wallHere), 3)) - h) * open * (1 - smooth(0.8 * c.reach, c.reach, d));

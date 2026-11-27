@@ -19,6 +19,7 @@ import { STREET_ILLUMINANCE, type SharedUniforms } from './shared';
 import { SCENE_UNITS_PER_LUX } from '../../core/context';
 import { computeBiome, coverShape, makeBiome, makeCoverShape } from '../terrain/biome';
 import { hydrology, makeSample, sampleTerrain } from '../terrain/heightfield';
+import { reservoirLevelAt } from '../terrain/corridorMask';
 import { onRoadVerge, regionalRoads, ROAD_HALF_WIDTH, ROAD_KIND_SEALED, villageSites } from '../terrain/roads';
 import { buildBridges } from './bridges';
 import { fieldCoords, generatedAirfields } from '../airfields';
@@ -122,7 +123,8 @@ export function buildValley(heightAt: HeightFn, shared: SharedUniforms, roadMate
     const hy = heightAt(n, e + s) - heightAt(n, e - s);
     return Math.hypot(hx, hy) / (2 * s);
   };
-  const buildable = (n: number, e: number): boolean => heightAt(n, e) > WATER_LEVEL + 1 && slope(n, e, 15) < MAX_BUILD_SLOPE;
+  const buildable = (n: number, e: number): boolean =>
+    heightAt(n, e) > WATER_LEVEL + 1 && slope(n, e, 15) < MAX_BUILD_SLOPE && reservoirLevelAt(n, e) === -Infinity;
 
   const town = findTownSite(heightAt);
 

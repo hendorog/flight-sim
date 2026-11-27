@@ -215,9 +215,15 @@ export interface RiverLine {
   braidTe?: Float32Array;
   /** ... and which samples are its ribbon's rows (1) where it braids. */
   braidRow?: Uint8Array;
-  /** On a stream joining a braided river, 1 at samples well inside the receiver's gravel bed (ribbon suppressed there,
-   * as inLake suppresses a stream's ribbon inside a lake). */
+  /** On a stream joining a braided river, 1 at samples past the first active braided thread it merges into (ribbon
+   * suppressed there, as inLake suppresses a stream's ribbon inside a lake). */
   inBraid?: Uint8Array;
+  /** Smooth 0..1 confluence overlap progress where a joining channel's wet ribbon merges inside its receiver's water. */
+  mouthIn?: Float32Array;
+  /** Smooth 0..1.05 clearance match as a tributary crosses a braided receiver's lifted shingle bar to its first wet thread. */
+  braidCross?: Float32Array;
+  /** Transported glacial rock-flour / alpine slate-blue water tint (0 lowland olive .. 1 glacial blue-grey) per sample. */
+  glacial?: Float32Array;
   /**
    * A stream's pitches and pools (pitchPool.ts): its unit coordinate `sigma` at each sample (unit k's lip at
    * pitchPool.ts lipOf(k), its foot pitchLen(k) on, the next unit's lip at lipOf(k + 1)), and `pitchOn` 1 where its water

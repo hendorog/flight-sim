@@ -10,10 +10,13 @@ export {
   obstacleClearOfAirfields,
   planInfrastructure,
   type ConductorSpan,
+  type HydroDamKind,
+  type HydroDamSite,
   type InfrastructurePlan,
   type MastKind,
   type PylonKind,
   type PylonSite,
   type RadioMastSite,
+  type ReservoirGrid,
   type SubstationSite,
 } from './infrastructurePlan';

@@ -12,14 +12,17 @@
 
 import * as THREE from 'three';
 import { nedToThree } from '../../core/frames';
+import { damWallCenterU } from './hydroDamPlan';
 import {
   planInfrastructure,
   PYLON_LOWEST_INSULATOR_FRAC,
   PYLON_REF_HEIGHT,
   type HeightFn,
+  type HydroDamSite,
   type InfrastructurePlan,
   type PylonKind,
   type PylonSite,
+  type SubstationSite,
 } from './infrastructurePlan';
 import { LIGHT_COLORS, type LightSpec } from './lights';
 
@@ -50,6 +53,69 @@ class SolidBuilder {
   private readonly v = new THREE.Vector3();
   private readonly dir = new THREE.Vector3();
   private readonly nrm = new THREE.Vector3();
+  private readonly e1 = new THREE.Vector3();
+  private readonly e2 = new THREE.Vector3();
+
+  /** Emit a planar/near-planar quad guaranteed to wind counter-clockwise toward `outwardHint`. */
+  quadAuto(
+    p0: THREE.Vector3,
+    p1: THREE.Vector3,
+    p2: THREE.Vector3,
+    p3: THREE.Vector3,
+    outwardHint: THREE.Vector3,
+    color: THREE.Color,
+  ): void {
+    this.e1.subVectors(p1, p0);
+    this.e2.subVectors(p2, p0);
+    this.nrm.crossVectors(this.e1, this.e2);
+    const len = this.nrm.length();
+    if (len < 1e-6) return;
+    this.nrm.multiplyScalar(1 / len);
+    if (this.nrm.dot(outwardHint) >= 0) {
+      this.quad(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z, p2.x, p2.y, p2.z, p3.x, p3.y, p3.z, this.nrm, color);
+    } else {
+      this.nrm.negate();
+      this.quad(p0.x, p0.y, p0.z, p3.x, p3.y, p3.z, p2.x, p2.y, p2.z, p1.x, p1.y, p1.z, this.nrm, color);
+    }
+  }
+
+  /**
+   * Emit a solid concrete monolith block between cross-section `sec0 = [upBot, dnBot, dnTop, upTop]` and `sec1`
+   * (omitting the buried bottom face). Outward normals are oriented automatically from the block centroid.
+   */
+  monolithSlice(
+    sec0: readonly [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3],
+    sec1: readonly [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3],
+    upColor: THREE.Color,
+    dnColor: THREE.Color,
+    topColor: THREE.Color,
+    capSides = true,
+  ): void {
+    const cx =
+      0.125 *
+      (sec0[0].x + sec0[1].x + sec0[2].x + sec0[3].x + sec1[0].x + sec1[1].x + sec1[2].x + sec1[3].x);
+    const cy =
+      0.125 *
+      (sec0[0].y + sec0[1].y + sec0[2].y + sec0[3].y + sec1[0].y + sec1[1].y + sec1[2].y + sec1[3].y);
+    const cz =
+      0.125 *
+      (sec0[0].z + sec0[1].z + sec0[2].z + sec0[3].z + sec1[0].z + sec1[1].z + sec1[2].z + sec1[3].z);
+    const faceOut = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3) =>
+      this.dir.set(
+        0.25 * (a.x + b.x + c.x + d.x) - cx,
+        0.25 * (a.y + b.y + c.y + d.y) - cy,
+        0.25 * (a.z + b.z + c.z + d.z) - cz,
+      );
+
+    // Upstream face, downstream face, top face, and optional side joint faces.
+    this.quadAuto(sec0[0], sec1[0], sec1[3], sec0[3], faceOut(sec0[0], sec1[0], sec1[3], sec0[3]), upColor);
+    this.quadAuto(sec0[1], sec1[1], sec1[2], sec0[2], faceOut(sec0[1], sec1[1], sec1[2], sec0[2]), dnColor);
+    this.quadAuto(sec0[3], sec1[3], sec1[2], sec0[2], faceOut(sec0[3], sec1[3], sec1[2], sec0[2]), topColor);
+    if (capSides) {
+      this.quadAuto(sec0[0], sec0[1], sec0[2], sec0[3], faceOut(sec0[0], sec0[1], sec0[2], sec0[3]), dnColor);
+      this.quadAuto(sec1[0], sec1[1], sec1[2], sec1[3], faceOut(sec1[0], sec1[1], sec1[2], sec1[3]), dnColor);
+    }
+  }
 
   strut(a: THREE.Vector3, b: THREE.Vector3, rA: number, rB: number, sides: number, color: THREE.Color, cap = false): void {
     this.dir.subVectors(b, a);
@@ -97,15 +163,16 @@ class SolidBuilder {
   /** Oriented box centred at `center`, rotated by `heading` (true bearing, rad) about +Y, dimensions `(wX, hY, dZ)`. */
   orientedBox(center: THREE.Vector3, wX: number, hY: number, dZ: number, heading: number, color: THREE.Color): void {
     const ch = Math.cos(heading), sh = Math.sin(heading);
-    // right = (cos h, 0, sin h), fwd = (sin h, 0, -cos h)
+    // right = (cos h, 0, sin h), fwd = (sin h, 0, -cos h), up = (0, 1, 0)
     const rx = ch * (wX * 0.5), rz = sh * (wX * 0.5);
     const fx = sh * (dZ * 0.5), fz = -ch * (dZ * 0.5);
     const hy = hY * 0.5;
-    const pt = (sx: number, sy: number, sz: number): [number, number, number] => [
-      center.x + sx * rx + sz * fx,
-      center.y + sy * hy,
-      center.z + sx * rz + sz * fz,
-    ];
+    const pt = (sx: number, sy: number, sz: number): THREE.Vector3 =>
+      new THREE.Vector3(
+        center.x + sx * rx + sz * fx,
+        center.y + sy * hy,
+        center.z + sx * rz + sz * fz,
+      );
     const faces: [readonly [number, number, number][], THREE.Vector3][] = [
       [[[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]], new THREE.Vector3(sh, 0, -ch)],
       [[[1, -1, -1], [-1, -1, -1], [-1, 1, -1], [1, 1, -1]], new THREE.Vector3(-sh, 0, ch)],
@@ -113,9 +180,9 @@ class SolidBuilder {
       [[[-1, -1, -1], [-1, -1, 1], [-1, 1, 1], [-1, 1, -1]], new THREE.Vector3(-ch, 0, -sh)],
       [[[-1, 1, 1], [1, 1, 1], [1, 1, -1], [-1, 1, -1]], new THREE.Vector3(0, 1, 0)],
     ];
-    for (const [corners, n] of faces) {
+    for (const [corners, outN] of faces) {
       const [p0, p1, p2, p3] = corners.map(([sx, sy, sz]) => pt(sx, sy, sz));
-      this.quad(p0[0], p0[1], p0[2], p1[0], p1[1], p1[2], p2[0], p2[1], p2[2], p3[0], p3[1], p3[2], n, color);
+      this.quadAuto(p0, p1, p2, p3, outN, color);
     }
   }
 
@@ -187,7 +254,15 @@ class SolidBuilder {
 
 const STEEL_GALV = new THREE.Color(0x9ca4aa);
 const STEEL_DARK = new THREE.Color(0x6c7378);
-const CONCRETE_COL = new THREE.Color(0x9c988e);
+const CONCRETE_COL = new THREE.Color(0x8c8981);
+const CONCRETE_LIGHT = new THREE.Color(0x96938a);
+const CONCRETE_CREST = new THREE.Color(0xa6a39a);
+const CONCRETE_WET = new THREE.Color(0x62605a);
+const ROCKFILL_COL = new THREE.Color(0x706f68);
+const ROCKFILL_DARK = new THREE.Color(0x66655f);
+const ROAD_ASPHALT = new THREE.Color(0x383a3e);
+const PENSTOCK_STEEL = new THREE.Color(0xdadcd8);
+const GATE_STEEL = new THREE.Color(0x46525a);
 const INSULATOR_GLASS = new THREE.Color(0x52807a);
 const HAZARD_RED = new THREE.Color(0xc92a1e);
 const HAZARD_WHITE = new THREE.Color(0xeeece6);
@@ -334,13 +409,336 @@ function addCatenary(
   }
 }
 
+/**
+ * Build a complete 3D hydro-electric dam complex (curved concrete arch dam in narrow gorges, or battered concrete
+ * gravity dam with inclined steel penstocks in wider throats), gated central spillway & chute, crest roadway,
+ * concrete toe powerhouse + step-up transformers, HV tie conductors to the switchyard, and night/obstruction lights.
+ */
+function buildHydroDam(
+  dam: HydroDamSite,
+  substations: readonly SubstationSite[],
+  heightAt: HeightFn,
+  concreteSolids: SolidBuilder,
+  steelSolids: SolidBuilder,
+  cables: SolidBuilder,
+  lights: LightSpec[],
+): void {
+  const solids = concreteSolids;
+  const dn = Math.cos(dam.heading);
+  const de = Math.sin(dam.heading);
+  const rn = -de; // +right bank
+  const re = dn;
+
+  const toWorld = (u: number, v: number, yMSL: number): THREE.Vector3 =>
+    nedToThree({
+      x: dam.north + dn * u + rn * v,
+      y: dam.east + de * u + re * v,
+      z: -yMSL,
+    });
+
+  const groundUV = (u: number, v: number): number =>
+    heightAt(dam.north + dn * u + rn * v, dam.east + de * u + re * v);
+
+  // Key the dam wall 14 m deep into both canyon abutments and 6.5 m below the riverbed so zero edges float.
+  const vStart = -dam.leftSpan - 14;
+  const vEnd = dam.rightSpan + 14;
+  const totalV = vEnd - vStart;
+  const nSlices = Math.max(18, Math.min(44, Math.round(totalV / 13)));
+
+  // Central spillway spans ~24..36 m around the thalweg (`v = 0`).
+  const spillHalfW = Math.min(18, Math.max(11, dam.crestLength * 0.08));
+  // On wider gravity dams (> 380 m, Waitaki / Aviemore composite style), the central concrete gravity block houses the
+  // spillway, intake and penstocks (`|v| <= concreteCoreHalfW`) while compacted greywacke rockfill wings key into the flanks!
+  const concreteCoreHalfW = dam.kind === 'arch' ? Infinity : Math.max(spillHalfW + 68, Math.min(135, dam.crestLength * 0.34));
+  const sillY = dam.waterLevel - 1.6;
+  const crestY = dam.crestElevation;
+  const crestHalfT = dam.kind === 'arch' ? 3.5 : 4.5;
+
+  // Which side (`-1` left bank, `+1` right bank) the downstream switchyard sits on: place powerhouse & penstocks on that side.
+  const yardDV = -(dam.switchyardNorth - dam.north) * de + (dam.switchyardEast - dam.east) * dn;
+  const phSide: -1 | 1 = yardDV >= 0 ? 1 : -1;
+
+  const sectionBounds = (
+    v: number,
+    yBot: number,
+    yTop: number,
+  ): { uUpBot: number; uDnBot: number; uUpTop: number; uDnTop: number; wingBlend: number } => {
+    const u0 = damWallCenterU(dam.leftSpan, dam.rightSpan, dam.archSagitta, v);
+    const localH = Math.max(2, crestY - yBot);
+    const fBot = Math.max(0, Math.min(1, (crestY - yBot) / localH));
+    const fTop = Math.max(0, Math.min(1, (crestY - yTop) / localH));
+    if (dam.kind === 'arch') {
+      // Double-curved/parabolic arch: thin crest (7 m), flaring toward canyon floor (~18..24 m).
+      const upAt = (f: number) => u0 - crestHalfT - f * f * (0.09 * localH);
+      const dnAt = (f: number) => u0 + crestHalfT + f * (0.25 * localH);
+      return { uUpBot: upAt(fBot), uDnBot: dnAt(fBot), uUpTop: upAt(fTop), uDnTop: dnAt(fTop), wingBlend: 0 };
+    }
+    // Smoothly blend from the central concrete gravity block (`0.06` / `0.70`) to compacted rockfill embankment wings
+    // (`1.65` / `1.80`) over a 16 m transition zone, flanked by concrete wing retaining walls!
+    const tWing = Math.max(0, Math.min(1, (Math.abs(v) - concreteCoreHalfW) / 16));
+    const wingBlend = tWing * tWing * (3 - 2 * tWing);
+    const upBatter = 0.06 + (1.65 - 0.06) * wingBlend;
+    const dnBatter = 0.7 + (1.8 - 0.7) * wingBlend;
+    const upAt = (f: number) => u0 - crestHalfT - f * (upBatter * localH);
+    const dnAt = (f: number) => u0 + crestHalfT + f * (dnBatter * localH);
+    return { uUpBot: upAt(fBot), uDnBot: dnAt(fBot), uUpTop: upAt(fTop), uDnTop: dnAt(fTop), wingBlend };
+  };
+
+  // 1. Main dam monolith / embankment blocks (split at `waterLevel + 1.0` so the waterline shows a damp riprap/concrete band).
+  for (let i = 0; i < nSlices; i++) {
+    const v0 = vStart + (i / nSlices) * totalV;
+    const v1 = vStart + ((i + 1) / nSlices) * totalV;
+    const vm = 0.5 * (v0 + v1);
+    const uMid = damWallCenterU(dam.leftSpan, dam.rightSpan, dam.archSagitta, vm);
+    const g0 = Math.min(groundUV(uMid, v0), crestY - 3);
+    const g1 = Math.min(groundUV(uMid, v1), crestY - 3);
+    const yBase = Math.min(g0, g1, dam.bedElevation + Math.max(0, Math.abs(vm) - 22) * 0.22) - 6.5;
+
+    const inSpill = Math.abs(vm) < spillHalfW;
+    const rockWing = Math.abs(vm) > concreteCoreHalfW + 8;
+    const blockTop = inSpill ? sillY : crestY;
+    if (blockTop <= yBase + 1) continue;
+
+    // Subtle weathered concrete pour variation (or compacted greywacke rockfill on outer composite wings).
+    const dnTint = rockWing ? (i % 2 === 0 ? ROCKFILL_COL : ROCKFILL_DARK) : i % 2 === 0 ? CONCRETE_COL : CONCRETE_LIGHT;
+    const upDryTint = rockWing ? ROCKFILL_COL : CONCRETE_LIGHT;
+    const yWetSplit = Math.min(blockTop, Math.max(yBase + 0.5, dam.waterLevel + 0.8));
+
+    // Lower band (up to waterline: dark damp upstream face)
+    if (yWetSplit > yBase + 0.4) {
+      const b0 = sectionBounds(v0, yBase, yWetSplit);
+      const b1 = sectionBounds(v1, yBase, yWetSplit);
+      const full0 = sectionBounds(v0, yBase, crestY);
+      const full1 = sectionBounds(v1, yBase, crestY);
+      const tWet = (yWetSplit - yBase) / Math.max(1, crestY - yBase);
+      const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+      const uUpTop0 = lerp(full0.uUpBot, full0.uUpTop, tWet);
+      const uDnTop0 = lerp(full0.uDnBot, full0.uDnTop, tWet);
+      const uUpTop1 = lerp(full1.uUpBot, full1.uUpTop, tWet);
+      const uDnTop1 = lerp(full1.uDnBot, full1.uDnTop, tWet);
+      solids.monolithSlice(
+        [toWorld(b0.uUpBot, v0, yBase), toWorld(b0.uDnBot, v0, yBase), toWorld(uDnTop0, v0, yWetSplit), toWorld(uUpTop0, v0, yWetSplit)],
+        [toWorld(b1.uUpBot, v1, yBase), toWorld(b1.uDnBot, v1, yBase), toWorld(uDnTop1, v1, yWetSplit), toWorld(uUpTop1, v1, yWetSplit)],
+        CONCRETE_WET,
+        dnTint,
+        CONCRETE_WET,
+      );
+
+      // Upper dry freeboard band (`yWetSplit .. blockTop`)
+      if (blockTop > yWetSplit + 0.25) {
+        const tTop = (blockTop - yBase) / Math.max(1, crestY - yBase);
+        const uUpBlk0 = lerp(full0.uUpBot, full0.uUpTop, tTop);
+        const uDnBlk0 = lerp(full0.uDnBot, full0.uDnTop, tTop);
+        const uUpBlk1 = lerp(full1.uUpBot, full1.uUpTop, tTop);
+        const uDnBlk1 = lerp(full1.uDnBot, full1.uDnTop, tTop);
+        solids.monolithSlice(
+          [toWorld(uUpTop0, v0, yWetSplit), toWorld(uDnTop0, v0, yWetSplit), toWorld(uDnBlk0, v0, blockTop), toWorld(uUpBlk0, v0, blockTop)],
+          [toWorld(uUpTop1, v1, yWetSplit), toWorld(uDnTop1, v1, yWetSplit), toWorld(uDnBlk1, v1, blockTop), toWorld(uUpBlk1, v1, blockTop)],
+          upDryTint,
+          dnTint,
+          CONCRETE_CREST,
+        );
+      }
+    }
+
+    // 2. Cantilevered crest roadway & concrete parapet kerbs across the entire dam (bridging over spillway bays!).
+    const u0a = damWallCenterU(dam.leftSpan, dam.rightSpan, dam.archSagitta, v0);
+    const u0b = damWallCenterU(dam.leftSpan, dam.rightSpan, dam.archSagitta, v1);
+    const deckH = 0.85;
+    solids.monolithSlice(
+      [
+        toWorld(u0a - crestHalfT - 0.6, v0, crestY - deckH),
+        toWorld(u0a + crestHalfT + 0.6, v0, crestY - deckH),
+        toWorld(u0a + crestHalfT + 0.6, v0, crestY + 0.15),
+        toWorld(u0a - crestHalfT - 0.6, v0, crestY + 0.15),
+      ],
+      [
+        toWorld(u0b - crestHalfT - 0.6, v1, crestY - deckH),
+        toWorld(u0b + crestHalfT + 0.6, v1, crestY - deckH),
+        toWorld(u0b + crestHalfT + 0.6, v1, crestY + 0.15),
+        toWorld(u0b - crestHalfT - 0.6, v1, crestY + 0.15),
+      ],
+      CONCRETE_LIGHT,
+      CONCRETE_LIGHT,
+      ROAD_ASPHALT,
+      i === 0 || i === nSlices - 1,
+    );
+    // Upstream & downstream concrete safety parapets along the crest road.
+    for (const sideSgn of [-1, 1] as const) {
+      const pOff = sideSgn * (crestHalfT + 0.32);
+      solids.strut(
+        toWorld(u0a + pOff, v0, crestY + 0.65),
+        toWorld(u0b + pOff, v1, crestY + 0.65),
+        0.38,
+        0.38,
+        4,
+        CONCRETE_LIGHT,
+      );
+    }
+  }
+
+  // 3. Central Gated Spillway: radial Tainter gates, concrete spillway piers, hoist deck & downstream chute!
+  const nGates = 3;
+  const pierW = 1.9;
+  for (let gi = 0; gi <= nGates; gi++) {
+    const vp = -spillHalfW + (gi / nGates) * (2 * spillHalfW);
+    const u0 = damWallCenterU(dam.leftSpan, dam.rightSpan, dam.archSagitta, vp);
+    const pierHeading = dam.heading;
+    solids.orientedBox(toWorld(u0 + 0.4, vp, 0.5 * (sillY + crestY + 3.4)), pierW, crestY + 3.4 - sillY + 2, crestHalfT * 2.2, pierHeading, CONCRETE_LIGHT);
+    if (gi < nGates) {
+      const vg = -spillHalfW + ((gi + 0.5) / nGates) * (2 * spillHalfW);
+      const bayW = (2 * spillHalfW) / nGates - pierW * 0.85;
+      const ug = damWallCenterU(dam.leftSpan, dam.rightSpan, dam.archSagitta, vg);
+      // Curved steel radial Tainter gate holding back the reservoir water.
+      steelSolids.orientedBox(toWorld(ug - crestHalfT * 0.45, vg, sillY + (dam.waterLevel - sillY + 0.8) * 0.5), bayW, dam.waterLevel - sillY + 1.2, 1.1, pierHeading, GATE_STEEL);
+    }
+  }
+  // Overhead spillway gate hoist beam spanning the piers.
+  const uCrown = damWallCenterU(dam.leftSpan, dam.rightSpan, dam.archSagitta, 0);
+  steelSolids.orientedBox(toWorld(uCrown - 0.6, 0, crestY + 3.6), spillHalfW * 2 + 2.5, 0.9, 2.6, dam.heading, STEEL_DARK);
+
+  // Downstream spillway training walls & stilling-basin apron at the riverbed toe.
+  const toeU =
+    dam.kind === 'arch'
+      ? uCrown + crestHalfT + 0.24 * dam.wallHeight + 6
+      : crestHalfT + 0.68 * dam.wallHeight + 4;
+  const chuteTopU = uCrown + crestHalfT * 0.7;
+  const basinY = dam.tailwaterElevation - 0.4;
+  for (const sgn of [-1, 1] as const) {
+    const vw = sgn * (spillHalfW + 0.8);
+    solids.strut(
+      toWorld(chuteTopU, vw, sillY + 1.4),
+      toWorld(toeU, vw, basinY + 2.6),
+      1.35,
+      1.55,
+      4,
+      CONCRETE_LIGHT,
+      true,
+    );
+  }
+  // Concrete stilling basin apron & energy-dissipating end sill in the river channel.
+  solids.orientedBox(toWorld(toeU + 8, 0, basinY - 1.2), spillHalfW * 2.15, 3.2, 18, dam.heading, CONCRETE_WET);
+
+  // 4. Upstream Intake Gatehouse, Steel Penstocks & Toe Turbine Powerhouse + Transformer Deck!
+  const vPen = phSide * Math.min(dam.crestLength * 0.24, spillHalfW + 16);
+  const uIntake = damWallCenterU(dam.leftSpan, dam.rightSpan, dam.archSagitta, vPen);
+  // Upstream concrete intake house & trashrack gantry on the crest.
+  solids.orientedBox(toWorld(uIntake - crestHalfT - 1.8, vPen, crestY + 2.4), 14, 5.2, 5.2, dam.heading, CONCRETE_LIGHT);
+  solids.orientedBox(toWorld(uIntake - crestHalfT - 1.8, vPen, crestY + 5.2), 14.8, 0.45, 5.8, dam.heading, CABIN_ROOF);
+
+  // Powerhouse hall nestled at the downstream toe on the switchyard side of the spillway apron.
+  const phV = phSide * Math.max(spillHalfW + 15, Math.min(dam.crestLength * 0.26, 30));
+  const phU = toeU + 11;
+  const phGround = Math.max(dam.tailwaterElevation + 0.8, Math.min(crestY - 10, groundUV(phU, phV)));
+  const phW = 26;
+  const phD = 15.0;
+  const phH = 11.2;
+
+  // Deep concrete substructure / draft-tube deck sunk 8 m into the gorge toe + turbine hall + glazed clerestory + roof.
+  solids.orientedBox(toWorld(phU, phV, phGround - 3.6), phW + 4.0, 8.4, phD + 4.0, dam.heading, CONCRETE_WET);
+  solids.orientedBox(toWorld(phU, phV, phGround + phH * 0.5), phW, phH, phD, dam.heading, CONCRETE_CREST);
+  // Dark glazed upper clerestory window band & downstream tailrace draft-tube bays.
+  steelSolids.orientedBox(toWorld(phU, phV, phGround + phH * 0.76), phW + 0.25, 2.1, phD + 0.25, dam.heading, GATE_STEEL);
+  for (const bayV of [-7.5, 0, 7.5]) {
+    steelSolids.orientedBox(toWorld(phU + phD * 0.5, phV + bayV, phGround + 1.8), 4.6, 3.2, 0.6, dam.heading, GATE_STEEL);
+  }
+  steelSolids.orientedBox(toWorld(phU, phV, phGround + phH + 0.4), phW + 1.4, 0.8, phD + 1.4, dam.heading, CABIN_ROOF);
+  solids.orientedBox(toWorld(phU, phV, phGround + phH + 1.6), phW * 0.68, 1.8, phD * 0.44, dam.heading, CONCRETE_LIGHT);
+  steelSolids.orientedBox(toWorld(phU, phV, phGround + phH + 2.65), phW * 0.72, 0.35, phD * 0.48, dam.heading, CABIN_ROOF);
+
+  // Twin/triple large steel penstock pipes descending from the dam intake into the turbine hall!
+  for (const pvOff of [-5.5, 0, 5.5]) {
+    const vp = vPen + pvOff * 0.75;
+    const up0 = damWallCenterU(dam.leftSpan, dam.rightSpan, dam.archSagitta, vp) + crestHalfT * 0.5;
+    const penTopY = dam.kind === 'arch' ? phGround + Math.min(18, dam.wallHeight * 0.48) : crestY - 4.5;
+    steelSolids.strut(
+      toWorld(up0, vp, penTopY),
+      toWorld(phU - phD * 0.42, phV + pvOff, phGround + 3.2),
+      1.18,
+      1.18,
+      8,
+      PENSTOCK_STEEL,
+      true,
+    );
+  }
+
+  // Step-up generator transformers + steel takeoff gantry on the powerhouse tailrace deck, tied to `sub-hydro`!
+  for (const txOff of [-5.0, 5.0]) {
+    steelSolids.orientedBox(toWorld(phU - phD * 0.25, phV + phSide * (phW * 0.32) + txOff * 0.4, phGround + phH + 2.0), 3.2, 3.2, 3.8, dam.heading, STEEL_DARK);
+  }
+  const phTakeoffL = toWorld(phU, phV - 5, phGround + phH + 5.5);
+  const phTakeoffR = toWorld(phU, phV + 5, phGround + phH + 5.5);
+  steelSolids.strut(toWorld(phU, phV - 5, phGround + phH), phTakeoffL, 0.18, 0.14, 4, STEEL_GALV, true);
+  steelSolids.strut(toWorld(phU, phV + 5, phGround + phH), phTakeoffR, 0.18, 0.14, 4, STEEL_GALV, true);
+  steelSolids.strut(phTakeoffL, phTakeoffR, 0.15, 0.15, 4, STEEL_GALV, true);
+
+  // Overhead 3-phase generator tie-line from the powerhouse roof gantry to the adjacent hydro switchyard!
+  const nearSub = substations.find((s) => Math.hypot(s.north - dam.switchyardNorth, s.east - dam.switchyardEast) < 60);
+  if (nearSub) {
+    const tieDist = Math.hypot(nearSub.north - dam.north, nearSub.east - dam.east);
+    if (tieDist < 420) {
+      const ch = Math.cos(nearSub.heading), sh = Math.sin(nearSub.heading);
+      for (const phase of [-1, 0, 1] as const) {
+        const pStart = toWorld(phU, phV + phase * 4.2, phGround + phH + 5.4);
+        const pEnd = nedToThree({
+          x: nearSub.north - 4.5 * ch - phase * 6.5 * sh,
+          y: nearSub.east - 4.5 * sh + phase * 6.5 * ch,
+          z: -(nearSub.elevation + 10.6),
+        });
+        const sag = Math.max(1.4, 0.00006 * tieDist * tieDist);
+        addCatenary(cables, pStart, pEnd, sag, 0.04, 7, CABLE_ACSR);
+      }
+    }
+  }
+
+  // 5. Night Crest Roadway Lamps, Powerhouse Floodlight & Aviation Red Obstruction Lights
+  const nLamps = Math.max(3, Math.round(dam.crestLength / 36));
+  for (let li = 1; li < nLamps; li++) {
+    const vl = -dam.leftSpan + (li / nLamps) * dam.crestLength;
+    const ul = damWallCenterU(dam.leftSpan, dam.rightSpan, dam.archSagitta, vl);
+    lights.push({
+      position: toWorld(ul + crestHalfT, vl, crestY + 4.5),
+      colorA: LIGHT_COLORS.sodium,
+      lens: 0.25,
+      cd: 1400,
+      cdDay: 0,
+      height: 4.5,
+    });
+  }
+  lights.push({
+    position: toWorld(phU, phV, phGround + phH + 3.5),
+    colorA: LIGHT_COLORS.metalHalide,
+    lens: 0.35,
+    cd: 3400,
+    cdDay: 0,
+    height: phH + 3.5,
+  });
+  // Twin red L-810 obstruction lights on the spillway hoist bridge & intake house for low-level VFR safety.
+  lights.push({
+    position: toWorld(uCrown - 0.6, 0, crestY + 4.5),
+    colorA: LIGHT_COLORS.red,
+    lens: 0.18,
+    cd: 350,
+    cdDay: 45,
+    height: dam.wallHeight + 4.5,
+  });
+  lights.push({
+    position: toWorld(uIntake - crestHalfT - 1.8, vPen, crestY + 6.0),
+    colorA: LIGHT_COLORS.red,
+    lens: 0.18,
+    cd: 350,
+    cdDay: 45,
+    height: dam.wallHeight + 6.0,
+  });
+}
+
 export function buildInfrastructure(heightAt: HeightFn): InfrastructureResult {
   const plan = planInfrastructure(heightAt);
   const group = new THREE.Group();
   group.name = 'infrastructure';
   const lights: LightSpec[] = [];
 
-  if (plan.pylons.length === 0 && plan.masts.length === 0) {
+  if (plan.pylons.length === 0 && plan.masts.length === 0 && plan.dams.length === 0) {
     return { group, lights, materials: [], plan };
   }
 
@@ -404,6 +802,7 @@ export function buildInfrastructure(heightAt: HeightFn): InfrastructureResult {
   }
 
   const solids = new SolidBuilder();
+  const concrete = new SolidBuilder();
   const cables = new SolidBuilder();
 
   // =========================================================================
@@ -442,9 +841,16 @@ export function buildInfrastructure(heightAt: HeightFn): InfrastructureResult {
   }
 
   // =========================================================================
-  // 3. SWITCHING SUBSTATION YARDS AT CORRIDOR TERMINALS
+  // 3. HYDRO-ELECTRIC DAMS, SPILLWAYS, PENSTOCKS & TOE POWERHOUSES
   // =========================================================================
-  for (const sub of plan.substations) {
+  for (const dam of plan.dams) {
+    buildHydroDam(dam, plan.substations, heightAt, concrete, solids, cables, lights);
+  }
+
+  // =========================================================================
+  // 4. SWITCHING SUBSTATION YARDS & TERMINAL JUMPER SPANS TO FIRST PYLONS
+  // =========================================================================
+  plan.substations.forEach((sub, subIdx) => {
     const ch = Math.cos(sub.heading), sh = Math.sin(sub.heading);
     const atSub = (along: number, across: number, up: number) =>
       nedToThree({
@@ -453,36 +859,63 @@ export function buildInfrastructure(heightAt: HeightFn): InfrastructureResult {
         z: -(sub.elevation + up),
       });
 
-    // Gravelled concrete pad sunk 3.5 m into slope so edges never float.
-    solids.orientedBox(atSub(0, 0, -1.6), sub.width, 3.6, sub.depth, sub.heading, CONCRETE_COL);
-    // Control switch-house + twin power transformers with radiator fins + steel busbar portal gantries.
-    solids.orientedBox(atSub(-sub.depth * 0.26, -sub.width * 0.25, 1.9), 7.5, 3.6, 5.2, sub.heading, CABIN_WALL);
-    solids.orientedBox(atSub(-sub.depth * 0.26, -sub.width * 0.25, 3.85), 7.9, 0.35, 5.6, sub.heading, CABIN_ROOF);
+    // Levelled concrete yard foundation sunk 6.5 m into hillside slopes up to +0.45 m above `sub.elevation`.
+    concrete.orientedBox(atSub(0, 0, -3.0), sub.width + 2.0, 6.9, sub.depth + 2.0, sub.heading, CONCRETE_COL);
+    concrete.orientedBox(atSub(0, 0, 0.52), sub.width, 0.22, sub.depth, sub.heading, CONCRETE_CREST);
+    // Control switch-house (matte masonry walls + dark steel overhanging roof) + twin power transformers + HV bushings.
+    concrete.orientedBox(atSub(-sub.depth * 0.25, -sub.width * 0.24, 2.45), 8.2, 3.7, 5.6, sub.heading, CONCRETE_LIGHT);
+    solids.orientedBox(atSub(-sub.depth * 0.25, -sub.width * 0.24, 3.4), 8.35, 0.85, 5.75, sub.heading, GATE_STEEL);
+    solids.orientedBox(atSub(-sub.depth * 0.25, -sub.width * 0.24, 4.48), 8.8, 0.38, 6.2, sub.heading, CABIN_ROOF);
     for (const tx of [-4.5, 5.5]) {
-      solids.orientedBox(atSub(1.5, tx, 2.1), 3.6, 3.8, 4.6, sub.heading, STEEL_DARK);
-      for (const bx of [-1.0, 0, 1.0]) {
-        solids.strut(atSub(1.5 + bx, tx - 0.8, 4.0), atSub(1.5 + bx, tx - 0.8, 5.8), 0.18, 0.14, 6, INSULATOR_GLASS, true);
-        solids.strut(atSub(1.5 + bx, tx + 0.8, 4.0), atSub(1.5 + bx, tx + 0.8, 5.8), 0.18, 0.14, 6, INSULATOR_GLASS, true);
+      solids.orientedBox(atSub(1.5, tx, 2.55), 3.8, 3.9, 4.8, sub.heading, STEEL_DARK);
+      for (const bx of [-1.1, 0, 1.1]) {
+        solids.strut(atSub(1.5 + bx, tx - 0.85, 4.5), atSub(1.5 + bx, tx - 0.85, 6.3), 0.18, 0.14, 6, INSULATOR_GLASS, true);
+        solids.strut(atSub(1.5 + bx, tx + 0.85, 4.5), atSub(1.5 + bx, tx + 0.85, 6.3), 0.18, 0.14, 6, INSULATOR_GLASS, true);
       }
     }
     // Twin H-frame portal gantries facing the outgoing transmission line.
-    for (const gz of [-4.5, 6.5]) {
-      const pL0 = atSub(gz, -9.5, 0.2), pL1 = atSub(gz, -9.5, 11.5);
-      const pR0 = atSub(gz, 9.5, 0.2), pR1 = atSub(gz, 9.5, 11.5);
-      solids.strut(pL0, pL1, 0.22, 0.16, 4, STEEL_GALV, true);
-      solids.strut(pR0, pR1, 0.22, 0.16, 4, STEEL_GALV, true);
-      solids.strut(atSub(gz, -10.5, 10.6), atSub(gz, 10.5, 10.6), 0.18, 0.18, 4, STEEL_GALV, true);
+    for (const gz of [-4.5, 6.8]) {
+      const pL0 = atSub(gz, -9.5, 0.5), pL1 = atSub(gz, -9.5, 11.8);
+      const pR0 = atSub(gz, 9.5, 0.5), pR1 = atSub(gz, 9.5, 11.8);
+      solids.strut(pL0, pL1, 0.24, 0.18, 4, STEEL_GALV, true);
+      solids.strut(pR0, pR1, 0.24, 0.18, 4, STEEL_GALV, true);
+      solids.strut(atSub(gz, -10.6, 10.9), atSub(gz, 10.6, 10.9), 0.2, 0.2, 4, STEEL_GALV, true);
     }
+
+    // Connect 6 phase jumper conductors + overhead earth wire directly from the substation's outgoing portal gantry
+    // up to every connected terminal strain pylon so power lines visibly start at the substation!
+    for (const tc of plan.terminalConnections) {
+      if (tc.substation !== subIdx) continue;
+      const pylon = plan.pylons[tc.pylon];
+      if (!pylon) continue;
+      const jumpLen = Math.hypot(pylon.north - sub.north, pylon.east - sub.east);
+      if (jumpLen > 140) continue;
+      // Pick left/right sign on the gantry so phases never cross en route to `pylon`.
+      const toPylonBearing = Math.atan2(pylon.east - sub.east, pylon.north - sub.north);
+      const gantryZ = Math.cos(toPylonBearing - sub.heading) >= 0 ? 6.8 : -4.5;
+      const sideSense = Math.cos(pylon.heading - sub.heading) >= 0 ? 1 : -1;
+      const jumpSag = Math.max(0.8, 0.00018 * jumpLen * jumpLen);
+      for (let armIdx = 0; armIdx < PYLON_ARMS.length; armIdx++) {
+        for (const side of [-1, 1] as const) {
+          const gantryX = side * (3.0 + armIdx * 2.8);
+          const gPt = atSub(gantryZ, gantryX, 10.8);
+          pylonAttachWorld(pylon, armIdx, (side * sideSense) as -1 | 1, bPt);
+          addCatenary(cables, gPt, bPt, jumpSag, 0.04, 6, CABLE_ACSR);
+        }
+      }
+      addCatenary(cables, atSub(gantryZ, 0, 11.75), pylonAttachWorld(pylon, 0, 0, bPt), jumpSag * 0.75, 0.026, 6, GUY_WIRE_COL);
+    }
+
     // Yard security floodlight at night.
     lights.push({
-      position: atSub(-sub.depth * 0.2, 0, 9.5),
+      position: atSub(-sub.depth * 0.2, 0, 9.8),
       colorA: LIGHT_COLORS.metalHalide,
       lens: 0.35,
       cd: 3800,
       cdDay: 0,
-      height: 9.5,
+      height: 9.8,
     });
-  }
+  });
 
   // =========================================================================
   // 4. ALGORITHMIC RADIO & TELECOMMUNICATIONS MASTS
@@ -678,6 +1111,22 @@ export function buildInfrastructure(heightAt: HeightFn): InfrastructureResult {
       });
     }
   });
+
+  const concreteGeo = concrete.build();
+  if (concreteGeo) {
+    const concreteMat = new THREE.MeshStandardMaterial({
+      name: 'infra-concrete',
+      vertexColors: true,
+      roughness: 0.9,
+      metalness: 0.03,
+    });
+    materials.push(concreteMat);
+    const mesh = new THREE.Mesh(concreteGeo, concreteMat);
+    mesh.name = 'infra-dams';
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
 
   const solidGeo = solids.build();
   if (solidGeo) {

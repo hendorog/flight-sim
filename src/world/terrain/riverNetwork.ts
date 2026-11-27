@@ -15,7 +15,7 @@ import { cellEast, cellNorth, LAKE_RASTER, type Drainage, type DrainLine, type L
 import { channelCourse, courseSpline } from './erosion';
 import { COURSE_ON, courseBend } from './courses';
 import { bedWidth, breachOfCut, breachReachOf, channelHalfWidth, FallIndex, FEED_JOIN, flowOf, HEAD_START_AREA, REGIME, refineSteep, STREAM_SPACING, traceStreams, type Fall, type StreamLine, type StreamReport } from './streams';
-import { BRAID_SPAN, BRAID_WAVE, BRAID_WIG, BRAID_WIG_MIN, beltOffsets, bendOf, braidRows, braidStart, braidTwin, rowFrame, rowHit, twinHit, type BraidRibbon, fitSwing, formOf, hAt, layThread, sineAmplitude, stepWhite, threadDepth, type ThreadLaw } from './channelForm';
+import { BRAID_SPAN, BRAID_WAVE, BRAID_WIG, BRAID_WIG_MIN, beltOffsets, bendOf, braidAt, braidRows, braidStart, braidTwin, rowFrame, rowHit, twinHit, type BraidRibbon, fitSwing, formOf, hAt, layThread, sineAmplitude, stepWhite, threadDepth, type ThreadLaw } from './channelForm';
 import { bedGrain, shapeLines, type LineArrays, type ShapeInput, type ShapeReport } from './falls';
 import { buildFaults, FaultIndex } from './faults';
 import { pitchPool, type PitchReport } from './pitchPool';
@@ -1260,17 +1260,76 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     let steps = north.length - 1;
     const L = lines[li];
     if (L.joins >= 0) {
-      // Pull the last stretch onto the parent's channel at the confluence.
       const p = rivers[L.joins];
-      const j = nearestOnChannel(p, north[steps], east[steps]);
-      const dn = p.north[j] - north[steps];
-      const de = p.east[j] - east[steps];
-      // Over a stretch three times the gap (the parent's loop may swing a few hundred metres from its axis), so no kink.
-      const span = Math.min(total, Math.max(600, 3 * Math.hypot(dn, de)));
-      for (let k = 0; k <= steps; k++) {
-        const w = smooth(total - span, total, valleyS[k]);
-        north[k] += dn * w;
-        east[k] += de * w;
+      const wetEnd = pre[li].wet[pre[li].wet.length - 1] === 1;
+      if (!wetEnd && north.length >= 4 && p.s.length >= 2) {
+        const sTmp = new Float64Array(north.length);
+        for (let k = 1; k < north.length; k++) sTmp[k] = sTmp[k - 1] + Math.hypot(north[k] - north[k - 1], east[k] - east[k - 1]);
+        const j0 = nearestOnChannel(p, north[steps], east[steps]);
+        const ownHw = sampleAt(a.s, a.halfWidth, valleyS[steps]);
+        const cut = endAtReceiver(Float64Array.from(north), Float64Array.from(east), sTmp, p, p.s[j0], ownHw);
+        let joinS = p.s[j0];
+        if (cut && cut.i >= 3) {
+          north.length = cut.i + 1;
+          east.length = cut.i + 1;
+          valleyS.length = cut.i + 1;
+          steps = cut.i;
+          joinS = cut.s;
+          endTrims.n++;
+          endTrims.m += cut.trimmed;
+        }
+        const sCur = new Float64Array(north.length);
+        for (let k = 1; k < north.length; k++) sCur[k] = sCur[k - 1] + Math.hypot(north[k] - north[k - 1], east[k] - east[k - 1]);
+        const refIdx = Math.max(0, segmentAt(sCur, Math.max(0, sCur[steps] - 250)));
+        const refLvl = sampleAt(a.s, a.level, valleyS[refIdx]);
+        const curved = curveConfluence(
+          north,
+          east,
+          sCur,
+          p,
+          joinS,
+          ownHw,
+          refLvl,
+          8.5,
+          28,
+          (pn, pe, maxG) => !(pinned && pinned(pn, pe) <= 0) && runwayDistance(pn, pe) >= RUNWAY_CLEAR && mask.at(pn, pe) === -Infinity && carvedGround(smoothGround(pn, pe), pn, pe) <= maxG,
+        );
+        if (curved) {
+          const vsOrig = Float64Array.from(valleyS);
+          const idxOrig = Float64Array.from({ length: vsOrig.length }, (_, k) => k);
+          north.length = 0;
+          east.length = 0;
+          valleyS.length = 0;
+          for (let k = 0; k < curved.north.length; k++) {
+            north.push(curved.north[k]);
+            east.push(curved.east[k]);
+            valleyS.push(sampleAt(idxOrig, vsOrig, curved.pos[k]));
+          }
+          steps = north.length - 1;
+        } else {
+          const j = nearestOnChannel(p, north[steps], east[steps]);
+          const dn = p.north[j] - north[steps];
+          const de = p.east[j] - east[steps];
+          const endVs = valleyS[steps];
+          const span = Math.min(endVs, Math.max(600, 3 * Math.hypot(dn, de)));
+          for (let k = 0; k <= steps; k++) {
+            const w = endVs > 1e-6 ? smooth(endVs - span, endVs, valleyS[k]) : 1;
+            north[k] += dn * w;
+            east[k] += de * w;
+          }
+        }
+      } else {
+        // Pull the last stretch onto the parent's channel at the confluence.
+        const j = nearestOnChannel(p, north[steps], east[steps]);
+        const dn = p.north[j] - north[steps];
+        const de = p.east[j] - east[steps];
+        // Over a stretch three times the gap (the parent's loop may swing a few hundred metres from its axis), so no kink.
+        const span = Math.min(total, Math.max(600, 3 * Math.hypot(dn, de)));
+        for (let k = 0; k <= steps; k++) {
+          const w = smooth(total - span, total, valleyS[k]);
+          north[k] += dn * w;
+          east[k] += de * w;
+        }
       }
     }
     // Nothing may cross itself: a curl the pull onto the parent (or a loop the cutoffs missed) folds in is cut out.
@@ -1411,6 +1470,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     if (L.joins >= 0) {
       const p = rivers[L.joins];
       r.level[count - 1] = Math.min(r.level[count - 1], p.level[nearestOnChannel(p, r.north[count - 1], r.east[count - 1])]);
+      if (!P.wet[P.wet.length - 1]) mouthRamp(r.level, r.s);
     }
     const c = { north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, valleyS: r.valleyS };
     rivers[li] = c;
@@ -1607,10 +1667,10 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         }
         st.joinS = best;
       }
-      // A stream ends where it first reaches its receiver's bed (endAtReceiver). (A stream-only rule for now: a river's
-      // end is pulled onto its parent's channel above, and Part S builds the streams' own rule.)
+      // A stream ends where it first reaches its receiver's bed (endAtReceiver), then curves smoothly downstream into an
+      // acute confluence (curveConfluence) rather than poking perpendicular or backwards into its receiver.
       if (st.end !== 'lake') {
-        const cut = endAtReceiver(st.north, st.east, st.s, P, st.joinS);
+        const cut = endAtReceiver(st.north, st.east, st.s, P, st.joinS, st.halfWidth[m - 1]);
         if (cut) {
           const n = cut.i + 1;
           st.north = st.north.slice(0, n);
@@ -1628,22 +1688,63 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
           endTrims.m += cut.trimmed;
         }
       }
-      const k = Math.min(P.s.length - 2, Math.max(0, segmentAt(P.s, st.joinS)));
-      const u = Math.min(1, Math.max(0, (st.joinS - P.s[k]) / Math.max(1e-9, P.s[k + 1] - P.s[k])));
-      const dn = P.north[k] + (P.north[k + 1] - P.north[k]) * u - st.north[m - 1];
-      const de = P.east[k] + (P.east[k + 1] - P.east[k]) * u - st.east[m - 1];
-      // (A stream ending in the standing water its receiver runs through - a lake, or a pond the trace filled, which it
-      // joins at the spill - is on that water already: no gap to close.)
-      const gap = st.end === 'lake' ? 0 : Math.hypot(dn, de);
-      if (gap < 0.5) continue;
-      const total = st.s[m - 1];
-      const span = Math.min(total, Math.max(60, 3 * gap));
-      for (let i = 0; i < m; i++) {
-        const w = smooth(total - span, total, st.s[i]);
-        st.north[i] += dn * w;
-        st.east[i] += de * w;
+      let curvedDone = false;
+      if (st.end === 'channel' && m >= 3) {
+        const refIdx = Math.max(0, segmentAt(st.s, Math.max(0, st.s[m - 1] - 120)));
+        const curved = curveConfluence(
+          st.north,
+          st.east,
+          st.s,
+          P,
+          st.joinS,
+          st.halfWidth[m - 1],
+          st.level[refIdx],
+          5.5,
+          24,
+          (pn, pe, maxG) => !(pinned && pinned(pn, pe) <= 0) && runwayDistance(pn, pe) >= 900 && mask.at(pn, pe) === -Infinity && route(pn, pe) <= maxG,
+        );
+        if (curved) {
+          const idxOrig = Float64Array.from({ length: m }, (_, i) => i);
+          const atC = (arr: Float64Array): Float64Array => Float64Array.from(curved.pos, (v) => sampleAt(idxOrig, arr, v));
+          st.area = atC(st.area);
+          st.breach = atC(st.breach);
+          st.cut = atC(st.cut);
+          st.halfWidth = atC(st.halfWidth);
+          st.level = atC(st.level);
+          for (let i = 1; i < curved.north.length; i++) st.level[i] = Math.min(st.level[i], st.level[i - 1]);
+          if (st.held > 0) {
+            let h = 0;
+            while (h < curved.pos.length && curved.pos[h] <= st.held - 1 + 1e-6) h++;
+            st.held = Math.max(1, h);
+          }
+          st.north = curved.north;
+          st.east = curved.east;
+          const sCurved = new Float64Array(curved.north.length);
+          for (let i = 1; i < curved.north.length; i++) sCurved[i] = sCurved[i - 1] + Math.hypot(curved.north[i] - curved.north[i - 1], curved.east[i] - curved.east[i - 1]);
+          st.s = sCurved;
+          st.joinS = curved.joinS;
+          m = curved.north.length;
+          curvedDone = true;
+        }
       }
-      for (let i = 1; i < m; i++) st.s[i] = st.s[i - 1] + Math.hypot(st.north[i] - st.north[i - 1], st.east[i] - st.east[i - 1]);
+      if (!curvedDone) {
+        const k = Math.min(P.s.length - 2, Math.max(0, segmentAt(P.s, st.joinS)));
+        const u = Math.min(1, Math.max(0, (st.joinS - P.s[k]) / Math.max(1e-9, P.s[k + 1] - P.s[k])));
+        const dn = P.north[k] + (P.north[k + 1] - P.north[k]) * u - st.north[m - 1];
+        const de = P.east[k] + (P.east[k + 1] - P.east[k]) * u - st.east[m - 1];
+        // (A stream ending in the standing water its receiver runs through - a lake, or a pond the trace filled, which it
+        // joins at the spill - is on that water already: no gap to close.)
+        const gap = st.end === 'lake' ? 0 : Math.hypot(dn, de);
+        if (gap < 0.5) continue;
+        const total = st.s[m - 1];
+        const span = Math.min(total, Math.max(60, 3 * gap));
+        for (let i = 0; i < m; i++) {
+          const w = smooth(total - span, total, st.s[i]);
+          st.north[i] += dn * w;
+          st.east[i] += de * w;
+        }
+        for (let i = 1; i < m; i++) st.s[i] = st.s[i - 1] + Math.hypot(st.north[i] - st.north[i - 1], st.east[i] - st.east[i - 1]);
+      }
       // (And no curl the pull folds in: cut out, its samples' values at the cut taken along.)
       const nn = Array.from(st.north);
       const ee = Array.from(st.east);
@@ -2070,12 +2171,73 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     // FORM_RUN single-thread widths of the line either side - a reach's gradient read sample by sample steps where a
     // pitch or a riffle does, and its width would jump with it.)
     const runOf = (i: number): number => FORM_RUN * formWs(A[i]);
-    const phiS = smoothArc(c.s, phi, runOf);
-    const waS = smoothArc(c.s, waLaw, runOf);
-    // (Its threads, smoothed over at least 1.5 bed widths so braided reaches swell and taper organically without wedges.)
-    const braidRun = (i: number): number => Math.max(runOf(i), 1.5 * waLaw[i]);
-    const KS = lw.K.some((k) => k > 1) ? smoothArc(c.s, lw.K, braidRun) : null;
-    const shareS = KS ? smoothArc(c.s, lw.betaLaw, braidRun) : null;
+    let hasBraid = false;
+    for (let i = 0; i < m; i++) if (lw.K[i] > 1.01) { hasBraid = true; break; }
+    if (hasBraid) {
+      // Suppress isolated short (< 650 m / 12 Ws) or very weak braided blisters so reaches transition as coherent
+      // geomorphic units rather than 300 m sausage-link bulbs, then smooth with a 2-pass C1 tent kernel.
+      const betaClean = Float64Array.from(lw.betaLaw);
+      let idx = 0;
+      while (idx < m) {
+        if (!(betaClean[idx] > 0.02)) { idx++; continue; }
+        let j = idx + 1;
+        let peak = betaClean[idx];
+        let peakK = lw.K[idx];
+        while (j < m && betaClean[j] > 0.02) {
+          if (betaClean[j] > peak) peak = betaClean[j];
+          if (lw.K[j] > peakK) peakK = lw.K[j];
+          j++;
+        }
+        const minLen = Math.max(650, 12 * formWs(A[(idx + j) >> 1]));
+        if (c.s[j - 1] - c.s[idx] < minLen || peak < 0.22 || peakK < 1.35) {
+          for (let q = idx; q < j; q++) betaClean[q] = 0;
+        }
+        idx = j;
+      }
+      const bRun = (i: number): number => Math.max(380, 10 * formWs(A[i]));
+      const bPass1 = smoothArc(c.s, betaClean, bRun);
+      const bPass2 = smoothArc(c.s, bPass1, bRun);
+      let stillBraided = false;
+      for (let i = 0; i < m; i++) {
+        const ws = formWs(A[i]);
+        const Fq = Math.max(FLOOR_MIN, roomL[i] + roomR[i]);
+        const roomGate = smooth(1.5 * ws, 3.6 * ws, Fq);
+        const b = Math.min(bPass2[i], Math.max(betaClean[i], bPass2[i] * roomGate));
+        if (lw.betaLaw[i] > 1e-4) {
+          const keep = Math.min(1.2, b / lw.betaLaw[i]);
+          const waSingle = Math.min(waLaw[i], Math.max(ws, 1.85 * ws));
+          const wetOrig = phi[i] * waLaw[i];
+          const wetSingle = Math.min(wetOrig, ws);
+          const waNew = Math.min(Fq, waSingle + (waLaw[i] - waSingle) * keep);
+          const wetNew = wetSingle + (wetOrig - wetSingle) * Math.min(1, keep);
+          waLaw[i] = waNew;
+          phi[i] = Math.min(1, wetNew / Math.max(0.5, waNew));
+          lw.K[i] = 1 + (lw.K[i] - 1) * keep;
+        } else if (b > 0.01) {
+          const wetOrig = phi[i] * waLaw[i];
+          const waNew = Math.min(Fq, waLaw[i] + b * 2.2 * ws * roomGate);
+          waLaw[i] = waNew;
+          phi[i] = Math.min(1, (wetOrig * (1 + 0.18 * b * roomGate)) / Math.max(0.5, waNew));
+          lw.K[i] = 1 + b * 1.6 * roomGate;
+        } else {
+          lw.K[i] = 1;
+        }
+        lw.betaLaw[i] = b;
+        if (lw.K[i] > 1.01) stillBraided = true;
+      }
+      hasBraid = stillBraided;
+    }
+    const phiS0 = smoothArc(c.s, phi, runOf);
+    const phiS = hasBraid ? smoothArc(c.s, phiS0, runOf) : phiS0;
+    const waRun = (i: number): number => (hasBraid ? Math.max(runOf(i), 220, 1.8 * waLaw[i]) : runOf(i));
+    const waS0 = smoothArc(c.s, waLaw, waRun);
+    const waS = hasBraid ? smoothArc(c.s, waS0, waRun) : waS0;
+    // (Its threads, smoothed with two passes over at least 1.8 bed widths / 240 m so braided reaches funnel C1-smoothly.)
+    const braidRun = (i: number): number => Math.max(runOf(i), 240, 1.8 * waS[i]);
+    const KS0 = hasBraid ? smoothArc(c.s, lw.K, braidRun) : null;
+    const KS = KS0 ? smoothArc(c.s, KS0, braidRun) : null;
+    const sh0 = KS ? smoothArc(c.s, lw.betaLaw, braidRun) : null;
+    const shareS = sh0 ? smoothArc(c.s, sh0, braidRun) : null;
     const loc = Float64Array.from(phiS, (p, i) => 0.5 * p * waS[i]);
     const hw = Float64Array.from(loc);
     for (let i = 1; i < m; i++) hw[i] = Math.max(hw[i], hw[i - 1]);
@@ -2235,10 +2397,11 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         rawMidE[i] = c.east[i] + ((c.north[i1] - c.north[i0]) / tl) * xc;
         rawHb[i] = 0.5 * (out.bedR[i] + out.bedL[i]);
       }
-      const runW = (i: number): number => 2.4 * rawHb[i];
-      const smMidN = smoothArc(c.s, rawMidN, runW);
-      const smMidE = smoothArc(c.s, rawMidE, runW);
-      const smHb = smoothArc(c.s, rawHb, runW);
+      const runW = (i: number): number => Math.max(260, 2.6 * rawHb[i]);
+      const smMidN = smoothArc(c.s, smoothArc(c.s, rawMidN, runW), runW);
+      const smMidE = smoothArc(c.s, smoothArc(c.s, rawMidE, runW), runW);
+      const smHb0 = smoothArc(c.s, rawHb, runW);
+      const smHb = smoothArc(c.s, smHb0, (i) => Math.max(180, 1.6 * smHb0[i]));
       const bDir = braidRows(smMidN, smMidE, c.s, Float32Array.from(smHb));
       for (let i = 0; i < m; i++) {
         const bW = smooth(1.02, 1.5, L.K[i]);
@@ -2254,9 +2417,9 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     }
     formOfLine[li] = out;
   }
-  // At a junction the joining line's bed runs into its receiver's: its gravel beyond its water narrows to nothing over
-  // its last JOIN_BLEND of the receiver's bed widths (or its own, if wider), and its braid thread count tapers smoothly
-  // to 1 so the two beds blend instead of overlapping with square slab ends.
+  // At a junction the joining line's bed runs into its receiver's: its gravel beyond its water narrows to nothing BEFORE
+  // it crosses into the receiver's wet channel (so tributary gravel wings never overhang receiver water), and its braid
+  // thread count tapers smoothly to 1 so the two beds blend seamlessly.
   for (let li = 0; li < allLines.length; li++) {
     const j = joinsOf(li);
     if (j < 0) continue;
@@ -2267,16 +2430,21 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     const m = c.s.length;
     if (m < 2 || P.s.length < 2) continue;
     const pk = Math.min(P.s.length - 1, Math.max(0, segmentAt(P.s, joinSOf(li))));
-    const run = JOIN_BLEND * Math.max(fp.bedR[pk] + fp.bedL[pk], f.bedR[m - 1] + f.bedL[m - 1]);
+    const recWet = 0.5 * (fp.wetR[pk] + fp.wetL[pk]);
+    const recBed = fp.bedR[pk] + fp.bedL[pk];
+    const lead = Math.min(0.45 * c.s[m - 1], recWet + 0.5 * (f.wetR[m - 1] + f.wetL[m - 1]));
+    const run = JOIN_BLEND * Math.max(recBed, f.bedR[m - 1] + f.bedL[m - 1]) + lead;
     const end = c.s[m - 1];
+    const fullAt = Math.max(0, end - lead);
     const KS = lawLine[li].K;
     const sh = lawLine[li].share;
     for (let i = m - 1; i >= 0 && c.s[i] > end - run; i--) {
-      const t = smooth(end - run, end, c.s[i]);
-      f.bedR[i] += (f.wetR[i] + 0.3 - f.bedR[i]) * t;
-      f.bedL[i] += (f.wetL[i] + 0.3 - f.bedL[i]) * t;
-      if (KS) KS[i] += (1 - KS[i]) * t;
-      if (sh) sh[i] *= 1 - t;
+      const t = smooth(end - run, fullAt, c.s[i]);
+      f.bedR[i] += (f.wetR[i] + 0.2 - f.bedR[i]) * t;
+      f.bedL[i] += (f.wetL[i] + 0.2 - f.bedL[i]) * t;
+      const tk = smooth(end - run, end, c.s[i]);
+      if (KS) KS[i] += (1 - KS[i]) * tk;
+      if (sh) sh[i] *= 1 - tk;
     }
   }
   // A braided bed's threads (channelForm.ts braidAt): K at each sample, and the braid's phases along the line from a
@@ -2343,53 +2511,241 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     };
     formStats.braided += KS.filter((k) => k > 1.5).length;
   }
-  // A line crossing a braided receiver's wide gravel bed grades down to the receiver's water level at the bed's edge
-  // instead of carrying elevated banks across the shingle (preventing hanging crossing streams over braided bars).
-  // For minor streams (li >= nR), samples well inside the receiver's wide braided bed are flagged inBraid so water.ts
-  // stops their dark single-thread ribbon at the gravel margin (as inLake does at a lake shore).
+  // Confluence water-ribbon blending (mouthIn), active braided-thread connection (inBraid), and glacial rock-flour
+  // transport & catchment-weighted confluence mixing (glacial):
+  // - Into a braided receiver: grade down to the receiver's shingle level at the bed edge, trim dry bar wings so the
+  //   tributary flows across the outer gravel bar as a clean channel until it reaches the FIRST active wet braided thread
+  //   (main or secondary via braidAt), feather mouthIn 0 -> 1 into that thread, and set inBraid = 1 beyond it so it
+  //   neither chops off in dry shingle nor slices across bars past its confluence thread.
+  // - Into a single-thread receiver: match receiver water level inside the throat and feather mouthIn 0 -> 1 across the
+  //   receiver's wet width so overlapping ribbons never Z-fight or double-darken premultiplied alpha.
   const inBraidOf: Array<Uint8Array | undefined> = allLines.map(() => undefined);
+  const mouthInOf: Array<Float32Array | undefined> = allLines.map(() => undefined);
+  const braidCrossOf: Array<Float32Array | undefined> = allLines.map(() => undefined);
   for (let li = 0; li < allLines.length; li++) {
     const j = joinsOf(li);
-    if (j < 0) continue;
-    const bz = formOfLine[j].braid;
-    if (!bz) continue;
+    if (j < 0 || (li >= nR && streamEnds[li - nR] === 'lake')) continue;
     const c = allLines[li];
+    const f = formOfLine[li];
     const P = allLines[j];
+    const fp = formOfLine[j];
     const m = c.s.length;
     if (m < 2 || P.s.length < 2) continue;
-    const bw = bz.rows;
-    const jIdx = Math.min(P.s.length - 1, Math.max(0, segmentAt(P.s, joinSOf(li))));
-    let enter = -1;
-    let enterLvl = P.level[jIdx];
+    const jS = joinSOf(li);
+    const jIdx = Math.min(P.s.length - 1, Math.max(0, segmentAt(P.s, jS)));
+    const bz = fp.braid;
     const end = c.s[m - 1];
-    let ib: Uint8Array | undefined;
-    for (let i = m - 1; i >= 0 && end - c.s[i] <= 900; i--) {
-      const pn = c.north[i];
-      const pe = c.east[i];
-      if (rowFrame(bw.n, bw.e, bw.tn, bw.te, rowAt(bw.idx, jIdx), pn, pe) && braidTwin(bz.twin, rowHit.j, pn, pe) && twinHit.K > 1.1) {
-        const ri = bw.idx[Math.min(bw.idx.length - 1, Math.max(0, rowHit.j))];
-        const ri1 = bw.idx[Math.min(bw.idx.length - 1, Math.max(0, rowHit.j + 1))];
-        const rl = P.level[ri] + (P.level[ri1] - P.level[ri]) * Math.min(1, Math.max(0, rowHit.t));
-        if (c.level[i] > rl + 0.1) c.level[i] = rl + 0.1;
-        enter = i;
-        enterLvl = rl + 0.1;
-        // Flag minor stream samples more than 15 m inside a wide braided bed so their dark ribbon doesn't slice over gravel.
-        if (li >= nR && twinHit.hb > 45 && (1 - Math.abs(twinHit.u)) * twinHit.hb > 15) {
-          if (!ib) ib = new Uint8Array(m);
-          ib[i] = 1;
-        }
-      } else if (enter >= 0) break;
-    }
-    if (ib) inBraidOf[li] = ib;
-    if (enter > 0) {
-      // Grade smoothly upstream from the braided bed edge at no steeper than 15 % so there is no step at the bank.
-      for (let i = enter - 1; i >= 0; i--) {
-        const cap = enterLvl + 0.15 * (c.s[enter] - c.s[i]);
-        if (c.level[i] <= cap) break;
-        c.level[i] = cap;
+    if (bz && bz.K[jIdx] > 1.1) {
+      const bw = bz.rows;
+      let enter = -1;
+      let enterLvl = P.level[jIdx];
+      for (let i = m - 1; i >= 0 && end - c.s[i] <= 900; i--) {
+        const pn = c.north[i];
+        const pe = c.east[i];
+        if (rowFrame(bw.n, bw.e, bw.tn, bw.te, rowAt(bw.idx, jIdx), pn, pe) && braidTwin(bz.twin, rowHit.j, pn, pe) && twinHit.K > 1.05 && Math.abs(twinHit.u) <= 1.02) {
+          const ri = bw.idx[Math.min(bw.idx.length - 1, Math.max(0, rowHit.j))];
+          const ri1 = bw.idx[Math.min(bw.idx.length - 1, Math.max(0, rowHit.j + 1))];
+          const rl = P.level[ri] + (P.level[ri1] - P.level[ri]) * Math.min(1, Math.max(0, rowHit.t));
+          if (c.level[i] > rl + 0.08) c.level[i] = rl + 0.08;
+          enter = i;
+          enterLvl = rl + 0.08;
+        } else if (enter >= 0) break;
       }
-      // Keep downstream non-increasing across the braided bed to the mouth.
-      for (let i = enter + 1; i < m; i++) if (c.level[i] > c.level[i - 1]) c.level[i] = c.level[i - 1];
+      if (enter >= 0) {
+        if (enter > 0) {
+          for (let i = enter - 1; i >= 0; i--) {
+            const cap = enterLvl + 0.15 * (c.s[enter] - c.s[i]);
+            if (c.level[i] <= cap) break;
+            c.level[i] = cap;
+          }
+        }
+        for (let i = enter + 1; i < m; i++) if (c.level[i] > c.level[i - 1]) c.level[i] = c.level[i - 1];
+        // Walk from `enter` to `m - 1` across the braided bed to find the first active wet thread of P it joins.
+        let firstWet = m - 1;
+        let recLift = smooth(1.0, 1.65, bz.K[jIdx]);
+        for (let i = enter; i < m; i++) {
+          const pn = c.north[i];
+          const pe = c.east[i];
+          const trimT = smooth(c.s[enter], c.s[enter] + 18, c.s[i]);
+          f.bedR[i] += (f.wetR[i] + 0.12 - f.bedR[i]) * trimT;
+          f.bedL[i] += (f.wetL[i] + 0.12 - f.bedL[i]) * trimT;
+          if (rowFrame(bw.n, bw.e, bw.tn, bw.te, rowAt(bw.idx, jIdx), pn, pe) && braidTwin(bz.twin, rowHit.j, pn, pe) && twinHit.K > 1.05) {
+            recLift = Math.max(recLift, smooth(1.0, 1.65, twinHit.K));
+            const inMain = Math.abs(twinHit.u - twinHit.um) * twinHit.hb <= 0.9 * twinHit.w;
+            const inMinor = !inMain && braidAt(twinHit.u, twinHit.um, twinHit.hb, twinHit.K, twinHit.ph, twinHit.ps, 2 * twinHit.w) > 0.12;
+            if ((inMain || inMinor) && firstWet === m - 1) firstWet = i;
+          }
+        }
+        const bCross = new Float32Array(m);
+        const sEnter = c.s[enter];
+        for (let i = enter - 1; i >= 0 && sEnter - c.s[i] <= 45; i--) {
+          bCross[i] = recLift * 1.04 * smooth(sEnter - 45, sEnter, c.s[i]);
+        }
+        const mIn = new Float32Array(m);
+        const ownWet = Math.max(1.5, 0.5 * (f.wetR[firstWet] + f.wetL[firstWet]));
+        const sFeather0 = Math.max(c.s[enter], c.s[firstWet] - 0.5 * ownWet);
+        const sFeather1 = Math.min(end, c.s[firstWet] + Math.max(6, 2.2 * ownWet));
+        let ib: Uint8Array | undefined;
+        for (let i = enter; i < m; i++) {
+          bCross[i] = recLift * 1.04;
+          if (c.s[i] >= sFeather0) {
+            mIn[i] = sFeather1 > sFeather0 + 1e-3 ? smooth(sFeather0, sFeather1, c.s[i]) : 1;
+          }
+          if (li >= nR && i > firstWet + 1 && mIn[i] >= 0.98) {
+            if (!ib) ib = new Uint8Array(m);
+            ib[i] = 1;
+          }
+        }
+        mIn[m - 1] = 1;
+        mouthInOf[li] = mIn;
+        braidCrossOf[li] = bCross;
+        if (ib) inBraidOf[li] = ib;
+      }
+    } else {
+      // Single-thread receiver: walk nearest segment on P locally in O(1) per sample and feather mouthIn smoothly.
+      const q0 = Math.max(0, segmentAt(P.s, jS - 450));
+      const q1 = Math.min(P.s.length - 2, segmentAt(P.s, jS + 450));
+      let curK = Math.min(q1, Math.max(q0, jIdx));
+      let mIn: Float32Array | undefined;
+      let enterI = -1;
+      let enterLvl = P.level[jIdx];
+      const segDist2 = (k: number, pn: number, pe: number): { d2: number; t: number; side: number } => {
+        const an = P.north[k];
+        const ae = P.east[k];
+        const dn = P.north[k + 1] - an;
+        const de = P.east[k + 1] - ae;
+        const l2 = dn * dn + de * de;
+        const t = l2 > 0 ? Math.min(1, Math.max(0, ((pn - an) * dn + (pe - ae) * de) / l2)) : 0;
+        const qn = an + dn * t - pn;
+        const qe = ae + de * t - pe;
+        return { d2: qn * qn + qe * qe, t, side: dn * (pe - ae) - de * (pn - an) >= 0 ? 1 : -1 };
+      };
+      for (let i = m - 1; i >= 0 && end - c.s[i] <= 450; i--) {
+        const pn = c.north[i];
+        const pe = c.east[i];
+        let best = segDist2(curK, pn, pe);
+        for (let moved = true; moved; ) {
+          moved = false;
+          for (const dk of [-4, -1, 1, 4]) {
+            const rk = curK + dk;
+            if (rk < q0 || rk > q1) continue;
+            const cand = segDist2(rk, pn, pe);
+            if (cand.d2 < best.d2) {
+              best = cand;
+              curK = rk;
+              moved = true;
+            }
+          }
+        }
+        const dP = Math.sqrt(best.d2);
+        const wetSide = best.side > 0 ? fp.wetR : fp.wetL;
+        const wetP = wetSide[curK] + (wetSide[curK + 1] - wetSide[curK]) * best.t;
+        const ownWet = Math.max(1.2, 0.5 * (f.wetR[i] + f.wetL[i]));
+        const rl = P.level[curK] + (P.level[curK + 1] - P.level[curK]) * best.t;
+        if (dP <= wetP + 0.85 * ownWet) {
+          // Trim any remaining dry gravel wings before touching receiver water.
+          const wTrim = smooth(wetP + 0.85 * ownWet, wetP + 0.15 * ownWet, dP);
+          f.bedR[i] += (f.wetR[i] + 0.12 - f.bedR[i]) * wTrim;
+          f.bedL[i] += (f.wetL[i] + 0.12 - f.bedL[i]) * wTrim;
+          if (c.level[i] > rl + 0.05) c.level[i] = rl + 0.05;
+          enterI = i;
+          enterLvl = rl + 0.05;
+        }
+        const outer = wetP + 0.25 * ownWet;
+        const inner = Math.max(0, wetP - 1.15 * ownWet);
+        if (dP < outer) {
+          if (!mIn) mIn = new Float32Array(m);
+          mIn[i] = outer > inner + 1e-3 ? smooth(outer, inner, dP) : 1;
+        } else if (enterI >= 0 && dP > wetP + 2 * ownWet) break;
+      }
+      if (enterI > 0) {
+        for (let i = enterI - 1; i >= 0; i--) {
+          const cap = enterLvl + 0.15 * (c.s[enterI] - c.s[i]);
+          if (c.level[i] <= cap) break;
+          c.level[i] = cap;
+        }
+        for (let i = enterI + 1; i < m; i++) if (c.level[i] > c.level[i - 1]) c.level[i] = c.level[i - 1];
+      }
+      if (!mIn) mIn = new Float32Array(m);
+      mIn[m - 1] = 1;
+      mouthInOf[li] = mIn;
+    }
+  }
+  // Propagate glacial rock-flour turbidity (0..1) down the river network in topological order (tributaries before
+  // receivers) with 24 km settling decay and catchment-weighted confluence mixing so glacial braided tributaries colour
+  // their downstream gorges and confluences realistically.
+  const glacialOf: Float32Array[] = new Array(allLines.length);
+  {
+    const nL = allLines.length;
+    const hopD = new Int32Array(nL);
+    for (let li = 0; li < nL; li++) {
+      let cur = li;
+      let h = 0;
+      while (joinsOf(cur) >= 0 && h < nL) {
+        cur = joinsOf(cur);
+        h++;
+      }
+      hopD[li] = h;
+    }
+    const topo = Array.from({ length: nL }, (_, li) => li).sort((a, b) => hopD[b] - hopD[a] || a - b);
+    const inflows: Array<Array<{ s: number; a: number; g: number; li: number }>> = Array.from({ length: nL }, () => []);
+    for (const li of topo) {
+      const c = allLines[li];
+      const A = channelArea[li];
+      const KS = formOfLine[li].braid?.K;
+      const m = c.s.length;
+      const gl = new Float32Array(m);
+      const inc = inflows[li];
+      // Fast O(1) skip for non-glacial minor streams (no braiding, below alpine rock-flour elevation or < 8 km², no glacial inflows).
+      if (!KS && inc.length === 0 && (c.level[0] <= 950 || A[m - 1] <= 8)) {
+        glacialOf[li] = gl;
+        continue;
+      }
+      if (inc.length > 1) inc.sort((u, v) => u.s - v.s);
+      let ptr = 0;
+      let g = 0;
+      let inPond = false;
+      for (let i = 0; i < m; i++) {
+        if (i > 0 && g > 1e-4) {
+          const ds = Math.max(0, c.s[i] - c.s[i - 1]);
+          if ((i & 7) === 1) inPond = mask.at(c.north[i], c.east[i]) > -Infinity;
+          g *= Math.max(0, 1 - ds / (inPond ? 3500 : 24000));
+        }
+        const kVal = KS ? KS[i] : 1;
+        const gSrc = Math.max(kVal > 1.06 ? smooth(1.06, 2.0, kVal) : 0, c.level[i] > 950 && A[i] > 8 ? 0.38 * smooth(950, 1550, c.level[i]) * smooth(8, 55, A[i]) : 0);
+        if (gSrc > g) g = gSrc;
+        if (ptr < inc.length && inc[ptr].s <= c.s[i] + 1e-3) {
+          let sumA = 0;
+          let sumAG = 0;
+          while (ptr < inc.length && inc[ptr].s <= c.s[i] + 1e-3) {
+            sumA += inc[ptr].a;
+            sumAG += inc[ptr].a * inc[ptr].g;
+            ptr++;
+          }
+          const ownA = Math.max(0.05, (i > 0 ? Math.min(A[i - 1], Math.max(0.05, A[i] - sumA)) : Math.max(0.05, A[i] - sumA)));
+          g = (ownA * g + sumAG) / (ownA + sumA);
+        }
+        gl[i] = g;
+      }
+      glacialOf[li] = gl;
+      const j = joinsOf(li);
+      if (j >= 0 && m > 0 && gl[m - 1] > 1e-3) {
+        inflows[j].push({ s: joinSOf(li), a: Math.max(0.05, A[m - 1]), g: gl[m - 1], li });
+      }
+    }
+    // Feather each tributary's final wet mouth toward its receiver's mixed water tint so confluences plume smoothly.
+    for (let li = 0; li < nL; li++) {
+      const j = joinsOf(li);
+      const mIn = mouthInOf[li];
+      if (j < 0 || !mIn) continue;
+      const P = allLines[j];
+      const pGl = glacialOf[j];
+      const gl = glacialOf[li];
+      const pk = Math.min(P.s.length - 1, Math.max(0, segmentAt(P.s, joinSOf(li) + 25)));
+      const targetG = pGl[pk];
+      for (let i = 0; i < gl.length; i++) {
+        if (mIn[i] > 0) gl[i] += (targetG - gl[i]) * 0.7 * mIn[i];
+      }
     }
   }
   formMs.form = performance.now() - tForm0;
@@ -2546,35 +2902,78 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
     out.beyondSource = 0;
     let best = -1;
     let bestD = Infinity;
-    // When asked for the bed as drawn (out.bedFrame), check every braided line in reach so a small crossing tributary
-    // never shadows a wide braided gravel bed and lets trees/shelterbelts/canopy onto the shingle.
-    let braidHit = false;
-    let braidAbsU = Infinity;
-    let braidU = 0;
-    let braidHb = 0;
-    let braidLevel = 0;
-    let braidHw = 0;
-    let braidS = 0;
+    // When asked for the bed as drawn (out.bedFrame), rank all candidate channels (both braided beds and single-thread
+    // point bars) by signed distance from their gravel bed edge (|sDist| - bed) so a narrow joining tributary never
+    // shadows a trunk river's wide gravel bar, and subtle confluence fillets round meeting bed edges cleanly.
+    let bfFound = false;
+    let bfMargin = Infinity;
+    let bfSecondMargin = Infinity;
+    let bfDist = 0;
+    let bfSide = 0;
+    let bfBed = 0;
+    let bfShift = 0;
+    let bfLevel = 0;
+    let bfHw = 0;
+    let bfS = 0;
+    let bfBeyond = 0;
     wideIndex.perLine(pn, pe, (li, i, t, dist, side, u) => {
       const fm = formOfLine[li];
-      if (out.bedFrame && fm?.braid) {
+      const inReach = li < nR || dist <= STREAM_REACH;
+      if (out.bedFrame && fm && inReach) {
+        const r = allLines[li];
+        let cDist = dist;
+        let cSide = side;
+        let cBed = 0;
+        let cShift = 0;
+        let cLevel = r.level[i] + (r.level[i + 1] - r.level[i]) * t;
+        const cHw = r.halfWidth[i] + (r.halfWidth[i + 1] - r.halfWidth[i]) * t;
+        const cS = r.s[i] + (r.s[i + 1] - r.s[i]) * t;
+        let cBeyond = i === 0 && u < 0 ? -u * Math.hypot(r.north[1] - r.north[0], r.east[1] - r.east[0]) : 0;
+        let usedBraid = false;
         const bz = fm.braid;
-        if ((bz.K[i] > 1 || bz.K[i + 1] > 1) && rowFrame(bz.rows.n, bz.rows.e, bz.rows.tn, bz.rows.te, rowAt(bz.rows.idx, i), pn, pe) && braidTwin(bz.twin, rowHit.j, pn, pe) && twinHit.K > 1) {
-          const au = Math.abs(twinHit.u);
-          if (au < braidAbsU) {
-            const r = allLines[li];
-            braidHit = true;
-            braidAbsU = au;
-            braidU = twinHit.u;
-            braidHb = twinHit.hb;
-            braidLevel = twinHit.level || (r.level[i] + (r.level[i + 1] - r.level[i]) * t);
-            braidHw = r.halfWidth[i] + (r.halfWidth[i + 1] - r.halfWidth[i]) * t;
-            braidS = r.s[i] + (r.s[i + 1] - r.s[i]) * t;
+        if (bz && (bz.K[i] > 1 || bz.K[i + 1] > 1) && rowFrame(bz.rows.n, bz.rows.e, bz.rows.tn, bz.rows.te, rowAt(bz.rows.idx, i), pn, pe) && braidTwin(bz.twin, rowHit.j, pn, pe) && twinHit.K > 1) {
+          cDist = Math.abs(twinHit.u) * twinHit.hb;
+          cSide = twinHit.u >= 0 ? 1 : -1;
+          cBed = twinHit.hb;
+          cShift = 0;
+          cLevel = twinHit.level || cLevel;
+          cBeyond = 0;
+          usedBraid = true;
+        }
+        if (!usedBraid) {
+          let bR = fm.bedR[i] + (fm.bedR[i + 1] - fm.bedR[i]) * t;
+          let bL = fm.bedL[i] + (fm.bedL[i + 1] - fm.bedL[i]) * t;
+          if (out.smooth && out.smooth > 0) {
+            const ci = bedSum[li];
+            const s0 = Math.max(0, cS - out.smooth);
+            const s1 = Math.min(r.s[r.s.length - 1], cS + out.smooth);
+            if (s1 - s0 > 1) {
+              bR = (lerpS(r.s, ci.R, s1) - lerpS(r.s, ci.R, s0)) / (s1 - s0);
+              bL = (lerpS(r.s, ci.L, s1) - lerpS(r.s, ci.L, s0)) / (s1 - s0);
+            }
           }
+          cBed = 0.5 * (bR + bL);
+          cShift = 0.5 * (bR - bL);
+        }
+        const margin = Math.max(Math.abs(cDist * cSide - cShift) - cBed, cBeyond > 0 ? cBeyond : -Infinity);
+        if (margin < bfMargin) {
+          bfSecondMargin = bfMargin;
+          bfMargin = margin;
+          bfFound = true;
+          bfDist = cDist;
+          bfSide = cSide;
+          bfBed = cBed;
+          bfShift = cShift;
+          bfLevel = cLevel;
+          bfHw = cHw;
+          bfS = cS;
+          bfBeyond = cBeyond;
+        } else if (margin < bfSecondMargin) {
+          bfSecondMargin = margin;
         }
       }
       // A stream counts within its own reach only (its segments are listed no further out).
-      if (dist < bestD && (li < nR || dist <= STREAM_REACH)) {
+      if (!out.bedFrame && dist < bestD && inReach) {
         bestD = dist;
         best = li;
         const r = allLines[li];
@@ -2584,9 +2983,6 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
         out.halfWidth = r.halfWidth[i] + (r.halfWidth[i + 1] - r.halfWidth[i]) * t;
         out.s = r.s[i] + (r.s[i + 1] - r.s[i]) * t;
         out.beyondSource = i === 0 && u < 0 ? -u * Math.hypot(r.north[1] - r.north[0], r.east[1] - r.east[0]) : 0;
-        // (A line's bed about its middle: the ground shader paints it, the trees keep off it. Asked for it smoothed
-        // along the line - a coarse tile's vertices, `out.smooth` m apart - its edges' mean over that much of the line
-        // either side: the bars and bays between two vertices are not drawn as spikes.)
         let bR = fm.bedR[i] + (fm.bedR[i + 1] - fm.bedR[i]) * t;
         let bL = fm.bedL[i] + (fm.bedL[i + 1] - fm.bedL[i]) * t;
         if (out.smooth && out.smooth > 0) {
@@ -2603,15 +2999,19 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       }
       return false;
     });
-    if (braidHit) {
-      out.dist = braidAbsU * braidHb;
-      out.side = braidU >= 0 ? 1 : -1;
-      out.bedShift = 0;
-      out.bed = braidHb;
-      out.level = braidLevel;
-      out.halfWidth = braidHw;
-      out.s = braidS;
-      out.beyondSource = 0;
+    if (out.bedFrame && bfFound && bfDist <= CHANNEL_REACH) {
+      if (bfBeyond === 0 && bfSecondMargin < 16 && Math.abs(bfMargin) < 16) {
+        const filleted = sminN(bfMargin, bfSecondMargin, 6);
+        bfBed += bfMargin - filleted;
+      }
+      out.dist = bfDist;
+      out.side = bfSide;
+      out.bedShift = bfShift;
+      out.bed = bfBed;
+      out.level = bfLevel;
+      out.halfWidth = bfHw;
+      out.s = bfS;
+      out.beyondSource = bfBeyond;
       return out;
     }
     if (best >= 0 && bestD <= CHANNEL_REACH) return out;
@@ -2706,7 +3106,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       ? { north: mainAxis.north, east: mainAxis.east, level: mainAxis.level, floodplain: mainAxis.floodplain, s: mainAxis.s }
       : { north: new Float64Array(0), east: new Float64Array(0), level: new Float64Array(0), floodplain: new Float64Array(0), s: new Float64Array(0) },
     oxbows,
-    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR] } : {}), ...(inBraidOf[li] ? { inBraid: inBraidOf[li] } : {}), breach: (r as { breach: Float64Array }).breach, cut: (r as { cut: Float64Array }).cut, area: channelArea[li], ...flows[li], grain: grains[li], ...(pitchOf[li] ? { sigma: pitchOf[li]!.sigma, pitchOn: pitchOf[li]!.on } : {}), bedR: formOfLine[li].bedR, bedL: formOfLine[li].bedL, wetR: formOfLine[li].wetR, wetL: formOfLine[li].wetL, depth: formOfLine[li].depth, ...(formOfLine[li].braid ? { braidK: formOfLine[li].braid!.K, braidShare: formOfLine[li].braid!.share, braidPh: formOfLine[li].braid!.ph, braidPs: formOfLine[li].braid!.ps, braidTn: formOfLine[li].braid!.tn, braidTe: formOfLine[li].braid!.te, braidRow: formOfLine[li].braid!.row } : {}) })),
+    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR] } : {}), ...(inBraidOf[li] ? { inBraid: inBraidOf[li] } : {}), ...(mouthInOf[li] ? { mouthIn: mouthInOf[li] } : {}), ...(braidCrossOf[li] ? { braidCross: braidCrossOf[li] } : {}), glacial: glacialOf[li], breach: (r as { breach: Float64Array }).breach, cut: (r as { cut: Float64Array }).cut, area: channelArea[li], ...flows[li], grain: grains[li], ...(pitchOf[li] ? { sigma: pitchOf[li]!.sigma, pitchOn: pitchOf[li]!.on } : {}), bedR: formOfLine[li].bedR, bedL: formOfLine[li].bedL, wetR: formOfLine[li].wetR, wetL: formOfLine[li].wetL, depth: formOfLine[li].depth, ...(formOfLine[li].braid ? { braidK: formOfLine[li].braid!.K, braidShare: formOfLine[li].braid!.share, braidPh: formOfLine[li].braid!.ph, braidPs: formOfLine[li].braid!.ps, braidTn: formOfLine[li].braid!.tn, braidTe: formOfLine[li].braid!.te, braidRow: formOfLine[li].braid!.row } : {}) })),
     falls,
     faults,
     queryFlow,
@@ -3150,7 +3550,7 @@ export const endTrims = { n: 0, m: 0 };
  * course traced on ground that does not carry the receiver's bed ran on inside it, over the receiver's water (seed
  * 777777's home field: a stream 4.5 m over its river, 20 m from the river's thread for 250 m).
  */
-function endAtReceiver(north: Float64Array, east: Float64Array, s: Float64Array, P: { north: Float64Array; east: Float64Array; s: Float64Array; halfWidth: Float64Array }, joinS: number): { i: number; s: number; trimmed: number } | null {
+function endAtReceiver(north: Float64Array, east: Float64Array, s: Float64Array, P: { north: Float64Array; east: Float64Array; s: Float64Array; halfWidth: Float64Array }, joinS: number, ownHw = 0): { i: number; s: number; trimmed: number } | null {
   const m = north.length;
   const np = P.s.length;
   if (m < 3 || np < 2) return null;
@@ -3172,10 +3572,161 @@ function endAtReceiver(north: Float64Array, east: Float64Array, s: Float64Array,
         if (d < best) (best = d), (q = r), (moved = true);
       }
     }
-    if (best < 2 * P.halfWidth[q]) (first = i), (firstQ = q);
+    if (best < Math.max(2 * P.halfWidth[q], 1.25 * (P.halfWidth[q] + ownHw))) (first = i), (firstQ = q);
   }
   if (first < 1 || first >= m - 1) return null;
   return { i: first, s: P.s[firstQ], trimmed: total - s[first] };
+}
+
+/**
+ * Curves and pulls a joining tributary's final reach smoothly downstream into an acute Y-confluence (~25-38 deg) on
+ * receiver `P` using a C1 cubic Hermite arc, shifting the mouth downstream along `P` when the tributary approaches
+ * perpendicularly or backwards (cosA < 0.78) whenever the floodplain floor (`canPass`) allows.
+ */
+function curveConfluence(
+  north: ArrayLike<number>,
+  east: ArrayLike<number>,
+  s: Float64Array,
+  P: { north: Float64Array; east: Float64Array; s: Float64Array; level: Float64Array; halfWidth: Float64Array },
+  joinS: number,
+  ownHw: number,
+  refLevel: number,
+  maxRise: number,
+  stepM: number,
+  canPass: (pn: number, pe: number, maxGround: number) => boolean,
+): { north: Float64Array; east: Float64Array; pos: Float64Array; joinS: number } | null {
+  const m = north.length;
+  const np = P.s.length;
+  if (m < 3 || np < 2) return null;
+  const total = s[m - 1];
+  if (total < 35) return null;
+  const pPoint = (sv: number): { n: number; e: number; tn: number; te: number; lv: number; hw: number } => {
+    const sc = Math.max(0, Math.min(P.s[np - 1], sv));
+    const k = Math.min(np - 2, Math.max(0, segmentAt(P.s, sc)));
+    const segL = Math.max(1e-9, P.s[k + 1] - P.s[k]);
+    const u = Math.min(1, Math.max(0, (sc - P.s[k]) / segL));
+    const k0 = Math.max(0, segmentAt(P.s, sc - 35));
+    const k1 = Math.min(np - 1, segmentAt(P.s, sc + 35) + 1);
+    const dtn = P.north[k1] - P.north[k0];
+    const dte = P.east[k1] - P.east[k0];
+    const dtl = Math.hypot(dtn, dte) || 1;
+    return {
+      n: P.north[k] + (P.north[k + 1] - P.north[k]) * u,
+      e: P.east[k] + (P.east[k + 1] - P.east[k]) * u,
+      tn: dtn / dtl,
+      te: dte / dtl,
+      lv: P.level[k] + (P.level[k + 1] - P.level[k]) * u,
+      hw: P.halfWidth[k] + (P.halfWidth[k + 1] - P.halfWidth[k]) * u,
+    };
+  };
+  const p0 = pPoint(joinS);
+  const gap = Math.hypot(p0.n - north[m - 1], p0.e - east[m - 1]);
+  const look = Math.min(0.6 * total, Math.max(40, 3 * (p0.hw + ownHw), 1.5 * gap));
+  const iLook = segmentAt(s, Math.max(0, total - look));
+  const atn = north[m - 1] - north[iLook];
+  const ate = east[m - 1] - east[iLook];
+  const atl = Math.hypot(atn, ate) || 1;
+  const cosA = (atn / atl) * p0.tn + (ate / atl) * p0.te;
+  if (cosA >= 0.78 && gap < 0.5) return null;
+
+  const turnSpan = cosA < 0.78 ? Math.max(60, 5.2 * ownHw + 1.1 * p0.hw) * (0.45 + 0.55 * Math.max(0, 0.8 - cosA)) : 0;
+  const span = Math.min(0.72 * total, Math.max(55, 2.8 * gap, turnSpan));
+  const iStart = Math.min(m - 2, Math.max(0, segmentAt(s, total - span)));
+  const An = north[iStart];
+  const Ae = east[iStart];
+  const iT0 = Math.max(0, iStart - 1);
+  const iT1 = Math.min(m - 1, iStart + 1);
+  const d0n = north[iT1] - north[iT0];
+  const d0e = east[iT1] - east[iT0];
+  const d0l = Math.hypot(d0n, d0e) || 1;
+  const t0n = d0n / d0l;
+  const t0e = d0e / d0l;
+
+  // Project A onto receiver P around joinS to determine approach side (+1 right bank, -1 left bank) and forward arc.
+  const qLo = Math.max(0, segmentAt(P.s, joinS - 450));
+  const qHi = Math.min(np - 1, segmentAt(P.s, joinS + 450) + 1);
+  let qNear = Math.min(qHi, Math.max(qLo, segmentAt(P.s, joinS)));
+  let bd2 = Infinity;
+  for (let q = qLo; q <= qHi; q++) {
+    const d2 = (P.north[q] - An) ** 2 + (P.east[q] - Ae) ** 2;
+    if (d2 < bd2) {
+      bd2 = d2;
+      qNear = q;
+    }
+  }
+  const pA = pPoint(P.s[qNear]);
+  const prnA = -pA.te;
+  const preA = pA.tn;
+  const sideProj = (An - pA.n) * prnA + (Ae - pA.e) * preA;
+  const fromSide = Math.abs(sideProj) > 1 ? (sideProj >= 0 ? 1 : -1) : ((atn / atl) * prnA + (ate / atl) * preA) <= 0 ? 1 : -1;
+  const sProjA = P.s[qNear] + (An - pA.n) * pA.tn + (Ae - pA.e) * pA.te;
+  const latD = Math.abs(sideProj);
+  const theta = cosA >= 0.78 ? Math.max(0.32, Math.acos(Math.min(1, cosA))) : 0.56 + 0.14 * Math.max(0, -cosA);
+  const shiftCap = Math.min(240, Math.max(55, 5.2 * ownHw + 1.2 * p0.hw));
+  const sDesired = Math.min(P.s[np - 1] - 2, Math.max(joinS, sProjA + Math.max(28, 1.15 * latD, 0.45 * (total - s[iStart]))));
+  const maxShift = Math.min(shiftCap, Math.max(0, sDesired - joinS));
+
+  for (const scale of [1.0, 0.65, 0.35, 0.0]) {
+    if (scale === 0 && cosA >= 0.78) break;
+    const sCand = Math.min(P.s[np - 1] - 1, joinS + scale * maxShift);
+    const pM = pPoint(sCand);
+    const chord = Math.hypot(pM.n - An, pM.e - Ae);
+    if (chord < 8) continue;
+    const prn = -pM.te;
+    const pre = pM.tn;
+    const t1n = Math.cos(theta) * pM.tn - fromSide * Math.sin(theta) * prn;
+    const t1e = Math.cos(theta) * pM.te - fromSide * Math.sin(theta) * pre;
+    const m0 = 0.75 * chord;
+    const m1 = 0.82 * chord;
+    const maxG = Math.max(refLevel, pM.lv) + maxRise;
+    let ok = true;
+    for (const u of [0.35, 0.7, 0.16, 0.52, 0.86]) {
+      const u2 = u * u;
+      const u3 = u2 * u;
+      const h00 = 2 * u3 - 3 * u2 + 1;
+      const h10 = u3 - 2 * u2 + u;
+      const h01 = -2 * u3 + 3 * u2;
+      const h11 = u3 - u2;
+      const hn = h00 * An + h10 * m0 * t0n + h01 * pM.n + h11 * m1 * t1n;
+      const he = h00 * Ae + h10 * m0 * t0e + h01 * pM.e + h11 * m1 * t1e;
+      // Inside receiver's immediate carved corridor (< 2.2 * hw), terrain check is always safe; outside check canPass.
+      const latM = ((hn - pM.n) * prn + (he - pM.e) * pre) * fromSide;
+      if (u <= 0.75 && latM < -0.35 * pM.hw) {
+        ok = false;
+        break;
+      }
+      if (Math.hypot(hn - pM.n, he - pM.e) > 2.2 * pM.hw + 12 && !canPass(hn, he, maxG)) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok) continue;
+    const nSteps = Math.max(3, Math.min(48, Math.ceil((1.15 * chord) / stepM)));
+    const outLen = iStart + 1 + nSteps;
+    const nOut = new Float64Array(outLen);
+    const eOut = new Float64Array(outLen);
+    const pOut = new Float64Array(outLen);
+    for (let i = 0; i <= iStart; i++) {
+      nOut[i] = north[i];
+      eOut[i] = east[i];
+      pOut[i] = i;
+    }
+    for (let q = 1; q <= nSteps; q++) {
+      const u = q / nSteps;
+      const u2 = u * u;
+      const u3 = u2 * u;
+      const h00 = 2 * u3 - 3 * u2 + 1;
+      const h10 = u3 - 2 * u2 + u;
+      const h01 = -2 * u3 + 3 * u2;
+      const h11 = u3 - u2;
+      const idx = iStart + q;
+      nOut[idx] = q === nSteps ? pM.n : h00 * An + h10 * m0 * t0n + h01 * pM.n + h11 * m1 * t1n;
+      eOut[idx] = q === nSteps ? pM.e : h00 * Ae + h10 * m0 * t0e + h01 * pM.e + h11 * m1 * t1e;
+      pOut[idx] = iStart + (m - 1 - iStart) * u;
+    }
+    return { north: nOut, east: eOut, pos: pOut, joinS: sCand };
+  }
+  return null;
 }
 
 /** A joining line's water comes down to its receiver's at no steeper than MOUTH_GRADE, over at most MOUTH_RUN m (mouthRamp). */

@@ -10,7 +10,9 @@
 import { worldSeed } from '../worldSeed';
 import * as THREE from 'three';
 import type { QualityLevel, SimContext, Subsystem } from '../../core/context';
+import { infrastructureClearings, planInfrastructure } from '../airport/infrastructurePlan';
 import { findTownSite } from '../airport/valley';
+import { corridorClearings, setCorridorClearings } from './corridorMask';
 import { hydrology, seededModel, snowShiftM, terrainHeight } from './heightfield';
 import { morphWindow, nodeKey, nodeSize, NodeRefPool, selectNodes, type LodSettings, type LodView, type NodeRef } from './quadtree';
 import { CANOPY_HEIGHT, createTerrainDepthMaterial, createTerrainMaterial, MAX_LEVELS, updateVillageUniforms, setTerrainDebug, setTerrainDetail, type TerrainUniforms } from './terrainMaterial';
@@ -25,7 +27,7 @@ import { RillSystem } from './RillSystem';
 import { rillsOn } from './rillShader';
 import { setTownSite, townSite } from './townMask';
 import { era, isPresent } from '../era/eraState';
-import { createFallGeometries, createRiverGeometry, createRiverNetworkGeometries, createWaterGeometry, createWaterMaterial, SMALL_RIBBON_RANGE, type SmallRibbonChunk, type WaterUniforms } from './water';
+import { createFallGeometries, createReservoirGeometries, createRiverGeometry, createRiverNetworkGeometries, createWaterGeometry, createWaterMaterial, SMALL_RIBBON_RANGE, type SmallRibbonChunk, type WaterUniforms } from './water';
 import { WorkerPool } from './workerPool';
 
 interface QualityPreset {
@@ -89,6 +91,8 @@ export class TerrainSystem implements Subsystem {
   /** A seeded world's falls (curtains and pool foam, then spray) and their materials (water.ts createFallGeometries). */
   private readonly falls: THREE.Mesh[] = [];
   private readonly fallMaterials: THREE.Material[] = [];
+  /** Impounded hydro-dam reservoir lakes (present day, where narrow gorges with large catchments were dammed). */
+  private readonly reservoirs: THREE.Mesh[] = [];
   private indices!: THREE.BufferAttribute;
   private vegetation: VegetationSystem | null = null;
   /** Boulder fields along fast water (a seeded world's only: it needs the channels' flow). */
@@ -164,8 +168,23 @@ export class TerrainSystem implements Subsystem {
     // Keep woodland and crop fields off the valley town (the airport module builds it on the site
     // findTownSite picks for this terrain); the workers need it before their first job.
     // (Not in an era without the town, whatever the option says.)
-    if (this.options.town !== false && era().terrain.town) setTownSite(findTownSite(terrainHeight));
-    this.pool.broadcast({ kind: 'setup', town: townSite(), era: era().id, seed: worldSeed(), snowShift: snowShiftM(), model: seededModel() });
+    const infraPlan =
+      this.options.town !== false && era().terrain.town ? planInfrastructure(terrainHeight) : null;
+    if (infraPlan) {
+      setTownSite(findTownSite(terrainHeight));
+      setCorridorClearings(infrastructureClearings(infraPlan));
+    } else {
+      setCorridorClearings(null);
+    }
+    this.pool.broadcast({
+      kind: 'setup',
+      town: townSite(),
+      corridors: corridorClearings(),
+      era: era().id,
+      seed: worldSeed(),
+      snowShift: snowShiftM(),
+      model: seededModel(),
+    });
     this.uploader = new GeometryUploader(ctx.renderer);
     this.textures = createTerrainTextures(ctx.renderer);
     if (rillsOn()) this.rills = new RillSystem(this.pool);
@@ -197,6 +216,14 @@ export class TerrainSystem implements Subsystem {
           this.falls.push(m);
           this.waterGroup.add(m);
         }
+      }
+    }
+    if (infraPlan && infraPlan.dams.length > 0) {
+      for (const g of createReservoirGeometries(infraPlan.dams)) {
+        const m = new THREE.Mesh(g, this.waterMaterial);
+        m.name = 'hydro-reservoir';
+        this.reservoirs.push(m);
+        this.waterGroup.add(m);
       }
     }
     ctx.scene.add(this.root);
@@ -320,6 +347,8 @@ export class TerrainSystem implements Subsystem {
     this.falls.length = 0;
     for (const m of this.fallMaterials) m.dispose();
     this.fallMaterials.length = 0;
+    for (const m of this.reservoirs) m.geometry.dispose();
+    this.reservoirs.length = 0;
     this.root.removeFromParent();
   }
 

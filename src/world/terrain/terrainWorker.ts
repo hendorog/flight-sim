@@ -4,6 +4,7 @@
 import { setWorldSeed } from '../worldSeed';
 import { modelMs, provideSeededModel, setSnowShift, type SeededModel } from './heightfield';
 import { buildTile, type TileData, type TileRequest } from './tileBuilder';
+import { setCorridorClearings, type CorridorClearings } from './corridorMask';
 import { setTownSite, type TownSite } from './townMask';
 import { setEra } from '../era/eraState';
 import type { EraId } from '../era/types';
@@ -31,7 +32,15 @@ function transferables(r: WorkerResult): Transferable[] {
  * era (src/world/era; tile building and tree placement read eraState.era() in the worker), and a seeded world's
  * macro model cells (heightfield.ts seededModel).
  */
-export type WorkerSetup = { kind: 'setup'; town: TownSite | null; era: EraId; seed: number; snowShift?: number; model?: SeededModel | null };
+export type WorkerSetup = {
+  kind: 'setup';
+  town: TownSite | null;
+  corridors?: CorridorClearings | null;
+  era: EraId;
+  seed: number;
+  snowShift?: number;
+  model?: SeededModel | null;
+};
 
 self.onmessage = (e: MessageEvent<{ id: number; job: WorkerJob } | WorkerSetup>) => {
   if ('kind' in e.data) {
@@ -45,6 +54,7 @@ self.onmessage = (e: MessageEvent<{ id: number; job: WorkerJob } | WorkerSetup>)
     setWorldSeed(e.data.seed);
     if (e.data.seed !== 0 && modelMs > 0) console.warn(`[terrain] a terrain worker worked the macro model out itself (${Math.round(modelMs)} ms): none was handed over`);
     setTownSite(e.data.town);
+    setCorridorClearings(e.data.corridors ?? null);
     return;
   }
   const { id, job } = e.data;

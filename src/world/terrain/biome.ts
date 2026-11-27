@@ -10,6 +10,7 @@ import { FENCE_RECT } from '../airport/layout';
 import { SEA_LEVEL, makeSample, sampleTerrain, snowLine, type TerrainSample } from './heightfield';
 import { fbm } from './noise';
 import { CLEARFELL_YEARS, compartmentAt, estateWeight, makeCompartment, standHeight } from './plantation';
+import { corridorFieldFactor, corridorWoodFactor } from './corridorMask';
 import { townFieldFactor, townWoodFactor } from './townMask';
 import { era, isPresent } from '../era/eraState';
 import { makeVolcanoMask, volcanoMask, volcanoWoodsCut } from './volcano';
@@ -246,6 +247,7 @@ export function computeBiome(north: number, east: number, s: TerrainSample, up: 
   // The tree line climbs on sunny south faces and drops on shaded north faces.
   const tl = treeLine(north, east) - TREE_LINE_ASPECT * faceNorth;
   const woods = smooth(-0.1, 0.1, patches + hilly - 0.12);
+  const clearWood = townWoodFactor(north, east) * corridorWoodFactor(north, east);
   let forest =
     woods *
     (1 - smooth(tl, tl + 250, h)) *
@@ -254,7 +256,7 @@ export function computeBiome(north: number, east: number, s: TerrainSample, up: 
     (1 - sand) *
     (1 - s.approach) *
     smooth(0.98, 1.0, s.airportBlend) *
-    townWoodFactor(north, east) *
+    clearWood *
     (h < snowLine(north, east) ? 1 : 0);
 
   // Forestry plantations (present day): within an estate the compartment decides - forest by its stand's age, none
@@ -264,7 +266,8 @@ export function computeBiome(north: number, east: number, s: TerrainSample, up: 
     estate =
       estateWeight(east, north, h) *
       smooth(ESTATE_RIVER_CLEAR, ESTATE_RIVER_CLEAR + 600, s.riverDist) *
-      smooth(ESTATE_FIELD_CLEAR, ESTATE_FIELD_CLEAR + 1500, Math.hypot(north, east));
+      smooth(ESTATE_FIELD_CLEAR, ESTATE_FIELD_CLEAR + 1500, Math.hypot(north, east)) *
+      corridorWoodFactor(north, east);
     if (estate > 0) {
       compartmentAt(east, north, compartment);
       const stand = compartment.years < CLEARFELL_YEARS ? 0 : 0.55 + 0.45 * (standHeight(compartment.years) / 34);
@@ -275,7 +278,7 @@ export function computeBiome(north: number, east: number, s: TerrainSample, up: 
         (1 - sand) *
         (1 - s.approach) *
         smooth(0.98, 1.0, s.airportBlend) *
-        townWoodFactor(north, east) *
+        clearWood *
         (h < snowLine(north, east) ? 1 : 0);
       forest += (stand * limits - forest) * smooth(0.35, 0.65, estate);
     }
@@ -299,6 +302,7 @@ export function computeBiome(north: number, east: number, s: TerrainSample, up: 
     ) *
     smooth(4, 20, s.airportBlend < 1 ? fenceDistance(north, east) : 1e4) *
     townFieldFactor(north, east) *
+    corridorFieldFactor(north, east) *
     bankStrip *
     (1 - smooth(0.35, 0.65, estate));
 
