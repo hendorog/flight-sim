@@ -2519,9 +2519,16 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
   //   neither chops off in dry shingle nor slices across bars past its confluence thread.
   // - Into a single-thread receiver: match receiver water level inside the throat and feather mouthIn 0 -> 1 across the
   //   receiver's wet width so overlapping ribbons never Z-fight or double-darken premultiplied alpha.
-  const inBraidOf: Array<Uint8Array | undefined> = allLines.map(() => undefined);
-  const mouthInOf: Array<Float32Array | undefined> = allLines.map(() => undefined);
-  const braidCrossOf: Array<Float32Array | undefined> = allLines.map(() => undefined);
+  // Water-ribbon attributes (inBraid, mouthIn, mouthTail, braidCross, joinKeep, glacial) are read only by water.ts on the
+  // main thread (and in Node tests); terrain/orography/macro Web Workers still execute the identical c.level and
+  // bedR/bedL/wetR/wetL confluence grading below so carved ground and gravel beds stay bit-identical.
+  const needRibbonAttrs = typeof (globalThis as { WorkerGlobalScope?: unknown }).WorkerGlobalScope === 'undefined';
+  const inBraidOf: Array<Uint8Array | undefined> = needRibbonAttrs ? allLines.map(() => undefined) : [];
+  const mouthInOf: Array<Float32Array | undefined> = needRibbonAttrs ? allLines.map(() => undefined) : [];
+  const braidCrossOf: Array<Float32Array | undefined> = needRibbonAttrs ? allLines.map(() => undefined) : [];
+  const joinKeepOf: Array<Uint8Array | undefined> = needRibbonAttrs ? allLines.map(() => undefined) : [];
+  type TailRow = NonNullable<RiverLine['mouthTail']>[0];
+  const mouthTailOf: Array<[TailRow, TailRow] | undefined> = needRibbonAttrs ? allLines.map(() => undefined) : [];
   for (let li = 0; li < allLines.length; li++) {
     const j = joinsOf(li);
     if (j < 0 || (li >= nR && streamEnds[li - nR] === 'lake')) continue;
@@ -2539,6 +2546,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const bw = bz.rows;
       let enter = -1;
       let enterLvl = P.level[jIdx];
+      const rlMap = new Float64Array(m).fill(NaN);
       for (let i = m - 1; i >= 0 && end - c.s[i] <= 900; i--) {
         const pn = c.north[i];
         const pe = c.east[i];
@@ -2546,6 +2554,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
           const ri = bw.idx[Math.min(bw.idx.length - 1, Math.max(0, rowHit.j))];
           const ri1 = bw.idx[Math.min(bw.idx.length - 1, Math.max(0, rowHit.j + 1))];
           const rl = P.level[ri] + (P.level[ri1] - P.level[ri]) * Math.min(1, Math.max(0, rowHit.t));
+          rlMap[i] = rl;
           if (c.level[i] > rl + 0.08) c.level[i] = rl + 0.08;
           enter = i;
           enterLvl = rl + 0.08;
@@ -2559,7 +2568,16 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
             c.level[i] = cap;
           }
         }
-        for (let i = enter + 1; i < m; i++) if (c.level[i] > c.level[i - 1]) c.level[i] = c.level[i - 1];
+        // Keep c.level at or slightly above the receiver's local shingle level across an acute bar approach (never uphill).
+        for (let i = enter; i < m; i++) {
+          const rl = rlMap[i];
+          if (rl === rl) {
+            const minLvl = i === m - 1 ? rl : rl + 0.025;
+            const prev = i > 0 ? c.level[i - 1] : Infinity;
+            if (c.level[i] < minLvl) c.level[i] = Math.min(prev, minLvl);
+          }
+          if (i > 0 && c.level[i] > c.level[i - 1]) c.level[i] = c.level[i - 1];
+        }
         // Walk from `enter` to `m - 1` across the braided bed to find the first active wet thread of P it joins.
         let firstWet = m - 1;
         let recLift = smooth(1.0, 1.65, bz.K[jIdx]);
@@ -2569,46 +2587,59 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
           const trimT = smooth(c.s[enter], c.s[enter] + 18, c.s[i]);
           f.bedR[i] += (f.wetR[i] + 0.12 - f.bedR[i]) * trimT;
           f.bedL[i] += (f.wetL[i] + 0.12 - f.bedL[i]) * trimT;
-          if (rowFrame(bw.n, bw.e, bw.tn, bw.te, rowAt(bw.idx, jIdx), pn, pe) && braidTwin(bz.twin, rowHit.j, pn, pe) && twinHit.K > 1.05) {
+          if (needRibbonAttrs && rowFrame(bw.n, bw.e, bw.tn, bw.te, rowAt(bw.idx, jIdx), pn, pe) && braidTwin(bz.twin, rowHit.j, pn, pe) && twinHit.K > 1.05) {
             recLift = Math.max(recLift, smooth(1.0, 1.65, twinHit.K));
             const inMain = Math.abs(twinHit.u - twinHit.um) * twinHit.hb <= 0.9 * twinHit.w;
             const inMinor = !inMain && braidAt(twinHit.u, twinHit.um, twinHit.hb, twinHit.K, twinHit.ph, twinHit.ps, 2 * twinHit.w) > 0.12;
             if ((inMain || inMinor) && firstWet === m - 1) firstWet = i;
           }
         }
-        const bCross = new Float32Array(m);
-        const sEnter = c.s[enter];
-        for (let i = enter - 1; i >= 0 && sEnter - c.s[i] <= 45; i--) {
-          bCross[i] = recLift * 1.04 * smooth(sEnter - 45, sEnter, c.s[i]);
-        }
-        const mIn = new Float32Array(m);
-        const ownWet = Math.max(1.5, 0.5 * (f.wetR[firstWet] + f.wetL[firstWet]));
-        const sFeather0 = Math.max(c.s[enter], c.s[firstWet] - 0.5 * ownWet);
-        const sFeather1 = Math.min(end, c.s[firstWet] + Math.max(6, 2.2 * ownWet));
-        let ib: Uint8Array | undefined;
-        for (let i = enter; i < m; i++) {
-          bCross[i] = recLift * 1.04;
-          if (c.s[i] >= sFeather0) {
-            mIn[i] = sFeather1 > sFeather0 + 1e-3 ? smooth(sFeather0, sFeather1, c.s[i]) : 1;
+        if (needRibbonAttrs) {
+          const bCross = new Float32Array(m);
+          const sEnter = c.s[enter];
+          for (let i = enter - 1; i >= 0 && sEnter - c.s[i] <= 45; i--) {
+            bCross[i] = recLift * 1.04 * smooth(sEnter - 45, sEnter, c.s[i]);
           }
-          if (li >= nR && i > firstWet + 1 && mIn[i] >= 0.98) {
-            if (!ib) ib = new Uint8Array(m);
-            ib[i] = 1;
+          const mIn = new Float32Array(m);
+          const ownWet = Math.max(1.5, 0.5 * (f.wetR[firstWet] + f.wetL[firstWet]));
+          const sFeather0 = c.s[firstWet];
+          const sFeather1 = Math.min(end, c.s[firstWet] + Math.max(8, 2.4 * ownWet));
+          let ib: Uint8Array | undefined;
+          for (let i = enter; i < m; i++) {
+            if (c.s[i] >= sFeather0) {
+              mIn[i] = sFeather1 > sFeather0 + 1e-3 ? smooth(sFeather0, sFeather1, c.s[i]) : 1;
+            }
+            bCross[i] = recLift * 1.04 * (1 - 0.85 * mIn[i]);
+            if (li >= nR && i > firstWet + 1 && mIn[i] >= 0.98) {
+              if (!ib) ib = new Uint8Array(m);
+              ib[i] = 1;
+            }
           }
+          mIn[m - 1] = 1;
+          mouthInOf[li] = mIn;
+          braidCrossOf[li] = bCross;
+          if (ib) inBraidOf[li] = ib;
         }
-        mIn[m - 1] = 1;
-        mouthInOf[li] = mIn;
-        braidCrossOf[li] = bCross;
-        if (ib) inBraidOf[li] = ib;
       }
     } else {
-      // Single-thread receiver: walk nearest segment on P locally in O(1) per sample and feather mouthIn smoothly.
+      // Single-thread / wandering point-bar receiver: grade across the receiver's gravel bar (bedR/bedL) so the tributary
+      // never ducks under the receiver's opaque bar ribbon, keep 100% water width across the bar until the outer bank enters
+      // the receiver's wet channel, and extend 2 short tangent throat rows inside the receiver's wet channel.
       const q0 = Math.max(0, segmentAt(P.s, jS - 450));
       const q1 = Math.min(P.s.length - 2, segmentAt(P.s, jS + 450));
       let curK = Math.min(q1, Math.max(q0, jIdx));
-      let mIn: Float32Array | undefined;
-      let enterI = -1;
-      let enterLvl = P.level[jIdx];
+      let enterBarI = -1;
+      let enterWetI = -1;
+      let enterWetLvl = P.level[jIdx];
+      let approachSide = 0;
+      let kMinHit = q1;
+      let kMaxHit = q0;
+      let endK = curK;
+      let endT = 0;
+      const rlBar = new Float64Array(m).fill(NaN);
+      const dPBar = new Float32Array(m).fill(Infinity);
+      const wetPBar = new Float32Array(m);
+      const cosBar = new Float32Array(m);
       const segDist2 = (k: number, pn: number, pe: number): { d2: number; t: number; side: number } => {
         const an = P.north[k];
         const ae = P.east[k];
@@ -2637,45 +2668,190 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
             }
           }
         }
+        if (i === m - 1) {
+          endK = curK;
+          endT = best.t;
+        }
         const dP = Math.sqrt(best.d2);
         const wetSide = best.side > 0 ? fp.wetR : fp.wetL;
+        const bedSide = best.side > 0 ? fp.bedR : fp.bedL;
         const wetP = wetSide[curK] + (wetSide[curK + 1] - wetSide[curK]) * best.t;
+        const bedP = Math.max(wetP + 0.3, bedSide[curK] + (bedSide[curK + 1] - bedSide[curK]) * best.t);
         const ownWet = Math.max(1.2, 0.5 * (f.wetR[i] + f.wetL[i]));
         const rl = P.level[curK] + (P.level[curK + 1] - P.level[curK]) * best.t;
-        if (dP <= wetP + 0.85 * ownWet) {
-          // Trim any remaining dry gravel wings before touching receiver water.
-          const wTrim = smooth(wetP + 0.85 * ownWet, wetP + 0.15 * ownWet, dP);
+        const i0 = Math.max(0, i - 1);
+        const i1 = Math.min(m - 1, i + 1);
+        const cdn = c.north[i1] - c.north[i0];
+        const cde = c.east[i1] - c.east[i0];
+        const cl = Math.hypot(cdn, cde) || 1;
+        const pdn = P.north[curK + 1] - P.north[curK];
+        const pde = P.east[curK + 1] - P.east[curK];
+        const pl = Math.hypot(pdn, pde) || 1;
+        const cosAlpha = Math.abs((cdn / cl) * (pdn / pl) + (cde / cl) * (pde / pl));
+        if (dP <= bedP + 0.65 * ownWet) {
+          const wTrim = smooth(bedP + 0.65 * ownWet, Math.max(wetP + 0.1, bedP - 0.35 * ownWet), dP);
           f.bedR[i] += (f.wetR[i] + 0.12 - f.bedR[i]) * wTrim;
           f.bedL[i] += (f.wetL[i] + 0.12 - f.bedL[i]) * wTrim;
-          if (c.level[i] > rl + 0.05) c.level[i] = rl + 0.05;
-          enterI = i;
-          enterLvl = rl + 0.05;
+          enterBarI = i;
+          if (dP > 2) approachSide = best.side;
+          if (curK < kMinHit) kMinHit = curK;
+          if (curK > kMaxHit) kMaxHit = curK;
+          rlBar[i] = rl;
+          dPBar[i] = dP;
+          wetPBar[i] = wetP;
+          cosBar[i] = cosAlpha;
+          if (dP <= wetP + 0.45 * ownWet) {
+            if (c.level[i] > rl + 0.04) c.level[i] = rl + 0.04;
+            enterWetI = i;
+            enterWetLvl = rl + 0.04;
+          }
+        } else if (enterBarI >= 0 && dP > bedP + 2 * ownWet) {
+          break;
         }
-        const outer = wetP + 0.25 * ownWet;
-        const inner = Math.max(0, wetP - 1.15 * ownWet);
-        if (dP < outer) {
-          if (!mIn) mIn = new Float32Array(m);
-          mIn[i] = outer > inner + 1e-3 ? smooth(outer, inner, dP) : 1;
-        } else if (enterI >= 0 && dP > wetP + 2 * ownWet) break;
       }
-      if (enterI > 0) {
-        for (let i = enterI - 1; i >= 0; i--) {
-          const cap = enterLvl + 0.15 * (c.s[enterI] - c.s[i]);
+      if (enterWetI > 0) {
+        for (let i = enterWetI - 1; i >= 0; i--) {
+          const cap = enterWetLvl + 0.15 * (c.s[enterWetI] - c.s[i]);
           if (c.level[i] <= cap) break;
           c.level[i] = cap;
         }
-        for (let i = enterI + 1; i < m; i++) if (c.level[i] > c.level[i - 1]) c.level[i] = c.level[i - 1];
       }
-      if (!mIn) mIn = new Float32Array(m);
-      mIn[m - 1] = 1;
-      mouthInOf[li] = mIn;
+      // Keep c.level at or slightly above P's local bar/water surface across the bar crossing so P's opaque gravel bar
+      // never bridges over c's water ribbon, while keeping c.level monotonically non-increasing downstream.
+      if (enterBarI >= 0) {
+        for (let i = enterBarI; i < m; i++) {
+          const rl = rlBar[i];
+          if (rl === rl) {
+            const minLvl = i === m - 1 ? rl : rl + 0.03;
+            const prev = i > 0 ? c.level[i - 1] : Infinity;
+            if (c.level[i] < minLvl) c.level[i] = Math.min(prev, minLvl);
+          }
+          if (i > 0 && c.level[i] > c.level[i - 1]) c.level[i] = c.level[i - 1];
+        }
+      } else {
+        for (let i = 1; i < m; i++) if (c.level[i] > c.level[i - 1]) c.level[i] = c.level[i - 1];
+      }
+      // Clamp c's far-bank wet edge at its mouth so an equal-width tributary never pokes past P's opposite bank.
+      const cdnEnd = c.north[m - 1] - c.north[Math.max(0, m - 2)];
+      const cdeEnd = c.east[m - 1] - c.east[Math.max(0, m - 2)];
+      const clEnd = Math.hypot(cdnEnd, cdeEnd) || 1;
+      const pdnEnd = P.north[endK + 1] - P.north[endK];
+      const pdeEnd = P.east[endK + 1] - P.east[endK];
+      const plEnd = Math.hypot(pdnEnd, pdeEnd) || 1;
+      const dotEnd = (cdnEnd / clEnd) * (pdnEnd / plEnd) + (cdeEnd / clEnd) * (pdeEnd / plEnd);
+      if (dotEnd > 0.15 && dPBar[m - 1] < 4) {
+        const wetRP0 = fp.wetR[endK] + (fp.wetR[endK + 1] - fp.wetR[endK]) * endT;
+        const wetLP0 = fp.wetL[endK] + (fp.wetL[endK + 1] - fp.wetL[endK]) * endT;
+        if (approachSide >= 0) {
+          const capL = Math.max(1.0, wetLP0 - 0.25);
+          if (f.wetL[m - 1] > capL) {
+            f.wetL[m - 1] = capL;
+            f.bedL[m - 1] = capL + 0.12;
+          }
+        }
+        if (approachSide <= 0) {
+          const capR = Math.max(1.0, wetRP0 - 0.25);
+          if (f.wetR[m - 1] > capR) {
+            f.wetR[m - 1] = capR;
+            f.bedR[m - 1] = capR + 0.12;
+          }
+        }
+      }
+      if (needRibbonAttrs) {
+        // Preserve receiver P's exact ribbon rows across the confluence so P has zero simplified-chord lift there.
+        if (kMinHit <= kMaxHit) {
+          let jk = joinKeepOf[j];
+          if (!jk) jk = joinKeepOf[j] = new Uint8Array(P.s.length);
+          const a = Math.max(0, kMinHit - 1);
+          const b = Math.min(P.s.length - 1, Math.max(kMaxHit, endK) + 4);
+          for (let q = a; q <= b; q++) jk[q] = 1;
+        }
+        const mIn = new Float32Array(m);
+        const bCross = enterBarI >= 0 ? new Float32Array(m) : undefined;
+        if (bCross && enterBarI >= 0) {
+          const sEnter = c.s[enterBarI];
+          for (let i = enterBarI - 1; i >= 0 && sEnter - c.s[i] <= 36; i--) {
+            bCross[i] = smooth(sEnter - 36, sEnter, c.s[i]);
+          }
+        }
+        const sJoinActual = P.s[endK] + (P.s[endK + 1] - P.s[endK]) * endT;
+        const ownWetEnd = Math.max(1.2, 0.5 * (f.wetR[m - 1] + f.wetL[m - 1]));
+        const step = Math.min(28, Math.max(4, 1.15 * ownWetEnd));
+        const pEndIdx = P.s.length - 1;
+        const canTail =
+          dotEnd > 0.15 &&
+          dPBar[m - 1] <= Math.max(6, wetPBar[m - 1] + 2) &&
+          sJoinActual + 2 * step < P.s[pEndIdx] - 1 &&
+          sampleAt(P.s, P.level, sJoinActual + 2 * step) >= 0.35 &&
+          mask.at(c.north[m - 1], c.east[m - 1]) === -Infinity;
+        if (canTail) {
+          // Only begin gentle mouthIn once the outer bank is inside P's wet water; finish feathering in the 2 tangent tail rows.
+          for (let i = Math.max(0, enterBarI); i < m - 1; i++) {
+            const ownW = Math.max(1.2, 0.5 * (f.wetR[i] + f.wetL[i]));
+            const outerEdgeD = dPBar[i] + 0.85 * ownW * cosBar[i];
+            if (outerEdgeD < wetPBar[i]) {
+              mIn[i] = 0.22 * smooth(wetPBar[i], 0, outerEdgeD);
+            }
+          }
+          mIn[m - 1] = 0.08;
+          const makeTailRow = (sv: number, tBlend: number, mVal: number, margin: number): TailRow => {
+            const k = Math.min(pEndIdx - 1, Math.max(0, segmentAt(P.s, sv)));
+            const segL = Math.max(1e-9, P.s[k + 1] - P.s[k]);
+            const u = Math.min(1, Math.max(0, (sv - P.s[k]) / segL));
+            const pn = P.north[k] + (P.north[k + 1] - P.north[k]) * u;
+            const pe = P.east[k] + (P.east[k + 1] - P.east[k]) * u;
+            const lv = Math.min(c.level[m - 1], P.level[k] + (P.level[k + 1] - P.level[k]) * u);
+            const pdn = P.north[k + 1] - P.north[k];
+            const pde = P.east[k + 1] - P.east[k];
+            const pl = Math.hypot(pdn, pde) || 1;
+            const ptn = pdn / pl;
+            const pte = pde / pl;
+            let tn = (cdnEnd / clEnd) * (1 - tBlend) + ptn * tBlend;
+            let te = (cdeEnd / clEnd) * (1 - tBlend) + pte * tBlend;
+            const tl = Math.hypot(tn, te) || 1;
+            tn /= tl;
+            te /= tl;
+            const wRP = fp.wetR[k] + (fp.wetR[k + 1] - fp.wetR[k]) * u;
+            const wLP = fp.wetL[k] + (fp.wetL[k + 1] - fp.wetL[k]) * u;
+            return {
+              north: pn,
+              east: pe,
+              level: lv,
+              s: end + (sv - sJoinActual),
+              tn,
+              te,
+              wetR: Math.max(0.8, Math.min(f.wetR[m - 1], wRP - margin)),
+              wetL: Math.max(0.8, Math.min(f.wetL[m - 1], wLP - margin)),
+              depth: f.depth[m - 1],
+              mouthIn: mVal,
+              glacial: 0,
+            };
+          };
+          const t1 = makeTailRow(sJoinActual + step, 0.55, 0.55, 0.3);
+          const t2 = makeTailRow(sJoinActual + 2 * step, 1.0, 1.0, 0.45);
+          if (t2.level > t1.level) t2.level = t1.level;
+          mouthTailOf[li] = [t1, t2];
+        } else {
+          for (let i = Math.max(0, enterBarI); i < m; i++) {
+            const ownW = Math.max(1.2, 0.5 * (f.wetR[i] + f.wetL[i]));
+            const outer = Math.max(2, wetPBar[i] - 0.5 * ownW * cosBar[i]);
+            if (dPBar[i] < outer) mIn[i] = smooth(outer, 0, dPBar[i]);
+          }
+          mIn[m - 1] = 1;
+        }
+        if (bCross && enterBarI >= 0) {
+          for (let i = enterBarI; i < m; i++) bCross[i] = Math.max(0, 1 - mIn[i]);
+          braidCrossOf[li] = bCross;
+        }
+        mouthInOf[li] = mIn;
+      }
     }
   }
   // Propagate glacial rock-flour turbidity (0..1) down the river network in topological order (tributaries before
   // receivers) with 24 km settling decay and catchment-weighted confluence mixing so glacial braided tributaries colour
-  // their downstream gorges and confluences realistically.
-  const glacialOf: Float32Array[] = new Array(allLines.length);
-  {
+  // their downstream gorges and confluences realistically. Only needed for main-thread water ribbons.
+  const glacialOf: Array<Float32Array | undefined> = needRibbonAttrs ? new Array(allLines.length) : [];
+  if (needRibbonAttrs) {
     const nL = allLines.length;
     const hopD = new Int32Array(nL);
     for (let li = 0; li < nL; li++) {
@@ -2694,14 +2870,13 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       const A = channelArea[li];
       const KS = formOfLine[li].braid?.K;
       const m = c.s.length;
-      const gl = new Float32Array(m);
       const inc = inflows[li];
       // Fast O(1) skip for non-glacial minor streams (no braiding, below alpine rock-flour elevation or < 8 km², no glacial inflows).
       if (!KS && inc.length === 0 && (c.level[0] <= 950 || A[m - 1] <= 8)) {
-        glacialOf[li] = gl;
         continue;
       }
       if (inc.length > 1) inc.sort((u, v) => u.s - v.s);
+      let gl: Float32Array | undefined;
       let ptr = 0;
       let g = 0;
       let inPond = false;
@@ -2722,15 +2897,20 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
             sumAG += inc[ptr].a * inc[ptr].g;
             ptr++;
           }
-          const ownA = Math.max(0.05, (i > 0 ? Math.min(A[i - 1], Math.max(0.05, A[i] - sumA)) : Math.max(0.05, A[i] - sumA)));
+          const ownA = Math.max(0.05, i > 0 ? Math.min(A[i - 1], Math.max(0.05, A[i] - sumA)) : Math.max(0.05, A[i] - sumA));
           g = (ownA * g + sumAG) / (ownA + sumA);
         }
-        gl[i] = g;
+        if (g > 1e-4) {
+          if (!gl) gl = new Float32Array(m);
+          gl[i] = g;
+        }
       }
-      glacialOf[li] = gl;
-      const j = joinsOf(li);
-      if (j >= 0 && m > 0 && gl[m - 1] > 1e-3) {
-        inflows[j].push({ s: joinSOf(li), a: Math.max(0.05, A[m - 1]), g: gl[m - 1], li });
+      if (gl) {
+        glacialOf[li] = gl;
+        const j = joinsOf(li);
+        if (j >= 0 && m > 0 && gl[m - 1] > 1e-3) {
+          inflows[j].push({ s: joinSOf(li), a: Math.max(0.05, A[m - 1]), g: gl[m - 1], li });
+        }
       }
     }
     // Feather each tributary's final wet mouth toward its receiver's mixed water tint so confluences plume smoothly.
@@ -2740,9 +2920,17 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       if (j < 0 || !mIn) continue;
       const P = allLines[j];
       const pGl = glacialOf[j];
-      const gl = glacialOf[li];
+      let gl = glacialOf[li];
       const pk = Math.min(P.s.length - 1, Math.max(0, segmentAt(P.s, joinSOf(li) + 25)));
-      const targetG = pGl[pk];
+      const targetG = pGl ? pGl[pk] : 0;
+      const tail = mouthTailOf[li];
+      if (tail) {
+        const ownEndG = gl ? gl[gl.length - 1] : 0;
+        tail[0].glacial = ownEndG + (targetG - ownEndG) * 0.45;
+        tail[1].glacial = ownEndG + (targetG - ownEndG) * 0.85;
+      }
+      if (!gl && targetG <= 1e-4) continue;
+      if (!gl) gl = glacialOf[li] = new Float32Array(allLines[li].s.length);
       for (let i = 0; i < gl.length; i++) {
         if (mIn[i] > 0) gl[i] += (targetG - gl[i]) * 0.7 * mIn[i];
       }
@@ -3106,7 +3294,7 @@ export function buildNetworkHydrology(natural: (north: number, east: number) => 
       ? { north: mainAxis.north, east: mainAxis.east, level: mainAxis.level, floodplain: mainAxis.floodplain, s: mainAxis.s }
       : { north: new Float64Array(0), east: new Float64Array(0), level: new Float64Array(0), floodplain: new Float64Array(0), s: new Float64Array(0) },
     oxbows,
-    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR] } : {}), ...(inBraidOf[li] ? { inBraid: inBraidOf[li] } : {}), ...(mouthInOf[li] ? { mouthIn: mouthInOf[li] } : {}), ...(braidCrossOf[li] ? { braidCross: braidCrossOf[li] } : {}), glacial: glacialOf[li], breach: (r as { breach: Float64Array }).breach, cut: (r as { cut: Float64Array }).cut, area: channelArea[li], ...flows[li], grain: grains[li], ...(pitchOf[li] ? { sigma: pitchOf[li]!.sigma, pitchOn: pitchOf[li]!.on } : {}), bedR: formOfLine[li].bedR, bedL: formOfLine[li].bedL, wetR: formOfLine[li].wetR, wetL: formOfLine[li].wetL, depth: formOfLine[li].depth, ...(formOfLine[li].braid ? { braidK: formOfLine[li].braid!.K, braidShare: formOfLine[li].braid!.share, braidPh: formOfLine[li].braid!.ph, braidPs: formOfLine[li].braid!.ps, braidTn: formOfLine[li].braid!.tn, braidTe: formOfLine[li].braid!.te, braidRow: formOfLine[li].braid!.row } : {}) })),
+    rivers: allLines.map((r, li) => ({ north: r.north, east: r.east, level: r.level, halfWidth: r.halfWidth, s: r.s, joins: joinsOf(li), kind: kinds[li], ...(li >= nR ? { end: streamEnds[li - nR] } : {}), ...(inBraidOf[li] ? { inBraid: inBraidOf[li] } : {}), ...(mouthInOf[li] ? { mouthIn: mouthInOf[li] } : {}), ...(mouthTailOf[li] ? { mouthTail: mouthTailOf[li] } : {}), ...(braidCrossOf[li] ? { braidCross: braidCrossOf[li] } : {}), ...(joinKeepOf[li] ? { joinKeep: joinKeepOf[li] } : {}), ...(glacialOf[li] ? { glacial: glacialOf[li] } : {}), breach: (r as { breach: Float64Array }).breach, cut: (r as { cut: Float64Array }).cut, area: channelArea[li], ...flows[li], grain: grains[li], ...(pitchOf[li] ? { sigma: pitchOf[li]!.sigma, pitchOn: pitchOf[li]!.on } : {}), bedR: formOfLine[li].bedR, bedL: formOfLine[li].bedL, wetR: formOfLine[li].wetR, wetL: formOfLine[li].wetL, depth: formOfLine[li].depth, ...(formOfLine[li].braid ? { braidK: formOfLine[li].braid!.K, braidShare: formOfLine[li].braid!.share, braidPh: formOfLine[li].braid!.ph, braidPs: formOfLine[li].braid!.ps, braidTn: formOfLine[li].braid!.tn, braidTe: formOfLine[li].braid!.te, braidRow: formOfLine[li].braid!.row } : {}) })),
     falls,
     faults,
     queryFlow,

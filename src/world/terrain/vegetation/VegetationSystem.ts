@@ -482,7 +482,12 @@ export class VegetationSystem {
         const cam = this.uniforms.uViewPos.value;
         if (cellDistance(cx, cz, cam.x, -cam.z) < this.preset.nearOpen + NEAR_REBUILD + 20) this.cellsChanged = true;
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (gen === this.generation && this.cells.get(key) === cell) {
+          this.cells.delete(key);
+          this.scanDirty = true;
+        }
+      });
   }
 
   private rebuildNear(cam: THREE.Vector3): void {

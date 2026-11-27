@@ -298,7 +298,15 @@ float rockNoise(vec3 x) {
         if (cell.data.count > 0) this.changed = true;
         this.scanDirty = true;
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (gen === this.generation) {
+          this.inflight = Math.max(0, this.inflight - 1);
+          if (this.cells.get(key) === cell) {
+            this.cells.delete(key);
+            this.scanDirty = true;
+          }
+        }
+      });
   }
 
   /** Write the nearest stones (within the range and the budget) into the instance lists. */

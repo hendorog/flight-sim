@@ -162,6 +162,20 @@ export interface Hydrology {
  *  - bedrock.ts: the bare rock beside fast water reaches rockReach(halfWidth) times a ragged factor of the world
  *    position (rockAtPoint; ROCK_EDGE_GLSL in the ground shader); no tree is planted on it (vegetation/placement.ts).
  */
+export interface MouthTailRow {
+  north: number;
+  east: number;
+  level: number;
+  s: number;
+  tn: number;
+  te: number;
+  wetR: number;
+  wetL: number;
+  depth: number;
+  mouthIn: number;
+  glacial: number;
+}
+
 export interface RiverLine {
   north: Float64Array;
   east: Float64Array;
@@ -220,8 +234,12 @@ export interface RiverLine {
   inBraid?: Uint8Array;
   /** Smooth 0..1 confluence overlap progress where a joining channel's wet ribbon merges inside its receiver's water. */
   mouthIn?: Float32Array;
-  /** Smooth 0..1.05 clearance match as a tributary crosses a braided receiver's lifted shingle bar to its first wet thread. */
+  /** Short 2-row tangent extension inside a single-thread receiver's wet channel so acute confluences connect 100% of their width before feathering out. */
+  mouthTail?: readonly [MouthTailRow, MouthTailRow];
+  /** Smooth 0..1.05 clearance match as a tributary crosses a receiver's gravel bar into its active wet channel. */
   braidCross?: Float32Array;
+  /** Receiver samples near incoming confluences that ribbonKeep must preserve so the receiver ribbon has zero chord gap at junctions. */
+  joinKeep?: Uint8Array;
   /** Transported glacial rock-flour / alpine slate-blue water tint (0 lowland olive .. 1 glacial blue-grey) per sample. */
   glacial?: Float32Array;
   /**

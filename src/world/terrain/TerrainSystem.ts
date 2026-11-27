@@ -104,6 +104,7 @@ export class TerrainSystem implements Subsystem {
   private eraLayers: EraLayer[] = [];
   private readonly nodes = new Map<number, TerrainNode>();
   private readonly inflight = new Set<number>();
+  private readonly failedTiles = new Map<number, number>();
   private readonly arrived: TileData[] = [];
   private arrivalWaiter: (() => void) | null = null;
   private shown: TerrainNode[] = [];
@@ -164,7 +165,10 @@ export class TerrainSystem implements Subsystem {
       return Math.round(d);
     };
     const threads = navigator.hardwareConcurrency || 4;
-    this.pool = new WorkerPool(this.options.workers ?? Math.min(8, Math.max(2, threads - 2)));
+    // A seeded world builds the full river/hillslope network in every tile worker (~600-900 MB per worker): capping the
+    // default pool at 4 workers avoids exhausting browser tab memory and L3 cache bandwidth across 8 simultaneous builds.
+    const maxWorkers = worldSeed() !== 0 ? 4 : 8;
+    this.pool = new WorkerPool(this.options.workers ?? Math.min(maxWorkers, Math.max(2, threads - 2)));
     // Keep woodland and crop fields off the valley town (the airport module builds it on the site
     // findTownSite picks for this terrain); the workers need it before their first job.
     // (Not in an era without the town, whatever the option says.)
@@ -431,6 +435,7 @@ export class TerrainSystem implements Subsystem {
     this.nodes.clear();
     this.shown = [];
     this.inflight.clear();
+    this.failedTiles.clear();
     this.arrived.length = 0;
   }
 
@@ -482,19 +487,29 @@ export class TerrainSystem implements Subsystem {
       if (slots <= 0) break;
       // (The ref is recycled by the next selection: keep only its key past this frame.)
       const key = ref.key;
-      if (this.inflight.has(key)) continue;
+      if (this.inflight.has(key) || (this.failedTiles.get(key) ?? 0) >= 2) continue;
       this.inflight.add(key);
       slots--;
       const gen = this.generation;
       this.pool
         .run({ kind: 'tile', req: { level: ref.level, ix: ref.ix, iz: ref.iz, grid: this.settings.grid, leafSize: LEAF_SIZE } })
         .then((r) => {
-          if (gen !== this.generation) return;
-          this.inflight.delete(key);
-          this.arrived.push(r as TileData);
+          if (gen === this.generation) {
+            this.inflight.delete(key);
+            this.failedTiles.delete(key);
+            this.arrived.push(r as TileData);
+          }
           this.arrivalWaiter?.();
         })
-        .catch(() => undefined);
+        .catch((err) => {
+          if (gen === this.generation) {
+            this.inflight.delete(key);
+            const fails = (this.failedTiles.get(key) ?? 0) + 1;
+            this.failedTiles.set(key, fails);
+            if (fails === 1) console.warn('[terrain] tile build failed; retrying', key, err);
+          }
+          this.arrivalWaiter?.();
+        });
     }
   }
 
@@ -589,16 +604,26 @@ export class TerrainSystem implements Subsystem {
   /** Build everything the current view needs before the first frame (used by init). */
   private async preload(camera: THREE.Camera): Promise<void> {
     const t0 = performance.now();
+    const timeoutMs = worldSeed() !== 0 ? 45_000 : 30_000;
     for (;;) {
       this.updateView(camera, 1);
       this.select();
-      if (this.want.length === 0 && this.inflight.size === 0 && this.arrived.length === 0) break;
-      if (performance.now() - t0 > 30_000) {
+      const remainingWant = this.want.some((w) => (this.failedTiles.get(w.key) ?? 0) < 2);
+      if (!remainingWant && this.inflight.size === 0 && this.arrived.length === 0) break;
+      if (performance.now() - t0 > timeoutMs) {
         console.warn('[terrain] preload timed out');
         break;
       }
       this.request();
-      if (this.arrived.length === 0) await new Promise<void>((r) => (this.arrivalWaiter = r));
+      if (this.arrived.length === 0) {
+        await new Promise<void>((r) => {
+          const timer = setTimeout(r, 250);
+          this.arrivalWaiter = () => {
+            clearTimeout(timer);
+            r();
+          };
+        });
+      }
       this.arrivalWaiter = null;
       this.integrate(Infinity, Infinity);
       this.uploader?.flush();

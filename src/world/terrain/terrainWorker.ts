@@ -44,20 +44,28 @@ export type WorkerSetup = {
 
 self.onmessage = (e: MessageEvent<{ id: number; job: WorkerJob } | WorkerSetup>) => {
   if ('kind' in e.data) {
-    // The era first: everything after it (the town mask included) may depend on it.
-    setEra(e.data.era);
-    setSnowShift(e.data.snowShift ?? 0);
-    // A seeded world's macro model cells as the main thread built them (heightfield.ts provideSeededModel): this
-    // worker's build takes them instead of working the model out again.
-    provideSeededModel(e.data.model ?? null);
-    // The world seed before the town mask (rebuilds the noise tables and the rivers when it changes).
-    setWorldSeed(e.data.seed);
-    if (e.data.seed !== 0 && modelMs > 0) console.warn(`[terrain] a terrain worker worked the macro model out itself (${Math.round(modelMs)} ms): none was handed over`);
-    setTownSite(e.data.town);
-    setCorridorClearings(e.data.corridors ?? null);
+    try {
+      // The era first: everything after it (the town mask included) may depend on it.
+      setEra(e.data.era);
+      setSnowShift(e.data.snowShift ?? 0);
+      // A seeded world's macro model cells as the main thread built them (heightfield.ts provideSeededModel): this
+      // worker's build takes them instead of working the model out again.
+      provideSeededModel(e.data.model ?? null);
+      // The world seed before the town mask (rebuilds the noise tables and the rivers when it changes).
+      setWorldSeed(e.data.seed);
+      if (e.data.seed !== 0 && modelMs > 0) console.warn(`[terrain] a terrain worker worked the macro model out itself (${Math.round(modelMs)} ms): none was handed over`);
+      setTownSite(e.data.town);
+      setCorridorClearings(e.data.corridors ?? null);
+    } catch (err) {
+      console.error('[terrain] worker setup failed', err);
+    }
     return;
   }
   const { id, job } = e.data;
-  const result = job.kind === 'tile' ? buildTile(job.req) : job.kind === 'boulders' ? buildBoulderCell(job.req) : job.kind === 'rills' ? buildRillPatch(job.req) : buildTreeCell(job.req);
-  (self as unknown as Worker).postMessage({ id, result }, transferables(result));
+  try {
+    const result = job.kind === 'tile' ? buildTile(job.req) : job.kind === 'boulders' ? buildBoulderCell(job.req) : job.kind === 'rills' ? buildRillPatch(job.req) : buildTreeCell(job.req);
+    (self as unknown as Worker).postMessage({ id, result }, transferables(result));
+  } catch (err) {
+    (self as unknown as Worker).postMessage({ id, error: err instanceof Error ? err.message : String(err) });
+  }
 };

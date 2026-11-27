@@ -799,7 +799,8 @@ const FLOW_LIFT = `{
   float lift = clamp((camD - 300.0) * 0.003, 0.0, 15.0);
   float bBlendL = smoothstep(1.0, 1.65, vBraid.x);
   float bClear = max(bBlendL * smoothstep(0.02, -0.10, aDepth), vBraidCross) * smoothstep(28.0, 75.0, camD) * 1.05;
-  transformed.y += max(lift, bClear);
+  float bOver = step(0.01, vBraidCross) * clamp(vBraidCross, 0.0, 1.0) * smoothstep(45.0, 180.0, camD) * 0.24;
+  transformed.y += max(lift, bClear) + bOver;
 }
 `;
 /** A braided bed's K and half-width (m) are carried as shares of these (aBraidK). */
@@ -1056,8 +1057,10 @@ interface RiverBuffers {
 }
 const riverBuffers = (): RiverBuffers => ({ pos: [], depth: [], info: [], tan: [], idx: [], flow: [], pitch: [], braid: [], braidU: [] });
 
+import type { MouthTailRow } from './hydrology';
+
 /** A line as the ribbon reads it (a seeded network's lines also carry their kind and flow). */
-type RibbonLine = { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; depth?: Float32Array; wetR?: Float32Array; wetL?: Float32Array; bedR?: Float32Array; bedL?: Float32Array; braidK?: Float32Array; braidPh?: Float64Array; braidPs?: Float64Array; braidTn?: Float32Array; braidTe?: Float32Array; braidRow?: Uint8Array; inBraid?: Uint8Array; mouthIn?: Float32Array; braidCross?: Float32Array; glacial?: Float32Array; kind?: number; regime?: Uint8Array; steepness?: Float32Array; speed?: Float32Array; sigma?: Float32Array; pitchOn?: Float32Array };
+type RibbonLine = { north: Float64Array; east: Float64Array; level: Float64Array; halfWidth: Float64Array; s: Float64Array; depth?: Float32Array; wetR?: Float32Array; wetL?: Float32Array; bedR?: Float32Array; bedL?: Float32Array; braidK?: Float32Array; braidPh?: Float64Array; braidPs?: Float64Array; braidTn?: Float32Array; braidTe?: Float32Array; braidRow?: Uint8Array; inBraid?: Uint8Array; mouthIn?: Float32Array; mouthTail?: readonly [MouthTailRow, MouthTailRow]; braidCross?: Float32Array; joinKeep?: Uint8Array; glacial?: Float32Array; kind?: number; regime?: Uint8Array; steepness?: Float32Array; speed?: Float32Array; sigma?: Float32Array; pitchOn?: Float32Array };
 
 /** Whether sample i of a line is a fall's lip whose face (to sample i + 1) is steep enough to draw as a curtain. */
 function curtainAt(r: RibbonLine, i: number): boolean {
@@ -1089,7 +1092,7 @@ function ribbonKeep(r: RibbonLine, from: number, to: number, flowing: boolean): 
   // (A braided bed's rows are the network's (RiverLine.braidRow), no more and no fewer: its threads are read in them, as
   // the ground under them is cut - channelForm.ts rowFrame - and a row more or less moves them by metres.)
   const braided = (k: number): boolean => !!r.braidRow && (r.braidK![k] > 1 || (k + 1 < r.braidK!.length && r.braidK![k + 1] > 1));
-  const must = (k: number): boolean => r.regime![k] === REGIME.fall || (k > 0 && r.regime![k - 1] === REGIME.fall) || (!!r.pitchOn && k > 0 && (r.pitchOn[k] > 0) !== (r.pitchOn[k - 1] > 0)) || (!!r.inBraid && k > 0 && r.inBraid[k] !== r.inBraid[k - 1]) || (!!r.mouthIn && (r.mouthIn[k] > 0 || (k > 0 && r.mouthIn[k - 1] > 0))) || (!!r.braidCross && k > 0 && (r.braidCross[k] > 0) !== (r.braidCross[k - 1] > 0)) || (braided(k) && r.braidRow![k] > 0);
+  const must = (k: number): boolean => r.regime![k] === REGIME.fall || (k > 0 && r.regime![k - 1] === REGIME.fall) || (!!r.pitchOn && k > 0 && (r.pitchOn[k] > 0) !== (r.pitchOn[k - 1] > 0)) || (!!r.inBraid && k > 0 && r.inBraid[k] !== r.inBraid[k - 1]) || (!!r.mouthIn && (r.mouthIn[k] > 0 || (k > 0 && r.mouthIn[k - 1] > 0))) || (!!r.braidCross && (r.braidCross[k] > 0 || (k > 0 && r.braidCross[k - 1] > 0))) || !!r.joinKeep?.[k] || (braided(k) && r.braidRow![k] > 0);
   let i = from;
   out.push(i);
   while (i < to - 1) {
@@ -1220,7 +1223,7 @@ function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, fl
       const sh = bed ? 0 : mid;
       const e = r.east[i] + pe * (off - sh);
       const n = r.north[i] + pn * (off - sh);
-      pos.push(e, r.level[i] + (bCross > 0 ? 0.02 : mIn > 0 ? 0.015 * (1 - mIn) : 0), -n);
+      pos.push(e, r.level[i] + (bCross > 0 ? 0.05 * (1 - mIn) : mIn > 0 ? 0.015 * (1 - mIn) : 0), -n);
       depth.push(d);
       // The across offset points to the left bank; RiverHit.side and the shader count toward the right.
       info.push(-(off - sh + mid), r.s[i], w);
@@ -1239,6 +1242,55 @@ function ribbonRows(r: RibbonLine, from: number, to: number, b: RiverBuffers, fl
       }
     }
     rows++;
+  }
+  if (flowing && to === count && !atCoast && r.mouthTail && rows > 0 && !inLake[rows - 1]) {
+    const last = count - 1;
+    const grainLast = grainToUnit((r as { grain?: Float32Array }).grain?.[last] ?? 0);
+    const stpLast = r.steepness![last];
+    const spdLast = r.speed![last];
+    const sigBase = r.sigma?.[last] ?? 0;
+    for (const tr of r.mouthTail) {
+      const pe = -tr.tn;
+      const pn = tr.te;
+      const w = 0.5 * (tr.wetR + tr.wetL);
+      const mid = 0.5 * (tr.wetR - tr.wetL);
+      const bHb = hasBraid ? Math.max(1, w) : 1;
+      const mIn = tr.mouthIn;
+      const fIn = 1 - mIn;
+      const pPacked = Math.min(0.98, Math.max(0, tr.glacial)) * 0.98;
+      curtain.push(false);
+      inLake.push(false);
+      mInRow.push(mIn);
+      for (const a of across) {
+        let off = a * w;
+        let d = Math.abs(a) > 1 ? -0.8 : tr.depth * (1 - a * a) * fIn * fIn * fIn - 0.055 * mIn;
+        if (bed) {
+          const right = a < 0;
+          const wet = right ? tr.wetR : tr.wetL;
+          const u = Math.abs(a);
+          const x = u <= 2 ? 0.5 * u * wet : wet;
+          off = (right ? -1 : 1) * x;
+          d = u <= 2 ? tr.depth * (1 - 0.25 * u * u) * fIn * fIn * fIn - 0.055 * mIn : -(u - 2);
+        }
+        const sh = bed ? 0 : mid;
+        const e = tr.east + pe * (off - sh);
+        const n = tr.north + pn * (off - sh);
+        pos.push(e, tr.level + 0.015 * (1 - mIn), -n);
+        depth.push(d);
+        info.push(-(off - sh + mid), tr.s, w);
+        tan.push(tr.te, -tr.tn);
+        b.flow.push(stpLast, spdLast, 0, grainLast);
+        b.pitch.push(sigBase, pPacked);
+        if (hasBraid) {
+          b.braid.push(1, r.braidPh![last], r.braidPs![last], bHb);
+          b.braidU.push((-off - mid) / bHb, 0);
+        } else {
+          b.braid.push(0, 0, 0, 1);
+          b.braidU.push(0, 0);
+        }
+      }
+      rows++;
+    }
   }
   for (let j = 0; j < rows - 1; j++) {
     if (curtain[j] || (inLake[j] && inLake[j + 1]) || (mInRow[j] >= 0.99 && mInRow[j + 1] >= 0.99)) continue;

@@ -138,7 +138,9 @@ export class RillSystem {
           this.done.delete(oldest);
         }
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (gen === this.generation) this.inflight.delete(k);
+      });
   }
 
   private account(s: RillStats): void {

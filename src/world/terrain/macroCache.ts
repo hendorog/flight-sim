@@ -110,6 +110,7 @@ interface Entry {
   seed: number;
   key: string;
   lattice: ArrayBuffer;
+  route?: ArrayBuffer;
   /** The threshold hillslopes' fine-grid fields (hillslopes.ts SlopeField), when the seed has them. */
   slopes?: {
     h: ArrayBuffer;
@@ -156,7 +157,8 @@ async function readCached(seed: number): Promise<SeededModel | null> {
         const ln = s?.lines;
         const lines = ln && ln.start instanceof ArrayBuffer && ln.north instanceof ArrayBuffer && ln.east instanceof ArrayBuffer && ln.half instanceof ArrayBuffer && ln.cap instanceof ArrayBuffer ? { start: new Int32Array(ln.start), north: new Float32Array(ln.north), east: new Float32Array(ln.east), half: new Float32Array(ln.half), cap: new Uint8Array(ln.cap), ...(ln.level instanceof ArrayBuffer ? { level: new Float32Array(ln.level) } : {}) } : undefined;
         const slopes = s && s.h instanceof ArrayBuffer && s.w instanceof ArrayBuffer && s.chan instanceof ArrayBuffer && s.floor instanceof ArrayBuffer && s.lz instanceof ArrayBuffer && typeof s.sc === 'number' ? { h: new Float32Array(s.h), w: new Uint8Array(s.w), chan: new Uint8Array(s.chan), floor: new Uint8Array(s.floor), lz: new Float32Array(s.lz), sc: s.sc, ...(s.dir instanceof ArrayBuffer ? { dir: new Uint8Array(s.dir) } : {}), ...(lines ? { lines } : {}) } : null;
-        resolve({ seed, key: e.key, lattice: new Float32Array(e.lattice), slopes });
+        const route = e.route instanceof ArrayBuffer ? new Float32Array(e.route) : null;
+        resolve({ seed, key: e.key, lattice: new Float32Array(e.lattice), slopes, route });
       };
       req.onerror = () => {
         db.close();
@@ -174,7 +176,13 @@ async function writeCached(m: SeededModel): Promise<void> {
   if (!db) return;
   try {
     const tx = db.transaction(STORE, 'readwrite');
-    const entry: Entry = { id: entryId(m.seed), seed: m.seed, key: m.key, lattice: m.lattice.buffer as ArrayBuffer };
+    const entry: Entry = {
+      id: entryId(m.seed),
+      seed: m.seed,
+      key: m.key,
+      lattice: m.lattice.buffer as ArrayBuffer,
+      ...(m.route ? { route: m.route.buffer as ArrayBuffer } : {}),
+    };
     if (m.slopes) {
       const ln = m.slopes.lines;
       entry.slopes = {

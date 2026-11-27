@@ -12,18 +12,34 @@ export class WorkerPool {
   private readonly workers: Worker[] = [];
   private readonly load: number[] = [];
   private readonly pending = new Map<number, Pending & { worker: number }>();
+  private lastSetup: WorkerSetup | null = null;
+  private disposed = false;
   private nextId = 1;
   /** Jobs each worker may hold at once (one running, one queued keeps them busy between messages). */
   private readonly depth = 2;
 
   constructor(size: number) {
     for (let i = 0; i < size; i++) {
-      const w = new Worker(new URL('./terrainWorker.ts', import.meta.url), { type: 'module', name: `terrain-${i}` });
-      w.onmessage = (e: MessageEvent<{ id: number; result: WorkerResult }>) => this.finish(e.data.id, e.data.result);
-      w.onerror = (e) => console.error('[terrain] worker error', e.message);
-      this.workers.push(w);
       this.load.push(0);
+      this.workers.push(this.spawnWorker(i));
     }
+  }
+
+  private spawnWorker(index: number): Worker {
+    const w = new Worker(new URL('./terrainWorker.ts', import.meta.url), { type: 'module', name: `terrain-${index}` });
+    w.onmessage = (e: MessageEvent<{ id: number; result?: WorkerResult; error?: string }>) => {
+      if (e.data.error !== undefined) this.failJob(e.data.id, new Error(e.data.error));
+      else this.finish(e.data.id, e.data.result!);
+    };
+    w.onerror = (e) => {
+      e.preventDefault?.();
+      this.failWorker(index, e.message || 'worker uncaught error');
+    };
+    w.onmessageerror = () => {
+      this.failWorker(index, 'worker message deserialization error');
+    };
+    if (this.lastSetup) w.postMessage(this.lastSetup);
+    return w;
   }
 
   get freeSlots(): number {
@@ -43,6 +59,7 @@ export class WorkerPool {
 
   /** Send shared settings to every worker; messages are ordered, so later jobs see them. */
   broadcast(setup: WorkerSetup): void {
+    this.lastSetup = setup;
     for (const w of this.workers) w.postMessage(setup);
   }
 
@@ -68,11 +85,41 @@ export class WorkerPool {
     const p = this.pending.get(id);
     if (!p) return;
     this.pending.delete(id);
-    this.load[p.worker]--;
+    this.load[p.worker] = Math.max(0, this.load[p.worker] - 1);
     p.resolve(result);
   }
 
+  private failJob(id: number, err: unknown): void {
+    const p = this.pending.get(id);
+    if (!p) return;
+    this.pending.delete(id);
+    this.load[p.worker] = Math.max(0, this.load[p.worker] - 1);
+    p.reject(err);
+  }
+
+  private failWorker(index: number, reason: string): void {
+    if (this.disposed) return;
+    console.warn(`[terrain] worker ${index} failed (${reason}); respawning`);
+    try {
+      this.workers[index]?.terminate();
+    } catch {
+      // ignore termination failure
+    }
+    this.load[index] = 0;
+    const failed: Array<Pending & { worker: number }> = [];
+    for (const [id, p] of this.pending) {
+      if (p.worker === index) {
+        this.pending.delete(id);
+        failed.push(p);
+      }
+    }
+    this.workers[index] = this.spawnWorker(index);
+    const err = new Error(reason);
+    for (const p of failed) p.reject(err);
+  }
+
   dispose(): void {
+    this.disposed = true;
     for (const w of this.workers) w.terminate();
     for (const p of this.pending.values()) p.reject(new Error('worker pool disposed'));
     this.pending.clear();
